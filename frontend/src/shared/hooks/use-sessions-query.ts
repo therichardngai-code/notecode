@@ -1,0 +1,133 @@
+/**
+ * Sessions Query Hooks
+ * React Query hooks for session data fetching
+ */
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { sessionsApi, type StartSessionRequest } from '@/adapters/api';
+import { taskKeys } from './use-tasks-query';
+
+// Query keys
+export const sessionKeys = {
+  all: ['sessions'] as const,
+  lists: () => [...sessionKeys.all, 'list'] as const,
+  list: (taskId?: string) => [...sessionKeys.lists(), taskId] as const,
+  running: () => [...sessionKeys.all, 'running'] as const,
+  details: () => [...sessionKeys.all, 'detail'] as const,
+  detail: (id: string) => [...sessionKeys.details(), id] as const,
+  messages: (id: string) => [...sessionKeys.all, 'messages', id] as const,
+};
+
+/**
+ * Fetch sessions with optional task filter
+ */
+export function useSessions(params?: { taskId?: string; limit?: number }) {
+  return useQuery({
+    queryKey: sessionKeys.list(params?.taskId),
+    queryFn: () => sessionsApi.list(params),
+    select: (data) => data.sessions,
+  });
+}
+
+/**
+ * Fetch running sessions
+ */
+export function useRunningSessions() {
+  return useQuery({
+    queryKey: sessionKeys.running(),
+    queryFn: () => sessionsApi.getRunning(),
+    select: (data) => data.sessions,
+    refetchInterval: 5000, // Poll every 5s for running sessions
+  });
+}
+
+/**
+ * Fetch single session
+ */
+export function useSession(id: string) {
+  return useQuery({
+    queryKey: sessionKeys.detail(id),
+    queryFn: () => sessionsApi.getById(id),
+    select: (data) => data.session,
+    enabled: !!id,
+  });
+}
+
+/**
+ * Fetch session messages
+ */
+export function useSessionMessages(id: string, limit = 50) {
+  return useQuery({
+    queryKey: sessionKeys.messages(id),
+    queryFn: () => sessionsApi.getMessages(id, limit),
+    select: (data) => data.messages,
+    enabled: !!id,
+  });
+}
+
+/**
+ * Start session mutation
+ */
+export function useStartSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: StartSessionRequest) => sessionsApi.start(data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: sessionKeys.list(variables.taskId) });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.running() });
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(variables.taskId) });
+    },
+  });
+}
+
+/**
+ * Pause session mutation
+ */
+export function usePauseSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sessionsApi.pause(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+    },
+  });
+}
+
+/**
+ * Resume session mutation
+ */
+export function useResumeSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sessionsApi.resume(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+    },
+  });
+}
+
+/**
+ * Stop session mutation
+ */
+export function useStopSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sessionsApi.stop(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+    },
+  });
+}
+
+/**
+ * Delete session mutation
+ */
+export function useDeleteSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sessionsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+    },
+  });
+}

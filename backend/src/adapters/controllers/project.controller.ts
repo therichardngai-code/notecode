@@ -1,0 +1,141 @@
+/**
+ * Project Controller
+ * HTTP endpoints for project management
+ */
+
+import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { randomUUID } from 'crypto';
+import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
+import { Project } from '../../domain/entities/project.entity.js';
+
+const createProjectSchema = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+  isFavorite: z.boolean().optional().default(false),
+});
+
+const updateProjectSchema = z.object({
+  name: z.string().min(1).optional(),
+  isFavorite: z.boolean().optional(),
+});
+
+export function registerProjectController(
+  app: FastifyInstance,
+  projectRepo: IProjectRepository
+): void {
+  // GET /api/projects - List all projects
+  app.get('/api/projects', async (request, reply) => {
+    const { search, favorite } = request.query as Record<string, string>;
+
+    const projects = await projectRepo.findAll({
+      search,
+      isFavorite: favorite === 'true' ? true : undefined,
+    });
+
+    return reply.send({ projects });
+  });
+
+  // GET /api/projects/recent - Get recent projects
+  app.get('/api/projects/recent', async (request, reply) => {
+    const { limit } = request.query as { limit?: string };
+    const projects = await projectRepo.findRecent(
+      limit ? parseInt(limit, 10) : 10
+    );
+    return reply.send({ projects });
+  });
+
+  // GET /api/projects/favorites - Get favorite projects
+  app.get('/api/projects/favorites', async (_request, reply) => {
+    const projects = await projectRepo.findFavorites();
+    return reply.send({ projects });
+  });
+
+  // GET /api/projects/:id - Get single project
+  app.get('/api/projects/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const project = await projectRepo.findById(id);
+
+    if (!project) {
+      return reply.status(404).send({ error: 'Project not found' });
+    }
+
+    return reply.send({ project });
+  });
+
+  // POST /api/projects - Create project
+  app.post('/api/projects', async (request, reply) => {
+    const body = createProjectSchema.parse(request.body);
+
+    // Check if path already exists
+    const existing = await projectRepo.exists(body.path);
+    if (existing) {
+      return reply.status(409).send({ error: 'Project with this path already exists' });
+    }
+
+    const now = new Date();
+    const project = new Project(
+      randomUUID(),
+      body.name,
+      body.path,
+      null, // systemPrompt - can be set later via update
+      body.isFavorite,
+      now,
+      now
+    );
+
+    await projectRepo.save(project);
+    return reply.status(201).send({ project });
+  });
+
+  // PATCH /api/projects/:id - Update project
+  app.patch('/api/projects/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = updateProjectSchema.parse(request.body);
+
+    const project = await projectRepo.findById(id);
+    if (!project) {
+      return reply.status(404).send({ error: 'Project not found' });
+    }
+
+    if (body.name) {
+      project.updateName(body.name);
+    }
+    if (body.isFavorite !== undefined) {
+      if (body.isFavorite) {
+        project.markAsFavorite();
+      } else {
+        project.unmarkAsFavorite();
+      }
+    }
+
+    await projectRepo.save(project);
+    return reply.send({ project });
+  });
+
+  // POST /api/projects/:id/access - Record project access
+  app.post('/api/projects/:id/access', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const project = await projectRepo.findById(id);
+    if (!project) {
+      return reply.status(404).send({ error: 'Project not found' });
+    }
+
+    project.recordAccess();
+    await projectRepo.save(project);
+    return reply.send({ project });
+  });
+
+  // DELETE /api/projects/:id - Delete project
+  app.delete('/api/projects/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const deleted = await projectRepo.delete(id);
+
+    if (!deleted) {
+      return reply.status(404).send({ error: 'Project not found' });
+    }
+
+    return reply.send({ success: true });
+  });
+}
