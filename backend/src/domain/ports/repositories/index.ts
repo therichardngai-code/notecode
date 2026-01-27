@@ -12,3 +12,4 @@ export * from './approval.repository.port.js';
 export * from './diff.repository.port.js';
 export * from './memory.repository.port.js';
 export * from './agent-summary.repository.port.js';
+export * from './hook.repository.port.js';

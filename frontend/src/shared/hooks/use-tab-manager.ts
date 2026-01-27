@@ -143,7 +143,7 @@ export function useTabManager() {
     setActiveTabId(newTab.id);
   }, []);
 
-  // Open task as a new tab block (Full View feature) - uses existing /tasks/$taskId route
+  // Open task in NEW tab (from task card menu "Open in new tab")
   const handleOpenTaskAsTab = useCallback(
     (taskId: string, taskTitle: string) => {
       const route = `/tasks/${taskId}`;
@@ -160,6 +160,20 @@ export function useTabManager() {
     [navigate]
   );
 
+  // Open task in CURRENT tab (from floating panel "Full View")
+  const handleOpenTaskInCurrentTab = useCallback(
+    (taskId: string, taskTitle: string) => {
+      const route = `/tasks/${taskId}`;
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTabId ? { ...tab, title: taskTitle, icon: 'file' as const, route } : tab
+        )
+      );
+      navigate({ to: '/tasks/$taskId', params: { taskId } });
+    },
+    [navigate, activeTabId]
+  );
+
   return {
     tabs,
     activeTabId,
@@ -171,6 +185,7 @@ export function useTabManager() {
     handleFileClick,
     handleOpenFileInNewTab,
     handleOpenTaskAsTab,
+    handleOpenTaskInCurrentTab,
     updateCurrentTab,
     setTabs,
     setActiveTabId,

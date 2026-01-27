@@ -11,10 +11,14 @@ interface UIState {
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
 
+  // Active Project (for context in panels)
+  activeProjectId: string | null;
+  setActiveProjectId: (projectId: string | null) => void;
+
   // Floating Panels
   isNewTaskPanelOpen: boolean;
   isSettingsPanelOpen: boolean;
-  openNewTaskPanel: () => void;
+  openNewTaskPanel: (projectId?: string) => void;
   closeNewTaskPanel: () => void;
   openSettingsPanel: () => void;
   closeSettingsPanel: () => void;
@@ -49,10 +53,17 @@ export const useUIStore = create<UIState>((set) => ({
   toggleLeftPanel: () => set((state) => ({ leftPanelOpen: !state.leftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
 
+  // Active Project
+  activeProjectId: null,
+  setActiveProjectId: (projectId) => set({ activeProjectId: projectId }),
+
   // Floating Panels
   isNewTaskPanelOpen: false,
   isSettingsPanelOpen: false,
-  openNewTaskPanel: () => set({ isNewTaskPanelOpen: true }),
+  openNewTaskPanel: (projectId) => set((state) => ({
+    isNewTaskPanelOpen: true,
+    activeProjectId: projectId ?? state.activeProjectId,
+  })),
   closeNewTaskPanel: () => set({ isNewTaskPanelOpen: false }),
   openSettingsPanel: () => set({ isSettingsPanelOpen: true }),
   closeSettingsPanel: () => set({ isSettingsPanelOpen: false }),

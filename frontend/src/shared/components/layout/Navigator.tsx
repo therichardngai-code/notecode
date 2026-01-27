@@ -94,7 +94,7 @@ function NavItem({ icon: Icon, label, to, isActive, isPanelActive, isPanelItem, 
           </button>
         )}
         {showMenu && (
-          <div ref={menuRef} className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[140px]">
+          <div ref={menuRef} className="absolute right-0 top-full mt-1 z-50 glass rounded-md shadow-md py-1 min-w-[140px]">
             <button onClick={(e) => { e.stopPropagation(); handleOpenInNewTab(); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent">
               <ExternalLink className="w-3.5 h-3.5" />
               Open in new tab
@@ -131,7 +131,7 @@ function NavItem({ icon: Icon, label, to, isActive, isPanelActive, isPanelItem, 
         </button>
       )}
       {showMenu && (
-        <div ref={menuRef} className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[140px]">
+        <div ref={menuRef} className="absolute right-0 top-full mt-1 z-50 glass rounded-md shadow-md py-1 min-w-[140px]">
           <button onClick={(e) => { e.stopPropagation(); handleOpenInNewTab(); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent">
             <ExternalLink className="w-3.5 h-3.5" />
             Open in new tab
@@ -171,7 +171,7 @@ export function Navigator({
 
   if (isCollapsed) {
     return (
-      <div className="w-12 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
+      <div className="w-12 glass-subtle border-r border-sidebar-border/50 flex flex-col h-full">
         <div className="flex items-center justify-center py-2 border-b border-sidebar-border/50">
           <button
             onClick={onToggleCollapse}
@@ -186,7 +186,7 @@ export function Navigator({
   }
 
   return (
-    <div className="w-60 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
+    <div className="w-60 glass-subtle border-r border-sidebar-border/50 flex flex-col h-full">
       {/* Top Row: App Logo + Toggle */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/50">
         <div className="w-6 h-6 rounded-md bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-xs font-semibold">

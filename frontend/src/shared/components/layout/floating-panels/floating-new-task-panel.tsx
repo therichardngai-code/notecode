@@ -18,7 +18,7 @@ interface FloatingNewTaskPanelProps {
 }
 
 export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask }: FloatingNewTaskPanelProps) {
-  const { isNewTaskPanelOpen, closeNewTaskPanel } = useUIStore();
+  const { isNewTaskPanelOpen, closeNewTaskPanel, activeProjectId } = useUIStore();
 
   const [title, setTitle] = useState('New Task');
   const [requirement, setRequirement] = useState('');
@@ -117,14 +117,18 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isNewTaskPanelOpen, closeNewTaskPanel]);
 
-  // Reset form when panel opens
+  // Reset form when panel opens (project mandatory, autoBranch enabled by default)
   useEffect(() => {
     if (isNewTaskPanelOpen) {
       setTitle('New Task');
       setRequirement('');
-      setProperties([]);
+      setProperties([
+        // Use activeProjectId if available, otherwise user must select
+        { id: 'project-default', type: 'project', value: activeProjectId ? [activeProjectId] : [] },
+        { id: 'autoBranch-default', type: 'autoBranch', value: ['true'] },
+      ]);
     }
-  }, [isNewTaskPanelOpen]);
+  }, [isNewTaskPanelOpen, activeProjectId]);
 
   const addProperty = (type: Property['type']) => {
     if (properties.find((p) => p.type === type)) {
@@ -177,7 +181,7 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
         style={{ left: `${panelLeft}px` }}
         className={cn(
           'fixed top-0 right-0 z-50 h-full',
-          'bg-sidebar border-l border-border shadow-2xl',
+          'glass-strong border-l border-border/50',
           'flex flex-col',
           !isResizing && 'transition-transform duration-300 ease-in-out',
           isNewTaskPanelOpen ? 'translate-x-0' : 'translate-x-full'
@@ -239,11 +243,17 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
           {/* Properties */}
           <div className="space-y-3 mb-4">
             {properties.map((property) => (
-              <PropertyItem key={property.id} property={property} onRemove={() => removeProperty(property.id)} onUpdate={(values) => updateProperty(property.id, values)} />
+              <PropertyItem
+                key={property.id}
+                property={property}
+                onRemove={() => removeProperty(property.id)}
+                onUpdate={(values) => updateProperty(property.id, values)}
+                selectedProvider={properties.find((p) => p.type === 'provider')?.value[0]}
+              />
             ))}
           </div>
 
-          {/* Add property */}
+          {/* Add property (exclude mandatory: project, autoBranch) */}
           <div className="relative" ref={addPropertyRef}>
             <button onClick={() => setShowAddProperty(!showAddProperty)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <Plus className="w-4 h-4" />
@@ -251,27 +261,29 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
             </button>
 
             {showAddProperty && (
-              <div className="absolute top-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
-                {propertyTypes.map((type) => {
-                  const exists = properties.find((p) => p.type === type.id);
-                  return (
-                    <button
-                      key={type.id}
-                      onClick={() => addProperty(type.id as Property['type'])}
-                      disabled={!!exists}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors',
-                        exists ? 'text-muted-foreground/50 cursor-not-allowed' : 'text-popover-foreground hover:bg-accent'
-                      )}
-                    >
-                      <type.icon className="w-4 h-4" />
-                      <div className="text-left">
-                        <div className="font-medium">{type.label}</div>
-                        <div className="text-xs text-muted-foreground">{type.description}</div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="absolute top-full left-0 mt-1 w-56 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20">
+                {propertyTypes
+                  .filter((type) => !['project', 'autoBranch', 'provider'].includes(type.id))
+                  .map((type) => {
+                    const exists = properties.find((p) => p.type === type.id);
+                    return (
+                      <button
+                        key={type.id}
+                        onClick={() => addProperty(type.id as Property['type'])}
+                        disabled={!!exists}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors',
+                          exists ? 'text-muted-foreground/50 cursor-not-allowed' : 'text-foreground hover:bg-white/20 dark:hover:bg-white/10'
+                        )}
+                      >
+                        <type.icon className="w-4 h-4" />
+                        <div className="text-left">
+                          <div className="font-medium">{type.label}</div>
+                          <div className="text-xs text-muted-foreground">{type.description}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -289,6 +301,7 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
               className="w-full h-32 text-sm text-foreground bg-muted/30 border border-border rounded-lg p-3 outline-none resize-none placeholder:text-muted-foreground focus:border-primary/50 transition-colors"
             />
           </div>
+
         </div>
 
         {/* Footer */}

@@ -51,6 +51,23 @@ export function registerProjectController(
     return reply.send({ projects });
   });
 
+  // GET /api/projects/by-path - Find project by path
+  app.get('/api/projects/by-path', async (request, reply) => {
+    const { path } = request.query as { path?: string };
+
+    if (!path) {
+      return reply.status(400).send({ error: 'Path is required' });
+    }
+
+    const project = await projectRepo.findByPath(path);
+
+    if (!project) {
+      return reply.send({ project: null, exists: false });
+    }
+
+    return reply.send({ project, exists: true });
+  });
+
   // GET /api/projects/:id - Get single project
   app.get('/api/projects/:id', async (request, reply) => {
     const { id } = request.params as { id: string };

@@ -33,6 +33,7 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 240 5.9% 10%;
+
   }
 
   .dark {
@@ -64,6 +65,7 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 240 4.9% 83.9%;
+
   }
 }
 
@@ -72,7 +74,67 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    /* Web mode: Subtle neutral gradient (teal-gray-cream like reference) */
+    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 30%, #e7e5e4 60%, #f5f5f4 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  body.dark, .dark body, html.dark body {
+    /* Black to gray gradient */
+    background: linear-gradient(135deg, #18181b 0%, #27272a 50%, #3f3f46 100%);
+    background-attachment: fixed;
+  }
+  /* Electron mode: Transparent background to show user's desktop */
+  body.electron-mode {
+    background: transparent !important;
+  }
+  body.electron-mode.dark, .dark body.electron-mode {
+    background: transparent !important;
+  }
+}
+
+/* Glassmorphism utility classes - lower opacity for visible effect */
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.25) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  }
+
+  .glass-subtle {
+    background: rgba(255, 255, 255, 0.15) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(200, 200, 200, 0.3) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+  }
+
+  /* Dark mode glass - semi-transparent to show gradient */
+  .dark .glass {
+    background: rgba(39, 39, 42, 0.7) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .dark .glass-subtle {
+    background: rgba(39, 39, 42, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .dark .glass-strong {
+    background: rgba(24, 24, 27, 0.92) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
   }
 }
 
@@ -93,4 +155,13 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Float-up entrance animation */
+@keyframes float-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-float-up {
+  animation: float-up 0.4s ease-out forwards;
 }

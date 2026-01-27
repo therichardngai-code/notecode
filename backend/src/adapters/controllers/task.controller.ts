@@ -7,6 +7,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
+import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
 import { Task } from '../../domain/entities/task.entity.js';
 import {
   TaskStatus,
@@ -14,6 +15,14 @@ import {
   AgentRole,
   ProviderType,
 } from '../../domain/value-objects/task-status.vo.js';
+import { IGitApprovalRepository } from '../repositories/sqlite-git-approval.repository.js';
+import { GitService } from '../../domain/services/git.service.js';
+import { IEventBus } from '../../domain/events/event-bus.js';
+import {
+  createTaskBranch,
+  createGitCommitApproval,
+  deleteTaskBranch,
+} from './git.controller.js';
 
 const createTaskSchema = z.object({
   projectId: z.string().uuid(),
@@ -32,6 +41,12 @@ const createTaskSchema = z.object({
     tools: z.array(z.string()),
   }).optional(),
   contextFiles: z.array(z.string()).optional().default([]),
+  subagentDelegates: z.boolean().optional().default(false),
+  // Git config
+  autoBranch: z.boolean().optional().default(false),
+  autoCommit: z.boolean().optional().default(false),
+  // Permission mode
+  permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions']).optional(),
 });
 
 const updateTaskSchema = z.object({
@@ -45,6 +60,11 @@ const updateTaskSchema = z.object({
   agentRole: z.enum(['researcher', 'planner', 'coder', 'reviewer', 'tester']).nullable().optional(),
   provider: z.enum(['anthropic', 'google', 'openai']).nullable().optional(),
   model: z.string().nullable().optional(),
+  // Git config
+  autoBranch: z.boolean().optional(),
+  autoCommit: z.boolean().optional(),
+  // Permission mode
+  permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions']).nullable().optional(),
 });
 
 const moveTaskSchema = z.object({
@@ -52,10 +72,22 @@ const moveTaskSchema = z.object({
   position: z.number().int().min(0).optional(),
 });
 
+/** Dependencies for git integration in task controller */
+export interface TaskControllerDeps {
+  taskRepo: ITaskRepository;
+  projectRepo: IProjectRepository;
+  gitApprovalRepo: IGitApprovalRepository;
+  gitService: GitService;
+  eventBus: IEventBus;
+}
+
 export function registerTaskController(
   app: FastifyInstance,
-  taskRepo: ITaskRepository
+  taskRepo: ITaskRepository,
+  deps?: Partial<TaskControllerDeps>
 ): void {
+  // Git dependencies (optional - if not provided, git hooks are skipped)
+  const { projectRepo, gitApprovalRepo, gitService, eventBus } = deps ?? {};
   // GET /api/tasks - List tasks by project
   app.get('/api/tasks', async (request, reply) => {
     const { projectId, status, priority, search, agentId } = request.query as Record<string, string>;
@@ -122,6 +154,16 @@ export function registerTaskController(
       body.tools ?? null,
       body.contextFiles,
       null,
+      body.subagentDelegates ?? false,
+      // Git config
+      body.autoBranch ?? false,
+      body.autoCommit ?? false,
+      null, // branchName
+      null, // baseBranch
+      null, // branchCreatedAt
+      body.permissionMode ?? null,
+      // Attempt tracking (init to 0)
+      0, 0, 0, 0, null,
       now,
       now,
       null,
@@ -162,11 +204,76 @@ export function registerTaskController(
         body.model !== undefined ? body.model : task.model
       );
     }
-    if (body.status) {
-      task.updateStatus(body.status as TaskStatus);
+    // Git config (only if not already has branch)
+    if ((body.autoBranch !== undefined || body.autoCommit !== undefined) && !task.hasBranch()) {
+      task.setGitConfig(
+        body.autoBranch ?? task.autoBranch,
+        body.autoCommit ?? task.autoCommit
+      );
+    }
+    // Permission mode
+    if (body.permissionMode !== undefined) {
+      task.permissionMode = body.permissionMode;
+      task.updatedAt = new Date();
+    }
+
+    // Track status change for git hooks
+    const oldStatus = task.status;
+    const newStatus = body.status as TaskStatus | undefined;
+
+    if (newStatus) {
+      task.updateStatus(newStatus);
     }
 
     await taskRepo.save(task);
+
+    // Git hooks on status change (async, non-blocking)
+    if (newStatus && oldStatus !== newStatus && projectRepo && gitApprovalRepo && gitService && eventBus) {
+      const project = await projectRepo.findById(task.projectId);
+      if (project?.path) {
+        try {
+          const isRepo = await gitService.isGitRepo(project.path);
+          if (isRepo) {
+            // Task started → create branch
+            if (newStatus === TaskStatus.IN_PROGRESS && task.autoBranch) {
+              await createTaskBranch(
+                { id: task.id, projectId: task.projectId, autoBranch: task.autoBranch, branchName: task.branchName },
+                taskRepo,
+                gitService,
+                project.path,
+                eventBus
+              );
+            }
+
+            // Task done → create commit approval
+            if (newStatus === TaskStatus.DONE) {
+              await createGitCommitApproval(
+                { id: task.id, projectId: task.projectId, title: task.title, autoCommit: task.autoCommit },
+                gitApprovalRepo,
+                gitService,
+                project.path,
+                eventBus
+              );
+            }
+
+            // Task archived → delete branch
+            if (newStatus === TaskStatus.ARCHIVED && task.branchName) {
+              await deleteTaskBranch(
+                { id: task.id, projectId: task.projectId, branchName: task.branchName, baseBranch: task.baseBranch },
+                taskRepo,
+                gitService,
+                project.path,
+                eventBus
+              );
+            }
+          }
+        } catch (error) {
+          // Log but don't fail the status update
+          app.log.error({ error, taskId: task.id, newStatus }, 'Git hook failed');
+        }
+      }
+    }
+
     return reply.send({ task });
   });
 
@@ -181,8 +288,58 @@ export function registerTaskController(
     }
 
     try {
-      task.updateStatus(body.status as TaskStatus);
+      const oldStatus = task.status;
+      const newStatus = body.status as TaskStatus;
+
+      task.updateStatus(newStatus);
       await taskRepo.save(task);
+
+      // Git hooks on status change (async, non-blocking)
+      if (oldStatus !== newStatus && projectRepo && gitApprovalRepo && gitService && eventBus) {
+        const project = await projectRepo.findById(task.projectId);
+        if (project?.path) {
+          try {
+            const isRepo = await gitService.isGitRepo(project.path);
+            if (isRepo) {
+              // Task started → create branch
+              if (newStatus === TaskStatus.IN_PROGRESS && task.autoBranch) {
+                await createTaskBranch(
+                  { id: task.id, projectId: task.projectId, autoBranch: task.autoBranch, branchName: task.branchName },
+                  taskRepo,
+                  gitService,
+                  project.path,
+                  eventBus
+                );
+              }
+
+              // Task done → create commit approval
+              if (newStatus === TaskStatus.DONE) {
+                await createGitCommitApproval(
+                  { id: task.id, projectId: task.projectId, title: task.title, autoCommit: task.autoCommit },
+                  gitApprovalRepo,
+                  gitService,
+                  project.path,
+                  eventBus
+                );
+              }
+
+              // Task archived → delete branch
+              if (newStatus === TaskStatus.ARCHIVED && task.branchName) {
+                await deleteTaskBranch(
+                  { id: task.id, projectId: task.projectId, branchName: task.branchName, baseBranch: task.baseBranch },
+                  taskRepo,
+                  gitService,
+                  project.path,
+                  eventBus
+                );
+              }
+            }
+          } catch (gitError) {
+            app.log.error({ error: gitError, taskId: task.id, newStatus }, 'Git hook failed');
+          }
+        }
+      }
+
       return reply.send({ task });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid status transition';

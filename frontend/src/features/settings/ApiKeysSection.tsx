@@ -1,23 +1,28 @@
-import { useState, useEffect } from 'react';
+/**
+ * API Keys Section
+ * Settings section for managing provider API keys
+ */
+
+import { useState } from 'react';
+import { useSettings, useSetApiKey, useRemoveApiKey, useEncryptionStatus } from '@/shared/hooks/use-settings';
+import { Lock, Key, Loader2 } from 'lucide-react';
 import type { ProviderType } from '../../domain/entities';
 
 interface ApiKeyInputProps {
   provider: ProviderType;
-  value: string;
-  onSave: (provider: ProviderType, key: string) => void;
-  onDelete: (provider: ProviderType) => void;
+  hasKey: boolean;
+  onSave: (key: string) => void;
+  onDelete: () => void;
+  isSaving?: boolean;
 }
 
-function ApiKeyInput({ provider, value, onSave, onDelete }: ApiKeyInputProps) {
+function ApiKeyInput({ provider, hasKey, onSave, onDelete, isSaving }: ApiKeyInputProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState('');
-  const [showKey, setShowKey] = useState(false);
-
-  const hasKey = value && value.length > 0;
 
   const handleSave = () => {
     if (inputValue.trim()) {
-      onSave(provider, inputValue.trim());
+      onSave(inputValue.trim());
       setInputValue('');
       setIsEditing(false);
     }
@@ -28,49 +33,52 @@ function ApiKeyInput({ provider, value, onSave, onDelete }: ApiKeyInputProps) {
     setIsEditing(false);
   };
 
-  const displayValue = hasKey
-    ? showKey
-      ? value
-      : '•'.repeat(Math.min(value.length, 32))
-    : 'Not set';
-
   const providerNames: Record<ProviderType, string> = {
     anthropic: 'Anthropic (Claude)',
     google: 'Google (Gemini)',
     openai: 'OpenAI (GPT)',
   };
 
+  const providerIcons: Record<ProviderType, string> = {
+    anthropic: '🅰️',
+    google: '🔷',
+    openai: '🤖',
+  };
+
   return (
-    <div className="border border-gray-200 rounded-lg p-4">
+    <div className="border border-border rounded-lg p-4 bg-card">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-medium text-gray-900">{providerNames[provider]}</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{providerIcons[provider]}</span>
+          <h3 className="font-medium text-foreground">{providerNames[provider]}</h3>
+        </div>
         {hasKey && (
-          <button
-            onClick={() => setShowKey(!showKey)}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            {showKey ? 'Hide' : 'Show'}
-          </button>
+          <span className="flex items-center gap-1 text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+            <Key className="w-3 h-3" />
+            Configured
+          </span>
         )}
       </div>
 
       {!isEditing ? (
         <div className="flex items-center gap-2">
-          <div className="flex-1 px-3 py-2 bg-gray-50 rounded border border-gray-200 font-mono text-sm">
-            {displayValue}
+          <div className="flex-1 px-3 py-2 bg-muted rounded border border-border font-mono text-sm text-muted-foreground">
+            {hasKey ? '••••••••••••••••' : 'Not configured'}
           </div>
           <button
             onClick={() => setIsEditing(true)}
-            className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            disabled={isSaving}
+            className="px-4 py-2 text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
           >
             {hasKey ? 'Update' : 'Add'}
           </button>
           {hasKey && (
             <button
-              onClick={() => onDelete(provider)}
-              className="px-4 py-2 text-red-600 hover:bg-red-50 rounded transition-colors"
+              onClick={onDelete}
+              disabled={isSaving}
+              className="px-4 py-2 text-destructive hover:bg-destructive/10 rounded transition-colors disabled:opacity-50"
             >
-              Delete
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Remove'}
             </button>
           )}
         </div>
@@ -81,18 +89,21 @@ function ApiKeyInput({ provider, value, onSave, onDelete }: ApiKeyInputProps) {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder={`Enter ${providerNames[provider]} API key`}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            autoFocus
           />
           <div className="flex gap-2">
             <button
               onClick={handleSave}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              disabled={!inputValue.trim() || isSaving}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              Save
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
             </button>
             <button
               onClick={handleCancel}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+              disabled={isSaving}
+              className="px-4 py-2 bg-muted text-muted-foreground rounded hover:bg-muted/80 transition-colors"
             >
               Cancel
             </button>
@@ -104,65 +115,57 @@ function ApiKeyInput({ provider, value, onSave, onDelete }: ApiKeyInputProps) {
 }
 
 export function ApiKeysSection() {
-  const [apiKeys, setApiKeys] = useState<Record<ProviderType, string>>({
-    anthropic: '',
-    google: '',
-    openai: '',
-  });
-
-  useEffect(() => {
-    // TODO: Load from settings repository
-    const stored = localStorage.getItem('apiKeys');
-    if (stored) {
-      try {
-        setApiKeys(JSON.parse(stored));
-      } catch (e) {
-        console.error('Failed to load API keys', e);
-      }
-    }
-  }, []);
+  const { data: settings, isLoading } = useSettings();
+  const { data: encryptionStatus } = useEncryptionStatus();
+  const setApiKeyMutation = useSetApiKey();
+  const removeApiKeyMutation = useRemoveApiKey();
 
   const handleSave = (provider: ProviderType, key: string) => {
-    const updated = { ...apiKeys, [provider]: key };
-    setApiKeys(updated);
-    localStorage.setItem('apiKeys', JSON.stringify(updated));
+    setApiKeyMutation.mutate({ provider, apiKey: key });
   };
 
   const handleDelete = (provider: ProviderType) => {
-    const updated = { ...apiKeys, [provider]: '' };
-    setApiKeys(updated);
-    localStorage.setItem('apiKeys', JSON.stringify(updated));
+    removeApiKeyMutation.mutate(provider);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const providers: ProviderType[] = ['anthropic', 'google', 'openai'];
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">API Keys</h2>
-        <p className="text-sm text-gray-600 mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-2">API Keys</h2>
+        <p className="text-sm text-muted-foreground mb-4">
           Configure API keys for different AI providers. Keys are stored securely and never sent to
           external servers except the respective AI provider.
         </p>
       </div>
 
+      {encryptionStatus?.configured && (
+        <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-2 rounded-lg">
+          <Lock className="w-4 h-4" />
+          <span>API keys are encrypted at rest</span>
+        </div>
+      )}
+
       <div className="space-y-3">
-        <ApiKeyInput
-          provider="anthropic"
-          value={apiKeys.anthropic}
-          onSave={handleSave}
-          onDelete={handleDelete}
-        />
-        <ApiKeyInput
-          provider="google"
-          value={apiKeys.google}
-          onSave={handleSave}
-          onDelete={handleDelete}
-        />
-        <ApiKeyInput
-          provider="openai"
-          value={apiKeys.openai}
-          onSave={handleSave}
-          onDelete={handleDelete}
-        />
+        {providers.map((provider) => (
+          <ApiKeyInput
+            key={provider}
+            provider={provider}
+            hasKey={settings?.apiKeys?.[provider] ?? false}
+            onSave={(key) => handleSave(provider, key)}
+            onDelete={() => handleDelete(provider)}
+            isSaving={setApiKeyMutation.isPending || removeApiKeyMutation.isPending}
+          />
+        ))}
       </div>
     </div>
   );

@@ -171,7 +171,7 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
         className={cn(
           'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
           'w-[800px] max-w-[90vw] h-[500px] max-h-[85vh]',
-          'bg-card border border-border rounded-lg shadow-2xl',
+          'glass-strong rounded-lg',
           'flex overflow-hidden'
         )}
       >

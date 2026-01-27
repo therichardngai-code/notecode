@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Kanban, LayoutList, Filter, X, ChevronDown, Folder, Bot, Sparkles, Zap, Search, Plus, Cpu } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useUIStore } from '@/shared/stores';
@@ -11,14 +12,15 @@ import { useProjects } from '@/shared/hooks/use-projects-query';
 import { useTasks } from '@/shared/hooks/use-tasks-query';
 import { useSessions, useStopSession, useDeleteSession } from '@/shared/hooks/use-sessions-query';
 
-// Search params for handling ?id=taskId to auto-open task detail
-type TasksSearch = { id?: string; session?: string };
+// Search params for handling ?id=taskId, ?session=sessionId, ?projectId=projectId
+type TasksSearch = { id?: string; session?: string; projectId?: string };
 
 export const Route = createFileRoute('/tasks/')({
   component: TasksIndexPage,
   validateSearch: (search: Record<string, unknown>): TasksSearch => ({
     id: typeof search.id === 'string' ? search.id : undefined,
     session: typeof search.session === 'string' ? search.session : undefined,
+    projectId: typeof search.projectId === 'string' ? search.projectId : undefined,
   }),
 });
 
@@ -72,7 +74,7 @@ function FilterDropdown({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 w-44 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+          <div className="absolute top-full left-0 mt-1 w-44 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
             {options.map((opt) => {
               const isSelected = value.includes(opt.id);
               return (
@@ -86,13 +88,13 @@ function FilterDropdown({
                     }
                   }}
                   className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left',
-                    isSelected && 'bg-accent'
+                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left',
+                    isSelected && 'bg-white/20 dark:bg-white/10'
                   )}
                 >
                   <span className={cn(
                     'w-3.5 h-3.5 border rounded flex items-center justify-center',
-                    isSelected ? 'border-primary bg-primary' : 'border-border'
+                    isSelected ? 'border-primary bg-primary' : 'border-white/30'
                   )}>
                     {isSelected && <span className="text-primary-foreground text-[10px]">✓</span>}
                   </span>
@@ -108,23 +110,43 @@ function FilterDropdown({
 }
 
 function TasksIndexPage() {
-  const { openNewTaskPanel, openTaskDetailPanel, openTaskAsTab } = useUIStore();
+  const { openNewTaskPanel, openTaskDetailPanel, openTaskAsTab, setActiveProjectId } = useUIStore();
   const [viewMode, setViewMode] = useState<ViewMode>('board');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectButtonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+
+  // Update dropdown position when opened
+  useEffect(() => {
+    if (showProjectDropdown && projectButtonRef.current) {
+      const rect = projectButtonRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left });
+    }
+  }, [showProjectDropdown]);
 
   // Fetch projects from API
   const { data: projects, isLoading: projectsLoading } = useProjects();
 
-  // Auto-select first project when loaded
+  // Get URL search params
+  const { id: taskIdFromUrl, session: sessionIdFromUrl, projectId: projectIdFromUrl } = Route.useSearch();
+
+  // Auto-select project from URL param or first project when loaded
   useEffect(() => {
-    if (projects?.length && !selectedProjectId) {
+    if (projectIdFromUrl && projects?.some(p => p.id === projectIdFromUrl)) {
+      setSelectedProjectId(projectIdFromUrl);
+    } else if (projects?.length && !selectedProjectId) {
       setSelectedProjectId(projects[0].id);
     }
-  }, [projects, selectedProjectId]);
+  }, [projects, selectedProjectId, projectIdFromUrl]);
+
+  // Sync selected project to UI store for FloatingNewTaskPanel to use
+  useEffect(() => {
+    setActiveProjectId(selectedProjectId);
+  }, [selectedProjectId, setActiveProjectId]);
 
   // Fetch tasks from API when project selected
   const { data: apiTasks, isLoading: tasksLoading } = useTasks(selectedProjectId || '');
@@ -153,8 +175,6 @@ function TasksIndexPage() {
     dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : undefined,
   }));
 
-  // Get URL search params for auto-opening task detail
-  const { id: taskIdFromUrl, session: sessionIdFromUrl } = Route.useSearch();
   const selectedProject = projects?.find(p => p.id === selectedProjectId);
 
   // Auto-open task detail when id/session is in URL (for "Open in new tab" feature)
@@ -226,24 +246,28 @@ function TasksIndexPage() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center px-6 py-3 border-b border-border">
+      <div className="flex items-center px-6 py-3 border-b border-border relative z-30">
         <div className="flex items-center gap-3">
           {/* Project Selector */}
-          <div className="relative">
+          <div className="relative opacity-0 animate-float-up" style={{ animationDelay: '0.05s' }}>
             <button
+              ref={projectButtonRef}
               onClick={() => setShowProjectDropdown(!showProjectDropdown)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-sidebar-border bg-sidebar text-sm font-medium hover:bg-muted/50 transition-colors min-w-[140px]"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg glass text-sm font-medium hover:shadow-md transition-all min-w-[140px]"
             >
               <Folder className="w-4 h-4 text-muted-foreground" />
               <span className="truncate">{projectsLoading ? 'Loading...' : selectedProject?.name || 'Select Project'}</span>
               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-auto" />
             </button>
-            {showProjectDropdown && (
+            {showProjectDropdown && createPortal(
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowProjectDropdown(false)} />
-                <div className="absolute top-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
+                <div className="fixed inset-0 z-[100]" onClick={() => setShowProjectDropdown(false)} />
+                <div
+                  className="fixed w-56 glass-strong rounded-lg shadow-lg py-1 z-[110] max-h-64 overflow-y-auto"
+                  style={{ top: dropdownPos.top, left: dropdownPos.left }}
+                >
                   {projects?.map((project) => (
                     <button
                       key={project.id}
@@ -264,19 +288,20 @@ function TasksIndexPage() {
                     <div className="px-3 py-2 text-sm text-muted-foreground">No projects found</div>
                   )}
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
 
           {/* Search Input */}
-          <div className="relative">
+          <div className="relative opacity-0 animate-float-up" style={{ animationDelay: '0.1s' }}>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={viewMode === 'board' ? 'Search tasks...' : 'Search sessions...'}
-              className="w-64 pl-9 pr-8 py-1.5 rounded-lg border border-sidebar-border bg-sidebar text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-64 pl-9 pr-8 py-1.5 rounded-lg glass text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:text-foreground text-muted-foreground">
@@ -288,14 +313,15 @@ function TasksIndexPage() {
           {/* Add Task Button */}
           <button
             onClick={openNewTaskPanel}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground text-background text-sm font-medium hover:bg-foreground/90 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground text-background text-sm font-medium hover:bg-foreground/90 transition-colors opacity-0 animate-float-up"
+            style={{ animationDelay: '0.15s' }}
           >
             <Plus className="w-4 h-4" />
             Add Task
           </button>
 
           {/* View Toggle */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-muted/50">
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-muted/50 opacity-0 animate-float-up" style={{ animationDelay: '0.2s' }}>
             <button
               onClick={() => setViewMode('board')}
               className={cn(
@@ -326,11 +352,12 @@ function TasksIndexPage() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors border',
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors border opacity-0 animate-float-up',
               showFilters || activeFilterCount > 0
                 ? 'bg-primary/10 border-primary/30 text-foreground'
                 : 'bg-muted/50 border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
             )}
+            style={{ animationDelay: '0.25s' }}
           >
             <Filter className="w-4 h-4" />
             Filter
@@ -415,7 +442,7 @@ function TasksIndexPage() {
       )}
 
       {/* Content - Embed BoardView or SessionsView with filters */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden opacity-0 animate-float-up" style={{ animationDelay: '0.3s' }}>
         {viewMode === 'board' ? (
           <BoardView
             hideHeader

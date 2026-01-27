@@ -1,22 +1,49 @@
-import { sessionsApi, type Session, type StartSessionRequest } from '../api/sessions-api';
-import type { ICliAdapter, CliAdapterConfig, SessionControlResult } from './cli-adapter.interface';
+import { sessionsApi, type Session } from '../api/sessions-api';
+import { projectsApi } from '../api/projects-api';
+import type {
+  ICliAdapter,
+  CliAdapterConfig,
+  SessionControlResult,
+  StartChatResult,
+  StartTaskSessionResult,
+  StartSessionRequest,
+  StartChatRequest,
+} from './cli-adapter.interface';
 
 /**
  * Gemini CLI Adapter
- * Wraps sessionsApi to provide ICliAdapter interface for session management.
- * Backend handles actual CLI process spawning via HTTP API.
+ * Wraps sessionsApi and projectsApi to provide ICliAdapter interface.
+ * Supports both Chat Mode and Task Mode.
  */
 export class GeminiCliAdapter implements ICliAdapter {
   private streamConfigs = new Map<string, CliAdapterConfig>();
 
-  async start(request: StartSessionRequest, config?: CliAdapterConfig): Promise<Session> {
+  // ============================================
+  // CHAT MODE - AI Chat Tab, Floating Chat
+  // ============================================
+
+  async startChat(projectId: string, request: StartChatRequest, config?: CliAdapterConfig): Promise<StartChatResult> {
+    const response = await projectsApi.startChat(projectId, request);
+
+    if (config && response.session) {
+      this.streamConfigs.set(response.session.id, config);
+    }
+
+    return response;
+  }
+
+  // ============================================
+  // TASK MODE - Tasks Tab, Add Task, FullTaskDetails
+  // ============================================
+
+  async startTaskSession(request: StartSessionRequest, config?: CliAdapterConfig): Promise<StartTaskSessionResult> {
     const response = await sessionsApi.start(request);
 
     if (config && response.session) {
       this.streamConfigs.set(response.session.id, config);
     }
 
-    return response.session;
+    return { session: response.session, wsUrl: response.wsUrl };
   }
 
   async stop(sessionId: string): Promise<SessionControlResult> {

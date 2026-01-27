@@ -22,6 +22,8 @@ export class ClaudeCliAdapter implements ICliExecutor {
 
   async spawn(config: CliSpawnConfig): Promise<CliProcess> {
     const args = this.buildArgs(config);
+    // debugLog('[ClaudeCliAdapter] Spawning with args:', args.slice(0, 5).join(' '), '...');
+    // debugLog('[ClaudeCliAdapter] Working dir:', config.workingDir);
 
     // Pass session ID and backend URL to hooks via environment
     const proc = spawn('npx', args, {
@@ -34,9 +36,14 @@ export class ClaudeCliAdapter implements ICliExecutor {
       },
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,
+      windowsHide: true,
     });
 
+    // Debug: check stdin state
+    // debugLog('[ClaudeCliAdapter] stdin writable:', proc.stdin?.writable, 'destroyed:', proc.stdin?.destroyed);
+
     const processId = proc.pid!;
+    // debugLog('[ClaudeCliAdapter] Process spawned with PID:', processId);
     this.processes.set(processId, proc);
     this.outputCallbacks.set(processId, new Set());
     this.exitCallbacks.set(processId, new Set());
@@ -44,21 +51,37 @@ export class ClaudeCliAdapter implements ICliExecutor {
     // Set up output parsing
     this.setupOutputParsing(processId, proc);
 
+    // Track if spawn is complete to avoid premature cleanup
+    let spawnComplete = false;
+
     // Set up exit handler
     proc.on('exit', (code) => {
+      // debugLog('[ClaudeCliAdapter] Process exited with code:', code, 'spawnComplete:', spawnComplete);
       const callbacks = this.exitCallbacks.get(processId);
       callbacks?.forEach(cb => cb(code ?? 1));
-      this.cleanup(processId);
+      // Only cleanup if spawn is complete, otherwise let spawn handle the error
+      if (spawnComplete) {
+        this.cleanup(processId);
+      }
+    });
+
+    // Handle spawn errors
+    proc.on('error', (err) => {
+      console.error('[ClaudeCliAdapter] Spawn error:', err.message);
     });
 
     // Wait for session_id in output
     const cliProcess = await this.waitForSessionId(processId);
+    // debugLog('[ClaudeCliAdapter] Got session ID:', cliProcess.sessionId);
 
     // Send initial prompt via stdin if provided
     if (config.initialPrompt) {
+      // debugLog('[ClaudeCliAdapter] Sending initial prompt...');
       await this.sendMessage(processId, config.initialPrompt);
+      // debugLog('[ClaudeCliAdapter] Initial prompt sent');
     }
 
+    spawnComplete = true;
     return cliProcess;
   }
 
@@ -86,6 +109,11 @@ export class ClaudeCliAdapter implements ICliExecutor {
       args.push('--fork-session');
     }
 
+    // Agent
+    if (config.agentName) {
+      args.push('--agent', config.agentName);
+    }
+
     // Prompts
     if (config.systemPrompt) {
       args.push('--system-prompt', config.systemPrompt);
@@ -94,12 +122,12 @@ export class ClaudeCliAdapter implements ICliExecutor {
       args.push('--append-system-prompt', config.appendSystemPrompt);
     }
 
-    // Tools & Permissions
+    // Tools & Permissions (space-separated in single quoted string)
     if (config.allowedTools?.length) {
-      args.push('--allowedTools', config.allowedTools.join(' '));
+      args.push('--allowedTools', `"${config.allowedTools.join(' ')}"`);
     }
     if (config.disallowedTools?.length) {
-      args.push('--disallowedTools', config.disallowedTools.join(' '));
+      args.push('--disallowedTools', `"${config.disallowedTools.join(' ')}"`);
     }
     if (config.permissionMode) {
       args.push('--permission-mode', config.permissionMode);
@@ -120,6 +148,11 @@ export class ClaudeCliAdapter implements ICliExecutor {
       }
     }
 
+    // Custom subagents (--agents JSON)
+    if (config.customAgents && Object.keys(config.customAgents).length > 0) {
+      args.push('--agents', JSON.stringify(config.customAgents));
+    }
+
     // Note: initialPrompt is sent via stdin after spawn, not as CLI argument
     // because --input-format stream-json expects stdin input
 
@@ -130,7 +163,9 @@ export class ClaudeCliAdapter implements ICliExecutor {
     let buffer = '';
 
     proc.stdout?.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString();
+      const data = chunk.toString();
+      // debugLog('[ClaudeCliAdapter] STDOUT:', data.slice(0, 300));
+      buffer += data;
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
 
@@ -152,9 +187,11 @@ export class ClaudeCliAdapter implements ICliExecutor {
     });
 
     proc.stderr?.on('data', (chunk: Buffer) => {
+      const content = chunk.toString();
+      // debugLog('[ClaudeCliAdapter] STDERR:', content.slice(0, 500));
       this.notifyOutputListeners(processId, {
         type: 'system',
-        content: chunk.toString(),
+        content,
         timestamp: new Date(),
       });
     });
@@ -200,8 +237,11 @@ export class ClaudeCliAdapter implements ICliExecutor {
   }
 
   async sendMessage(processId: number, message: string): Promise<void> {
+    // debugLog('[ClaudeCliAdapter] sendMessage called for PID:', processId);
     const proc = this.processes.get(processId);
+    // debugLog('[ClaudeCliAdapter] proc found:', !!proc, 'stdin writable:', proc?.stdin?.writable);
     if (!proc?.stdin?.writable) {
+      // debugLog('[ClaudeCliAdapter] ERROR: ERROR: Process not found or stdin not writable');
       throw new Error('Process not found or stdin not writable');
     }
     // Format per Claude CLI --input-format stream-json spec

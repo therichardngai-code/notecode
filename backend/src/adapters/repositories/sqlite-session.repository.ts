@@ -5,7 +5,7 @@
 
 import { eq, desc, inArray } from 'drizzle-orm';
 import { ISessionRepository } from '../../domain/ports/repositories/session.repository.port.js';
-import { Session } from '../../domain/entities/session.entity.js';
+import { Session, ResumeMode } from '../../domain/entities/session.entity.js';
 import { SessionStatus, ProviderType } from '../../domain/value-objects/task-status.vo.js';
 import {
   TokenUsage,
@@ -100,12 +100,23 @@ export class SqliteSessionRepository implements ISessionRepository {
       ? JSON.parse(row.toolStats)
       : createEmptyToolStats();
 
+    // Parse context tracking arrays
+    const includedContextFiles: string[] = row.includedContextFiles
+      ? JSON.parse(row.includedContextFiles)
+      : [];
+    const includedSkills: string[] = row.includedSkills
+      ? JSON.parse(row.includedSkills)
+      : [];
+
     return new Session(
       row.id,
       row.taskId,
       row.agentId ?? null,
       row.parentSessionId ?? null,
       row.providerSessionId ?? null,
+      row.resumeMode as ResumeMode | null,
+      row.attemptNumber ?? 1,
+      row.resumedFromSessionId ?? null,
       row.name ?? '',
       row.status as SessionStatus,
       row.provider as ProviderType | null,
@@ -117,6 +128,8 @@ export class SqliteSessionRepository implements ISessionRepository {
       tokenUsage,
       modelUsage,
       toolStats,
+      includedContextFiles,
+      includedSkills,
       new Date(row.createdAt!),
       new Date(row.updatedAt!)
     );
@@ -129,6 +142,9 @@ export class SqliteSessionRepository implements ISessionRepository {
       agentId: session.agentId,
       parentSessionId: session.parentSessionId,
       providerSessionId: session.providerSessionId,
+      resumeMode: session.resumeMode,
+      attemptNumber: session.attemptNumber,
+      resumedFromSessionId: session.resumedFromSessionId,
       name: session.name,
       status: session.status,
       provider: session.provider,
@@ -145,6 +161,8 @@ export class SqliteSessionRepository implements ISessionRepository {
       estimatedCostUsd: session.tokenUsage.estimatedCostUsd,
       modelUsage: JSON.stringify(session.modelUsage),
       toolStats: JSON.stringify(session.toolStats),
+      includedContextFiles: JSON.stringify(session.includedContextFiles),
+      includedSkills: JSON.stringify(session.includedSkills),
       createdAt: session.createdAt.toISOString(),
       updatedAt: session.updatedAt.toISOString(),
     };

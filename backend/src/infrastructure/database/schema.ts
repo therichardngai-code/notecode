@@ -68,6 +68,20 @@ export const tasks = sqliteTable('tasks', {
   tools: text('tools'), // JSON object {mode, tools[]}
   contextFiles: text('context_files'), // JSON array
   workflowStage: text('workflow_stage'),
+  subagentDelegates: integer('subagent_delegates', { mode: 'boolean' }).default(false), // Enable Task tool + custom agents
+  // Git config
+  autoBranch: integer('auto_branch', { mode: 'boolean' }).default(false), // Auto-create branch on task start
+  autoCommit: integer('auto_commit', { mode: 'boolean' }).default(false), // Auto-commit on task complete
+  branchName: text('branch_name'), // Created branch name
+  baseBranch: text('base_branch'), // Branch forked from
+  branchCreatedAt: text('branch_created_at'), // When branch was created
+  permissionMode: text('permission_mode'), // 'default' | 'acceptEdits' | 'bypassPermissions'
+  // Attempt tracking
+  totalAttempts: integer('total_attempts').default(0),
+  renewCount: integer('renew_count').default(0),
+  retryCount: integer('retry_count').default(0),
+  forkCount: integer('fork_count').default(0),
+  lastAttemptAt: text('last_attempt_at'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
   startedAt: text('started_at'),
@@ -81,6 +95,9 @@ export const sessions = sqliteTable('sessions', {
   agentId: text('agent_id').references(() => agents.id, { onDelete: 'set null' }),
   parentSessionId: text('parent_session_id'), // For session forking/resume
   providerSessionId: text('provider_session_id'),
+  resumeMode: text('resume_mode'), // 'renew' | 'retry' | 'fork' | null (first run)
+  attemptNumber: integer('attempt_number').default(1), // Which attempt (1st, 2nd, 3rd...)
+  resumedFromSessionId: text('resumed_from_session_id'), // Direct link to source session
   name: text('name'),
   status: text('status').default('queued'),
   provider: text('provider'),
@@ -97,6 +114,9 @@ export const sessions = sqliteTable('sessions', {
   estimatedCostUsd: real('estimated_cost_usd').default(0),
   modelUsage: text('model_usage'), // JSON array
   toolStats: text('tool_stats'), // JSON object
+  // Context tracking for delta injection on resume
+  includedContextFiles: text('included_context_files'), // JSON array - files included at last message
+  includedSkills: text('included_skills'), // JSON array - skills included at last message
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
@@ -180,6 +200,38 @@ export const auditLogs = sqliteTable('audit_logs', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+// Hooks table (event-driven extensibility)
+export const hooks = sqliteTable('hooks', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  event: text('event').notNull(),
+  type: text('type').notNull(),
+  config: text('config').notNull(), // JSON HookConfig
+  filters: text('filters'), // JSON HookFilters
+  enabled: integer('enabled', { mode: 'boolean' }).default(true),
+  priority: integer('priority').default(0),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Git commit approvals table
+export const gitCommitApprovals = sqliteTable('git_commit_approvals', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  attemptNumber: integer('attempt_number').default(1),
+  status: text('status').default('pending'), // 'pending' | 'approved' | 'rejected'
+  commitMessage: text('commit_message'),
+  filesChanged: text('files_changed'), // JSON array
+  diffSummary: text('diff_summary'), // JSON object
+  commitSha: text('commit_sha'),
+  createdAt: text('created_at').notNull(),
+  resolvedAt: text('resolved_at'),
+  pushedAt: text('pushed_at'), // When commit was pushed (future)
+});
+
 // Type exports for schema inference
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProjectRow = typeof projects.$inferInsert;
@@ -199,3 +251,7 @@ export type DiffRow = typeof diffs.$inferSelect;
 export type NewDiffRow = typeof diffs.$inferInsert;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type NewAuditLogRow = typeof auditLogs.$inferInsert;
+export type GitCommitApprovalRow = typeof gitCommitApprovals.$inferSelect;
+export type NewGitCommitApprovalRow = typeof gitCommitApprovals.$inferInsert;
+export type HookRow = typeof hooks.$inferSelect;
+export type NewHookRow = typeof hooks.$inferInsert;

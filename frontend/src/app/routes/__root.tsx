@@ -94,7 +94,7 @@ function RootLayout() {
           <div className="flex-1 flex overflow-hidden">
             {/* Toggle Panel */}
             <div
-              className={`border-r border-border flex flex-col bg-sidebar shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
+              className={`border-r border-border/50 flex flex-col glass-subtle shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
                 showPanel ? 'w-64 opacity-100' : 'w-0 opacity-0'
               }`}
             >
@@ -109,7 +109,7 @@ function RootLayout() {
             </div>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-auto bg-background">
+            <main className="flex-1 overflow-auto">
               <Outlet />
             </main>
           </div>
@@ -122,7 +122,7 @@ function RootLayout() {
       <FloatingChatPanel onGoToFullChat={handleGoToFullChat} />
       <FloatingSettingsPanel isOpen={isSettingsPanelOpen} onClose={() => setIsSettingsPanelOpen(false)} onOpenFullSettings={handleOpenFullSettings} />
       <FloatingNewTaskPanel onCreateTask={handleCreateTask} onAutoStart={handleAutoStartTask} onOpenFullTask={handleOpenFullTask} />
-      <FloatingTaskDetailPanel isOpen={isTaskDetailPanelOpen} taskId={selectedTaskId} onClose={closeTaskDetailPanel} onOpenFullView={handleOpenTaskAsTab} />
+      <FloatingTaskDetailPanel isOpen={isTaskDetailPanelOpen} taskId={selectedTaskId} onClose={closeTaskDetailPanel} />
     </AppShell>
   );
 }

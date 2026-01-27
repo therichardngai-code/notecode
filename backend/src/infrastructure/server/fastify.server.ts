@@ -7,12 +7,21 @@ import Fastify, { FastifyInstance } from 'fastify';
 import { WebSocketServer } from 'ws';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
 import {
   registerProjectController,
   registerTaskController,
   registerSessionController,
   registerApprovalController,
   registerMemoryController,
+  registerUploadController,
+  registerChatController,
+  registerGitController,
+  registerHookController,
+  registerSystemController,
+  registerSettingsController,
+  registerVersionController,
+  registerBackupController,
 } from '../../adapters/controllers/index.js';
 import { registerNotificationSSE } from '../../adapters/sse/notification-sse.handler.js';
 import { SessionStreamHandler } from '../../adapters/websocket/session-stream.handler.js';
@@ -25,7 +34,15 @@ import { SqliteApprovalRepository } from '../../adapters/repositories/sqlite-app
 import { SqliteDiffRepository } from '../../adapters/repositories/sqlite-diff.repository.js';
 import { SqliteSettingsRepository } from '../../adapters/repositories/sqlite-settings.repository.js';
 import { SqliteAgentSummaryRepository } from '../../adapters/repositories/sqlite-agent-summary.repository.js';
+import { SqliteGitApprovalRepository } from '../../adapters/repositories/sqlite-git-approval.repository.js';
+import { SqliteHookRepository } from '../../adapters/repositories/sqlite-hook.repository.js';
 import { LanceDBMemoryRepository } from '../../adapters/repositories/lancedb-memory.repository.js';
+import { GitService } from '../../domain/services/git.service.js';
+import { HookExecutorService, HookContext } from '../../domain/services/hook-executor.service.js';
+import { ShellHookRunner } from '../../adapters/services/shell-hook-runner.js';
+import { HttpHookRunner } from '../../adapters/services/http-hook-runner.js';
+import { WebSocketHookRunner } from '../../adapters/services/websocket-hook-runner.js';
+import { HookEvent } from '../../domain/entities/hook.entity.js';
 import { ClaudeCliAdapter } from '../../adapters/gateways/claude-cli.adapter.js';
 import { GoogleEmbeddingAdapter } from '../../adapters/gateways/google-embedding.adapter.js';
 import { OpenAIEmbeddingAdapter } from '../../adapters/gateways/openai-embedding.adapter.js';
@@ -37,6 +54,9 @@ import { StartSessionUseCase } from '../../use-cases/sessions/start-session.use-
 import { StopSessionUseCase } from '../../use-cases/sessions/stop-session.use-case.js';
 import { PauseSessionUseCase } from '../../use-cases/sessions/pause-session.use-case.js';
 import { ResolveApprovalUseCase } from '../../use-cases/approvals/resolve-approval.use-case.js';
+import { ExportDataUseCase } from '../../use-cases/backup/export-data.use-case.js';
+import { VersionCheckService } from '../../adapters/services/version-check.service.js';
+import { CliToolInterceptorService } from '../../adapters/services/cli-tool-interceptor.service.js';
 import { getEventBus } from '../../domain/events/event-bus.js';
 
 export interface ServerOptions {
@@ -79,6 +99,13 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     }),
   });
 
+  // Register multipart for file uploads
+  await app.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024, // 50MB max file size
+    },
+  });
+
   // Health check endpoint
   app.get('/health', async () => ({
     status: 'ok',
@@ -102,6 +129,17 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const diffRepo = new SqliteDiffRepository();
   const settingsRepo = new SqliteSettingsRepository();
   const agentSummaryRepo = new SqliteAgentSummaryRepository();
+  const gitApprovalRepo = new SqliteGitApprovalRepository();
+  const hookRepo = new SqliteHookRepository();
+
+  // Initialize git service
+  const gitService = new GitService();
+
+  // Initialize hook system
+  const shellRunner = new ShellHookRunner();
+  const httpRunner = new HttpHookRunner();
+  const wsRunner = new WebSocketHookRunner();
+  const hookExecutor = new HookExecutorService(hookRepo, shellRunner, httpRunner, wsRunner);
 
   // Initialize CLI executor
   const cliExecutor = new ClaudeCliAdapter();
@@ -176,7 +214,12 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
   // Register controllers
   registerProjectController(app, projectRepo);
-  registerTaskController(app, taskRepo);
+  registerTaskController(app, taskRepo, {
+    projectRepo,
+    gitApprovalRepo,
+    gitService,
+    eventBus,
+  });
   registerSessionController(app, {
     sessionRepo,
     messageRepo,
@@ -196,6 +239,52 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     extractMemoryUseCase,
     memoryInjectionService
   );
+
+  // Register upload controller (for clipboard paste screenshots)
+  registerUploadController(app, projectRepo);
+
+  // Register chat controller
+  registerChatController(app, {
+    projectRepo,
+    taskRepo,
+    sessionRepo,
+    startSessionUseCase,
+  });
+
+  // Register git controller
+  registerGitController(
+    app,
+    taskRepo,
+    projectRepo,
+    gitApprovalRepo,
+    gitService,
+    eventBus
+  );
+
+  // Register hook controller
+  registerHookController(app, hookRepo, hookExecutor);
+
+  // Register system controller (folder picker, path validation)
+  registerSystemController(app);
+
+  // Register settings controller
+  registerSettingsController(app, settingsRepo);
+
+  // Initialize and register version check
+  const versionService = new VersionCheckService();
+  registerVersionController(app, versionService);
+
+  // Initialize and register backup/export
+  const exportDataUseCase = new ExportDataUseCase(
+    projectRepo,
+    taskRepo,
+    sessionRepo,
+    messageRepo
+  );
+  registerBackupController(app, exportDataUseCase);
+
+  // Wire hooks to event bus
+  wireHooksToEventBus(eventBus, hookExecutor, taskRepo, sessionRepo);
 
   // Register SSE notifications
   if (options.enableSSE !== false) {
@@ -230,7 +319,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Setup WebSocket after server is ready
   if (options.enableWebSocket !== false) {
     app.addHook('onReady', () => {
-      setupWebSocket(app, cliExecutor, sessionRepo, messageRepo, approvalRepo, eventBus);
+      setupWebSocket(app, cliExecutor, sessionRepo, messageRepo, approvalRepo, eventBus, settingsRepo, taskRepo, hookExecutor);
     });
   }
 
@@ -246,17 +335,22 @@ function setupWebSocket(
   sessionRepo: SqliteSessionRepository,
   messageRepo: SqliteMessageRepository,
   approvalRepo: SqliteApprovalRepository,
-  eventBus: ReturnType<typeof getEventBus>
+  eventBus: ReturnType<typeof getEventBus>,
+  settingsRepo: SqliteSettingsRepository,
+  taskRepo: SqliteTaskRepository,
+  hookExecutor: HookExecutorService
 ): void {
   // Create WebSocket server in noServer mode
   const wss = new WebSocketServer({ noServer: true });
 
-  // Create session stream handler
+  // Create session stream handler with settingsRepo and taskRepo for auto-resume with delta tracking
   wsHandler = new SessionStreamHandler(
     wss,
     cliExecutor,
     sessionRepo,
-    messageRepo
+    messageRepo,
+    settingsRepo,
+    taskRepo
   );
 
   // Create and attach approval interceptor
@@ -267,6 +361,11 @@ function setupWebSocket(
   );
   wsHandler.setApprovalInterceptor(approvalInterceptor);
   app.log.info('Approval interceptor attached to WebSocket handler');
+
+  // Create and attach CLI tool interceptor (blocking hooks)
+  const toolInterceptor = new CliToolInterceptorService(hookExecutor);
+  wsHandler.setToolInterceptor(toolInterceptor);
+  app.log.info('CLI tool interceptor attached to WebSocket handler');
 
   // Wire up the approval use case callback to interceptor
   const resolveUseCase = (app as unknown as { resolveApprovalUseCase: ResolveApprovalUseCase }).resolveApprovalUseCase;
@@ -300,4 +399,136 @@ function setupWebSocket(
   });
 
   app.log.info('WebSocket server initialized on /ws/*');
+}
+
+/**
+ * Wire hooks to EventBus for automatic execution on domain events
+ */
+function wireHooksToEventBus(
+  eventBus: ReturnType<typeof getEventBus>,
+  hookExecutor: HookExecutorService,
+  taskRepo: SqliteTaskRepository,
+  sessionRepo: SqliteSessionRepository
+): void {
+  // Helper to execute hooks silently (log errors but don't throw)
+  const executeHooks = async (context: HookContext) => {
+    try {
+      const results = await hookExecutor.execute(context);
+      for (const result of results) {
+        if (!result.success) {
+          console.warn(`[Hooks] Hook "${result.hookName}" failed: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('[Hooks] Execution error:', error);
+    }
+  };
+
+  // Session events
+  eventBus.subscribe('session.started', async (event) => {
+    const session = await sessionRepo.findById(event.aggregateId);
+    const task = session?.taskId ? await taskRepo.findById(session.taskId) : null;
+    await executeHooks({
+      event: 'session:start' as HookEvent,
+      projectId: task?.projectId,
+      taskId: session?.taskId ?? undefined,
+      sessionId: event.aggregateId,
+      data: { provider: (event as { provider?: string }).provider },
+    });
+  });
+
+  eventBus.subscribe('session.completed', async (event) => {
+    const session = await sessionRepo.findById(event.aggregateId);
+    const task = session?.taskId ? await taskRepo.findById(session.taskId) : null;
+    await executeHooks({
+      event: 'session:end' as HookEvent,
+      projectId: task?.projectId,
+      taskId: session?.taskId ?? undefined,
+      sessionId: event.aggregateId,
+      data: { tokenUsage: (event as { tokenUsage?: unknown }).tokenUsage },
+    });
+  });
+
+  eventBus.subscribe('session.failed', async (event) => {
+    const session = await sessionRepo.findById(event.aggregateId);
+    const task = session?.taskId ? await taskRepo.findById(session.taskId) : null;
+    await executeHooks({
+      event: 'session:error' as HookEvent,
+      projectId: task?.projectId,
+      taskId: session?.taskId ?? undefined,
+      sessionId: event.aggregateId,
+      data: { reason: (event as { reason?: string }).reason },
+    });
+  });
+
+  // Task events
+  eventBus.subscribe('task.created', async (event) => {
+    await executeHooks({
+      event: 'task:created' as HookEvent,
+      projectId: (event as { projectId?: string }).projectId,
+      taskId: event.aggregateId,
+      data: { title: (event as { title?: string }).title },
+    });
+  });
+
+  eventBus.subscribe('task.status.changed', async (event) => {
+    await executeHooks({
+      event: 'task:status:change' as HookEvent,
+      projectId: (event as { projectId?: string }).projectId,
+      taskId: event.aggregateId,
+      data: {
+        oldStatus: (event as { oldStatus?: string }).oldStatus,
+        newStatus: (event as { newStatus?: string }).newStatus,
+        status: (event as { newStatus?: string }).newStatus, // Alias for filters
+      },
+    });
+  });
+
+  // Approval events
+  eventBus.subscribe('approval.pending', async (event) => {
+    await executeHooks({
+      event: 'approval:pending' as HookEvent,
+      sessionId: (event as { sessionId?: string }).sessionId,
+      data: {
+        toolName: (event as { toolName?: string }).toolName,
+        timeoutAt: (event as { timeoutAt?: Date }).timeoutAt?.toISOString(),
+      },
+    });
+  });
+
+  eventBus.subscribe('approval.resolved', async (event) => {
+    await executeHooks({
+      event: 'approval:resolved' as HookEvent,
+      sessionId: (event as { sessionId?: string }).sessionId,
+      data: {
+        approved: (event as { approved?: boolean }).approved,
+        toolName: (event as { toolName?: string }).toolName,
+      },
+    });
+  });
+
+  // Git events
+  eventBus.subscribe('git:approval:created', async (event) => {
+    await executeHooks({
+      event: 'git:commit:created' as HookEvent,
+      projectId: (event as { projectId?: string }).projectId,
+      taskId: (event as { taskId?: string }).taskId,
+      data: {
+        commitMessage: (event as { commitMessage?: string }).commitMessage,
+        filesChanged: (event as { filesChanged?: string[] }).filesChanged,
+        diffSummary: (event as { diffSummary?: unknown }).diffSummary,
+      },
+    });
+  });
+
+  eventBus.subscribe('git:approval:resolved', async (event) => {
+    await executeHooks({
+      event: 'git:commit:approved' as HookEvent,
+      projectId: (event as { projectId?: string }).projectId,
+      data: {
+        status: (event as { status?: string }).status,
+        commit: (event as { commit?: unknown }).commit,
+      },
+    });
+  });
 }

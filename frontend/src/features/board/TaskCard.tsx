@@ -42,7 +42,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       {...attributes}
       {...listeners}
       onClick={() => onClick?.(task.id)}
-      className={`bg-white rounded-lg border-2 border-gray-200 p-4 mb-3 cursor-pointer hover:shadow-md transition-shadow ${
+      className={`glass rounded-lg p-4 mb-3 cursor-pointer hover:shadow-md transition-shadow ${
         isDragging ? 'shadow-xl' : ''
       }`}
     >

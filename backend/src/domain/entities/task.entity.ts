@@ -15,6 +15,16 @@ export interface ToolConfig {
   tools: string[];
 }
 
+export interface TaskGitConfig {
+  autoBranch: boolean;
+  autoCommit: boolean;
+  branchName: string | null;
+  baseBranch: string | null;
+  branchCreatedAt: Date | null;
+}
+
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
+
 export class Task {
   constructor(
     public readonly id: string,
@@ -35,11 +45,43 @@ export class Task {
     public tools: ToolConfig | null,
     public contextFiles: string[],
     public workflowStage: string | null,
+    public subagentDelegates: boolean, // Enable Task tool + custom agents
+    // Git config
+    public autoBranch: boolean,
+    public autoCommit: boolean,
+    public branchName: string | null,
+    public baseBranch: string | null,
+    public branchCreatedAt: Date | null,
+    public permissionMode: PermissionMode | null,
+    // Attempt tracking
+    public totalAttempts: number,
+    public renewCount: number,
+    public retryCount: number,
+    public forkCount: number,
+    public lastAttemptAt: Date | null,
     public readonly createdAt: Date,
     public updatedAt: Date,
     public startedAt: Date | null,
     public completedAt: Date | null
   ) {}
+
+  /**
+   * Record a new session attempt
+   */
+  recordAttempt(mode: 'renew' | 'retry' | 'fork' | null): void {
+    this.totalAttempts++;
+    this.lastAttemptAt = new Date();
+    this.updatedAt = new Date();
+
+    if (mode === 'renew') {
+      this.renewCount++;
+    } else if (mode === 'retry') {
+      this.retryCount++;
+    } else if (mode === 'fork') {
+      this.forkCount++;
+    }
+    // null mode = first attempt, don't increment any specific counter
+  }
 
   canStart(): boolean {
     return this.status === TaskStatus.NOT_STARTED;
@@ -145,5 +187,67 @@ export class Task {
   setContextFiles(files: string[]): void {
     this.contextFiles = files;
     this.updatedAt = new Date();
+  }
+
+  /**
+   * Set git configuration
+   */
+  setGitConfig(autoBranch: boolean, autoCommit: boolean): void {
+    this.autoBranch = autoBranch;
+    this.autoCommit = autoCommit;
+    this.updatedAt = new Date();
+  }
+
+  /**
+   * Set branch info after branch creation
+   */
+  setBranchInfo(branchName: string, baseBranch: string): void {
+    this.branchName = branchName;
+    this.baseBranch = baseBranch;
+    this.branchCreatedAt = new Date();
+    this.updatedAt = new Date();
+  }
+
+  /**
+   * Clear branch info after branch deletion
+   */
+  clearBranchInfo(): void {
+    this.branchName = null;
+    this.baseBranch = null;
+    this.branchCreatedAt = null;
+    this.updatedAt = new Date();
+  }
+
+  /**
+   * Generate branch name from task id and title
+   */
+  generateBranchName(): string {
+    const shortId = this.id.slice(0, 8);
+    const slug = this.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 30);
+    return `task/${shortId}-${slug}`;
+  }
+
+  /**
+   * Check if task has git branch configured
+   */
+  hasBranch(): boolean {
+    return this.branchName !== null;
+  }
+
+  /**
+   * Get git config as object
+   */
+  getGitConfig(): TaskGitConfig {
+    return {
+      autoBranch: this.autoBranch,
+      autoCommit: this.autoCommit,
+      branchName: this.branchName,
+      baseBranch: this.baseBranch,
+      branchCreatedAt: this.branchCreatedAt,
+    };
   }
 }

@@ -3,6 +3,7 @@ import { ApiKeysSection } from './ApiKeysSection';
 import { DefaultModelSection } from './DefaultModelSection';
 import { ToolsConfigSection } from './ToolsConfigSection';
 import { YoloModeToggle } from './YoloModeToggle';
+import { BackupSection } from './BackupSection';
 
 type TabId = 'general' | 'api-keys' | 'tools' | 'advanced';
 
@@ -57,9 +58,8 @@ export function SettingsContainer() {
           {activeTab === 'api-keys' && <ApiKeysSection />}
           {activeTab === 'tools' && <ToolsConfigSection />}
           {activeTab === 'advanced' && (
-            <div className="text-gray-600">
-              <h2 className="text-lg font-semibold mb-2">Advanced Settings</h2>
-              <p>Advanced configuration options will be available here.</p>
+            <div className="space-y-6">
+              <BackupSection />
             </div>
           )}
         </div>

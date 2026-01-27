@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Filter, FolderOpen, Sparkles, LayoutList, Kanban, Brain, BarChart3 } from 'lucide-react';
 
 // New session icon (notepad with pen)
@@ -53,14 +54,14 @@ export function NewTabPanel({ isOpen, onClose, onSelectPage, onCreateNew }: NewT
     page.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  return (
+  return createPortal(
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 z-[100] bg-black/50" onClick={onClose} />
 
       {/* Centered Modal */}
-      <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] pointer-events-none">
-        <div className="w-full max-w-2xl bg-sidebar border border-sidebar-border rounded-xl shadow-2xl overflow-hidden pointer-events-auto">
+      <div className="fixed inset-0 z-[110] flex items-start justify-center pt-[15vh] pointer-events-none">
+        <div className="w-full max-w-2xl glass-strong border border-white/20 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden pointer-events-auto">
           {/* Search Input */}
           <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-border">
             <Search className="w-5 h-5 text-muted-foreground shrink-0" />
@@ -173,6 +174,7 @@ export function NewTabPanel({ isOpen, onClose, onSelectPage, onCreateNew }: NewT
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

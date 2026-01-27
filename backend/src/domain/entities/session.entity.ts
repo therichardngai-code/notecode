@@ -32,6 +32,8 @@ export class SessionCompletedEvent implements DomainEvent {
   ) {}
 }
 
+export type ResumeMode = 'renew' | 'retry' | 'fork';
+
 export class Session {
   private _events: DomainEvent[] = [];
 
@@ -41,6 +43,9 @@ export class Session {
     public agentId: string | null,
     public parentSessionId: string | null, // For session forking/resume
     public providerSessionId: string | null,
+    public resumeMode: ResumeMode | null, // Mode used to create this session
+    public attemptNumber: number, // Which attempt (1, 2, 3...)
+    public resumedFromSessionId: string | null, // Direct link to source session
     public name: string,
     public status: SessionStatus,
     public provider: ProviderType | null,
@@ -52,6 +57,9 @@ export class Session {
     public tokenUsage: TokenUsage,
     public modelUsage: ModelUsage[],
     public toolStats: ToolStats,
+    // Context tracking for delta injection on resume
+    public includedContextFiles: string[],
+    public includedSkills: string[],
     public readonly createdAt: Date,
     public updatedAt: Date
   ) {}
@@ -63,7 +71,12 @@ export class Session {
     provider: ProviderType | null,
     workingDir: string,
     agentId: string | null = null,
-    parentSessionId: string | null = null
+    parentSessionId: string | null = null,
+    resumeMode: ResumeMode | null = null,
+    attemptNumber: number = 1,
+    resumedFromSessionId: string | null = null,
+    includedContextFiles: string[] = [],
+    includedSkills: string[] = []
   ): Session {
     const now = new Date();
     return new Session(
@@ -72,6 +85,9 @@ export class Session {
       agentId,
       parentSessionId,
       null,
+      resumeMode,
+      attemptNumber,
+      resumedFromSessionId,
       name,
       SessionStatus.QUEUED,
       provider,
@@ -83,6 +99,8 @@ export class Session {
       createEmptyTokenUsage(),
       [],
       createEmptyToolStats(),
+      includedContextFiles,
+      includedSkills,
       now,
       now
     );

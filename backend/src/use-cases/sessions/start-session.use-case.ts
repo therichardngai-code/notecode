@@ -4,6 +4,9 @@
  */
 
 import { randomUUID } from 'crypto';
+import { existsSync, readdirSync, readFileSync } from 'fs';
+import { join, basename } from 'path';
+import { homedir } from 'os';
 import { ISessionRepository } from '../../domain/ports/repositories/session.repository.port.js';
 import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
@@ -24,6 +27,13 @@ export interface StartSessionRequest {
   forkSession?: boolean;
   permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
   maxBudgetUsd?: number;
+  /**
+   * Session start mode:
+   * - 'renew': Fresh session, no history (default)
+   * - 'retry': Resume last session (--resume)
+   * - 'fork': New session but keeps context (--resume --fork-session)
+   */
+  mode?: 'renew' | 'retry' | 'fork';
 }
 
 export interface StartSessionResponse {
@@ -56,12 +66,53 @@ export class StartSessionUseCase {
       return { success: false, error: 'Project not found' };
     }
 
-    // 3. Check for existing running session
+    // 3. Check task status - must be IN_PROGRESS to start session
+    if (task.status !== TaskStatus.IN_PROGRESS) {
+      return { success: false, error: `Task must be in-progress to start session (current: ${task.status})` };
+    }
+
+    // 4. Check for existing sessions
     const existingSessions = await this.sessionRepo.findByTaskId(task.id);
     const runningSession = existingSessions.find(s => s.status === SessionStatus.RUNNING);
     if (runningSession && !request.forkSession) {
       return { success: false, error: 'Task already has a running session' };
     }
+
+    // 5. Handle mode: retry/fork - find last session to resume
+    let resumeFromSessionId = request.resumeSessionId;
+    let shouldFork = request.forkSession ?? false;
+
+    if ((request.mode === 'retry' || request.mode === 'fork') && !resumeFromSessionId && existingSessions.length > 0) {
+      // Find most recent session with providerSessionId
+      const lastSession = existingSessions
+        .filter(s => s.providerSessionId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      if (lastSession) {
+        resumeFromSessionId = lastSession.providerSessionId!;
+      }
+    }
+
+    // Fork mode sets forkSession flag
+    if (request.mode === 'fork') {
+      shouldFork = true;
+    }
+
+    // Calculate attempt number
+    const attemptNumber = existingSessions.length + 1;
+
+    // Determine resume mode for this session
+    const resumeMode = existingSessions.length === 0 ? null : (request.mode ?? 'renew');
+
+    // Find source session for resumedFromSessionId
+    let resumedFromSessionId: string | null = null;
+    if (resumeFromSessionId && (request.mode === 'retry' || request.mode === 'fork')) {
+      const sourceSession = existingSessions.find(s => s.providerSessionId === resumeFromSessionId);
+      resumedFromSessionId = sourceSession?.id ?? null;
+    }
+
+    // Record attempt on task
+    task.recordAttempt(resumeMode);
+    await this.taskRepo.save(task);
 
     // 4. Get global settings for defaults
     const settings = await this.settingsRepo.getGlobal();
@@ -75,21 +126,25 @@ export class StartSessionUseCase {
     }
     const provider = task.provider ?? (settings.defaultProvider as ProviderType);
     const model = task.model ?? settings.defaultModel;
-    const fallbackModel = settings.fallbackModel;
+    // Don't use fallback if same as main model
+    const fallbackModel = settings.fallbackModel !== model ? settings.fallbackModel : undefined;
     const sessionId = randomUUID();
-    // 7. Set parentSessionId when forking or resuming
-    const parentSessionId = (request.forkSession || request.resumeSessionId)
-      ? request.resumeSessionId ?? null
+    // 8. Set parentSessionId when forking or resuming
+    const parentSessionId = (request.forkSession || resumeFromSessionId)
+      ? resumeFromSessionId ?? null
       : null;
 
-    // 8. Create session entity
+    // 8. Create session entity with context tracking for delta injection
     const session = new Session(
       sessionId,
       task.id,
       request.agentId ?? task.agentId,
       parentSessionId,
       null, // providerSessionId - set after spawn
-      `${task.title} - Session ${existingSessions.length + 1}`,
+      resumeMode,
+      attemptNumber,
+      resumedFromSessionId,
+      `${task.title} - Session ${attemptNumber}`,
       SessionStatus.QUEUED,
       provider,
       null, // processId - set after spawn
@@ -98,32 +153,66 @@ export class StartSessionUseCase {
       createEmptyTokenUsage(),
       [],
       createEmptyToolStats(),
+      [...task.contextFiles], // Track included context files for delta on resume
+      [...task.skills],       // Track included skills for delta on resume
       new Date(),
       new Date()
     );
 
-    // 9. Build initial prompt from task title + description (first user message)
+    // 9. Build initial prompt from task title + description + context files + skills (first user message)
+    const contextFilesSection = task.contextFiles.length > 0
+      ? `\n\n<context-files>\n${task.contextFiles.map(f => `@${f}`).join('\n')}\n</context-files>`
+      : '';
+
+    // Add skill files as context with priority-based path resolution
+    const resolvedSkillPaths = task.skills
+      .map(s => this.resolveSkillPath(provider, s, project.path))
+      .filter((p): p is string => p !== null);
+    const skillFilesSection = resolvedSkillPaths.length > 0
+      ? `\n\n<skills>\n${resolvedSkillPaths.map(p => `@${p}`).join('\n')}\n</skills>`
+      : '';
+
     const taskPrompt = request.initialPrompt
-      ?? `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>`;
+      ?? `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${skillFilesSection}`;
 
     // 10. Build system prompt: settings (global) → project (override) → agent memory (append)
     const systemPrompt = await this.buildSystemPrompt(project, settings, session.agentId);
 
-    // 11. Build CLI spawn config
+    // 11. Build allowed tools list
+    let allowedTools = task.tools?.mode === 'allowlist' ? [...task.tools.tools] : undefined;
+
+    // If subagentDelegates enabled, ensure Task tool is allowed
+    if (task.subagentDelegates) {
+      if (allowedTools) {
+        if (!allowedTools.includes('Task')) {
+          allowedTools.push('Task');
+        }
+      }
+      // If no allowlist, Task is already available by default
+    }
+
+    // 12. Discover custom agents if subagentDelegates enabled
+    const customAgents = task.subagentDelegates
+      ? this.discoverCustomAgents(provider, project.path)
+      : undefined;
+
+    // 13. Build CLI spawn config
     const cliConfig: CliSpawnConfig = {
       provider: provider,
       model: model,
       workingDir: session.workingDir,
       sessionId: sessionId,
+      agentName: task.agentRole ?? undefined,  // Pass agent role to --agent flag
       initialPrompt: taskPrompt,
       systemPrompt: systemPrompt,
-      resumeSessionId: request.resumeSessionId,
-      forkSession: request.forkSession,
-      allowedTools: task.tools?.mode === 'allowlist' ? task.tools.tools : undefined,
+      resumeSessionId: resumeFromSessionId,
+      forkSession: shouldFork,
+      allowedTools: allowedTools,
       disallowedTools: task.tools?.mode === 'blocklist' ? task.tools.tools : undefined,
-      permissionMode: request.permissionMode ?? 'default',
+      permissionMode: request.permissionMode ?? task.permissionMode ?? 'default',
       maxBudgetUsd: request.maxBudgetUsd,
       fallbackModel: fallbackModel,
+      customAgents: customAgents,
     };
 
     // 12. Spawn CLI process
@@ -134,13 +223,7 @@ export class StartSessionUseCase {
       session.start(cliProcess.sessionId, cliProcess.processId);
       await this.sessionRepo.save(session);
 
-      // 14. Update task status if not started
-      if (task.status === TaskStatus.NOT_STARTED) {
-        task.start();
-        await this.taskRepo.save(task);
-      }
-
-      // 15. Publish event
+      // 14. Publish event
       this.eventBus.publish([
         new SessionStartedEvent(session.id, task.id, session.provider)
       ]);
@@ -197,5 +280,141 @@ export class StartSessionUseCase {
     }
 
     return parts.length > 0 ? parts.join('\n\n') : undefined;
+  }
+
+  /**
+   * Resolve skill file path with priority-based lookup
+   * Priority (matches agent discovery order):
+   * 1. {project}/.claude/skills/{skill}/SKILL.md (project provider-specific)
+   * 2. {project}/.notecode/skills/{skill}/SKILL.md (project universal)
+   * 3. ~/.claude/skills/{skill}/SKILL.md (user provider-specific)
+   * 4. ~/.notecode/skills/{skill}/SKILL.md (user universal)
+   */
+  private resolveSkillPath(
+    provider: ProviderType,
+    skillName: string,
+    projectPath: string
+  ): string | null {
+    const providerFolder = this.getProviderFolder(provider);
+    const skillFile = `skills/${skillName}/SKILL.md`;
+    const home = homedir();
+
+    // Priority order (matches agent discovery)
+    const candidates = [
+      join(projectPath, providerFolder, skillFile),   // 1. project/.claude/
+      join(projectPath, '.notecode', skillFile),      // 2. project/.notecode/
+      join(home, providerFolder, skillFile),          // 3. ~/.claude/
+      join(home, '.notecode', skillFile),             // 4. ~/.notecode/
+    ];
+
+    // Return first existing path
+    for (const path of candidates) {
+      if (existsSync(path)) {
+        return path;
+      }
+    }
+
+    // No skill file found
+    return null;
+  }
+
+  /**
+   * Map provider to folder name
+   */
+  private getProviderFolder(provider: ProviderType): string {
+    const folders: Record<ProviderType, string> = {
+      [ProviderType.ANTHROPIC]: '.claude',
+      [ProviderType.GOOGLE]: '.gemini',
+      [ProviderType.OPENAI]: '.openai',
+    };
+    return folders[provider] ?? '.notecode';
+  }
+
+  /**
+   * Discover custom agents from multiple folders with priority
+   * Priority (lower wins):
+   *   1. {project}/.claude/agents/
+   *   2. {project}/.notecode/agents/
+   *   3. ~/.claude/agents/
+   *   4. ~/.notecode/agents/
+   */
+  private discoverCustomAgents(
+    provider: ProviderType,
+    projectPath: string
+  ): Record<string, { description: string; prompt: string; tools?: string[]; model?: string }> | undefined {
+    const providerFolder = this.getProviderFolder(provider);
+    const home = homedir();
+
+    // Priority order (first match wins for same agent name)
+    const agentDirs = [
+      join(projectPath, providerFolder, 'agents'),   // 1. project/.claude/agents/
+      join(projectPath, '.notecode', 'agents'),      // 2. project/.notecode/agents/
+      join(home, providerFolder, 'agents'),          // 3. ~/.claude/agents/
+      join(home, '.notecode', 'agents'),             // 4. ~/.notecode/agents/
+    ];
+
+    const agents: Record<string, { description: string; prompt: string; tools?: string[]; model?: string }> = {};
+
+    for (const dir of agentDirs) {
+      if (!existsSync(dir)) continue;
+
+      try {
+        const files = readdirSync(dir).filter(f => f.endsWith('.md'));
+        for (const file of files) {
+          const agentName = basename(file, '.md');
+          // Skip if already discovered (higher priority)
+          if (agents[agentName]) continue;
+
+          const filePath = join(dir, file);
+          const parsed = this.parseAgentFile(filePath);
+          if (parsed) {
+            agents[agentName] = parsed;
+          }
+        }
+      } catch {
+        // Ignore read errors
+      }
+    }
+
+    return Object.keys(agents).length > 0 ? agents : undefined;
+  }
+
+  /**
+   * Parse agent markdown file with YAML frontmatter
+   * Format: ---\nname: ...\ndescription: ...\n---\n<prompt body>
+   */
+  private parseAgentFile(filePath: string): { description: string; prompt: string; tools?: string[]; model?: string } | null {
+    try {
+      const content = readFileSync(filePath, 'utf-8');
+      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+
+      if (!frontmatterMatch) return null;
+
+      const frontmatter = frontmatterMatch[1];
+      const prompt = frontmatterMatch[2].trim();
+
+      // Parse YAML frontmatter (simple parser)
+      const descMatch = frontmatter.match(/description:\s*(.+)/);
+      const toolsMatch = frontmatter.match(/tools:\s*(.+)/);
+      const modelMatch = frontmatter.match(/model:\s*(.+)/);
+
+      if (!descMatch) return null;
+
+      const result: { description: string; prompt: string; tools?: string[]; model?: string } = {
+        description: descMatch[1].trim(),
+        prompt: prompt,
+      };
+
+      if (toolsMatch) {
+        result.tools = toolsMatch[1].split(',').map(t => t.trim());
+      }
+      if (modelMatch) {
+        result.model = modelMatch[1].trim();
+      }
+
+      return result;
+    } catch {
+      return null;
+    }
   }
 }

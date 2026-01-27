@@ -6,16 +6,26 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import { randomUUID } from 'crypto';
-import { ICliExecutor, CliOutput } from '../../domain/ports/gateways/cli-executor.port.js';
+import { ICliExecutor, CliOutput, CliSpawnConfig } from '../../domain/ports/gateways/cli-executor.port.js';
 import { ISessionRepository } from '../../domain/ports/repositories/session.repository.port.js';
+import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
 import { IMessageRepository } from '../../domain/ports/repositories/message.repository.port.js';
+import { ISettingsRepository } from '../repositories/sqlite-settings.repository.js';
 import { Message } from '../../domain/entities/message.entity.js';
+import { Session } from '../../domain/entities/session.entity.js';
+import { SessionStatus, ProviderType } from '../../domain/value-objects/task-status.vo.js';
 import type { ApprovalInterceptorService } from '../gateways/approval-interceptor.service.js';
+import type { CliToolInterceptorService } from '../services/cli-tool-interceptor.service.js';
 
 // Client -> Server message types
 interface ClientMessage {
   type: 'user_input' | 'cancel' | 'approval_response';
   content?: string;
+  // Optional overrides for resume
+  model?: string;
+  permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
+  files?: string[];  // Additional files to inject
+  disableWebTools?: boolean;  // Disable WebSearch/WebFetch
   requestId?: string;
   approved?: boolean;
 }
@@ -49,12 +59,15 @@ export class SessionStreamHandler {
   private clients = new Map<string, Set<WebSocket>>();
   private sessionProcessMap = new Map<string, number>();
   private approvalInterceptor: ApprovalInterceptorService | null = null;
+  private toolInterceptor: CliToolInterceptorService | null = null;
 
   constructor(
     private wss: WebSocketServer,
     private cliExecutor: ICliExecutor,
     private sessionRepo: ISessionRepository,
-    private messageRepo: IMessageRepository
+    private messageRepo: IMessageRepository,
+    private settingsRepo?: ISettingsRepository,
+    private taskRepo?: ITaskRepository
   ) {
     this.setupConnectionHandler();
   }
@@ -64,6 +77,13 @@ export class SessionStreamHandler {
    */
   setApprovalInterceptor(interceptor: ApprovalInterceptorService): void {
     this.approvalInterceptor = interceptor;
+  }
+
+  /**
+   * Set CLI tool interceptor for blocking hooks
+   */
+  setToolInterceptor(interceptor: CliToolInterceptorService): void {
+    this.toolInterceptor = interceptor;
   }
 
   private setupConnectionHandler(): void {
@@ -132,10 +152,10 @@ export class SessionStreamHandler {
 
   private async handleClientMessage(sessionId: string, msg: ClientMessage): Promise<void> {
     const session = await this.sessionRepo.findById(sessionId);
-    if (!session?.processId) {
+    if (!session) {
       this.broadcast(sessionId, {
         type: 'error',
-        message: 'Session not running',
+        message: 'Session not found',
       });
       return;
     }
@@ -144,7 +164,16 @@ export class SessionStreamHandler {
       case 'user_input':
         if (msg.content) {
           try {
-            await this.cliExecutor.sendMessage(session.processId, msg.content);
+            // Check if CLI process is still running
+            const isRunning = session.processId && this.cliExecutor.isRunning(session.processId);
+
+            if (!isRunning) {
+              // Process dead - need to resume session with full message (includes overrides)
+              await this.resumeSession(session, msg);
+            } else {
+              // Process alive - send directly to stdin
+              await this.cliExecutor.sendMessage(session.processId!, msg.content);
+            }
 
             // Save user message
             const userMessage = Message.createUserMessage(
@@ -156,13 +185,20 @@ export class SessionStreamHandler {
           } catch (error) {
             this.broadcast(sessionId, {
               type: 'error',
-              message: 'Failed to send message',
+              message: error instanceof Error ? error.message : 'Failed to send message',
             });
           }
         }
         break;
 
       case 'cancel':
+        if (!session.processId || !this.cliExecutor.isRunning(session.processId)) {
+          this.broadcast(sessionId, {
+            type: 'error',
+            message: 'No running process to cancel',
+          });
+          break;
+        }
         try {
           await this.cliExecutor.terminate(session.processId);
           this.broadcast(sessionId, {
@@ -178,6 +214,13 @@ export class SessionStreamHandler {
         break;
 
       case 'approval_response':
+        if (!session.processId || !this.cliExecutor.isRunning(session.processId)) {
+          this.broadcast(sessionId, {
+            type: 'error',
+            message: 'No running process to approve',
+          });
+          break;
+        }
         if (msg.approved !== undefined) {
           try {
             await this.cliExecutor.sendApprovalResponse(session.processId, msg.approved);
@@ -200,9 +243,32 @@ export class SessionStreamHandler {
     // Subscribe to output
     this.cliExecutor.onOutput(processId, async (output: CliOutput) => {
       // Intercept tool_use - can be separate event OR embedded in assistant message
-      if (this.approvalInterceptor) {
-        const toolUseBlocks = this.extractToolUseBlocks(output);
-        for (const toolBlock of toolUseBlocks) {
+      const toolUseBlocks = this.extractToolUseBlocks(output);
+
+      for (const toolBlock of toolUseBlocks) {
+        // Check CLI tool interceptor (blocking hooks) first
+        if (this.toolInterceptor) {
+          const dangerCheck = this.toolInterceptor.checkDangerousPatterns(
+            toolBlock.name,
+            toolBlock.input
+          );
+
+          if (dangerCheck.dangerous) {
+            this.broadcast(sessionId, {
+              type: 'output',
+              data: {
+                type: 'tool_blocked',
+                toolName: toolBlock.name,
+                reason: dangerCheck.reason,
+                severity: 'danger',
+              },
+            });
+            continue; // Skip this tool
+          }
+        }
+
+        // Check approval interceptor
+        if (this.approvalInterceptor) {
           const decision = await this.approvalInterceptor.checkApproval(
             sessionId,
             toolBlock.name,
@@ -388,6 +454,100 @@ export class SessionStreamHandler {
     this.broadcast(sessionId, {
       type: 'diff_preview',
       data: preview,
+    });
+  }
+
+  /**
+   * Resume a session by spawning new CLI process with --resume flag
+   * Uses session's providerSessionId to restore conversation context
+   * Fetches current task config and computes delta for contextFiles/skills
+   */
+  private async resumeSession(session: Session, msg: ClientMessage): Promise<void> {
+    // Require providerSessionId for resume
+    if (!session.providerSessionId) {
+      throw new Error('Cannot resume: session has no providerSessionId');
+    }
+
+    // Fetch task for current config
+    const task = this.taskRepo ? await this.taskRepo.findById(session.taskId) : null;
+    const settings = this.settingsRepo ? await this.settingsRepo.getGlobal() : null;
+
+    // Compute delta for context files (new files since last message)
+    const currentContextFiles = task?.contextFiles ?? [];
+    const newContextFiles = currentContextFiles.filter(
+      f => !session.includedContextFiles.includes(f)
+    );
+
+    // Compute delta for skills (new skills since last message)
+    const currentSkills = task?.skills ?? [];
+    const newSkills = currentSkills.filter(
+      s => !session.includedSkills.includes(s)
+    );
+
+    // Build prompt with user message + delta files/skills
+    let prompt = msg.content ?? '';
+
+    // Include any explicitly passed files from message
+    const explicitFiles = msg.files ?? [];
+    const allNewFiles = [...new Set([...newContextFiles, ...explicitFiles])];
+
+    if (allNewFiles.length > 0) {
+      prompt += `\n\n<new-context-files>\n${allNewFiles.map(f => `@${f}`).join('\n')}\n</new-context-files>`;
+    }
+    if (newSkills.length > 0) {
+      prompt += `\n\n<new-skills>\n${newSkills.map(s => `@${s}`).join('\n')}\n</new-skills>`;
+    }
+
+    // Build disallowed tools list (task config + message override)
+    let disallowedTools = task?.tools?.mode === 'blocklist' ? [...task.tools.tools] : undefined;
+    if (msg.disableWebTools) {
+      disallowedTools = disallowedTools ?? [];
+      if (!disallowedTools.includes('WebSearch')) disallowedTools.push('WebSearch');
+      if (!disallowedTools.includes('WebFetch')) disallowedTools.push('WebFetch');
+    }
+
+    // Build CLI spawn config with current task settings
+    const cliConfig: CliSpawnConfig = {
+      provider: session.provider ?? ProviderType.ANTHROPIC,
+      model: msg.model ?? task?.model ?? settings?.defaultModel ?? 'sonnet',
+      workingDir: session.workingDir,
+      sessionId: session.id,
+      resumeSessionId: session.providerSessionId,
+      initialPrompt: prompt,
+      permissionMode: msg.permissionMode ?? task?.permissionMode ?? 'default',
+      allowedTools: task?.tools?.mode === 'allowlist' ? task.tools.tools : undefined,
+      disallowedTools,
+      agentName: task?.agentRole ?? undefined,
+    };
+
+    // Notify clients that session is resuming
+    this.broadcast(session.id, {
+      type: 'status',
+      status: 'resuming',
+    });
+
+    // Spawn new CLI process
+    const cliProcess = await this.cliExecutor.spawn(cliConfig);
+
+    // Update session with new process info and context tracking
+    session.resume();
+    session.start(cliProcess.sessionId, cliProcess.processId);
+
+    // Update included context to match current task (for next delta)
+    session.includedContextFiles = [...currentContextFiles, ...explicitFiles];
+    session.includedSkills = [...currentSkills];
+    session.updatedAt = new Date();
+
+    await this.sessionRepo.save(session);
+
+    // Subscribe to new process output
+    this.sessionProcessMap.delete(session.id);
+    this.subscribeToCliOutput(session.id, cliProcess.processId);
+
+    // Notify clients that session is running
+    this.broadcast(session.id, {
+      type: 'status',
+      status: SessionStatus.RUNNING,
     });
   }
 }

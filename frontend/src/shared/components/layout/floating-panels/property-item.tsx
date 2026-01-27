@@ -1,35 +1,45 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Trash2, Search, Folder, Star, FileText } from 'lucide-react';
+import { X, Trash2, Search, Folder, Star, FileText, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import {
   propertyTypes,
   agentOptions,
   providerOptions,
-  modelOptions,
+  getModelsForProvider,
   priorityOptions,
   skillsOptions,
   toolsOptions,
-  mockProjects,
+  permissionModeOptions,
   mockFileSystem,
 } from '@/shared/config/property-config';
+import { useProjects, useFavoriteProjects, useRecentProjects } from '@/shared/hooks/use-projects-query';
 
 export interface Property {
   id: string;
-  type: 'project' | 'agent' | 'provider' | 'model' | 'priority' | 'skills' | 'tools' | 'context';
-  value: string[];
+  type: 'project' | 'agent' | 'provider' | 'model' | 'priority' | 'skills' | 'tools' | 'context' | 'subagentDelegates' | 'autoBranch' | 'autoCommit' | 'permissionMode';
+  value: string[]; // For toggles: ['true'] or []
 }
 
 interface PropertyItemProps {
   property: Property;
   onRemove: () => void;
   onUpdate: (values: string[]) => void;
+  selectedProvider?: string; // For filtering models by provider
 }
 
-export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps) {
+export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }: PropertyItemProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch projects from API
+  const { data: allProjects = [], isLoading: loadingAll } = useProjects(
+    searchQuery ? { search: searchQuery } : undefined
+  );
+  const { data: favoriteProjects = [], isLoading: loadingFavorites } = useFavoriteProjects();
+  const { data: recentProjects = [], isLoading: loadingRecent } = useRecentProjects(6);
+  const isLoadingProjects = loadingAll || loadingFavorites || loadingRecent;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -59,13 +69,15 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
       case 'provider':
         return providerOptions;
       case 'model':
-        return modelOptions;
+        return getModelsForProvider(selectedProvider);
       case 'priority':
         return priorityOptions;
       case 'skills':
         return skillsOptions;
       case 'tools':
         return toolsOptions.map((o) => ({ id: o.id, label: o.label }));
+      case 'permissionMode':
+        return permissionModeOptions.map((o) => ({ id: o.id, label: o.label }));
       case 'context':
         return [];
       default:
@@ -73,7 +85,7 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
     }
   };
 
-  const isSingleSelect = ['project', 'agent', 'provider', 'model', 'priority'].includes(property.type);
+  const isSingleSelect = ['project', 'agent', 'provider', 'model', 'priority', 'permissionMode'].includes(property.type);
 
   const getContextSearchResults = () => {
     if (!searchQuery.trim()) return [];
@@ -86,8 +98,7 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
 
   const getProjectSearchResults = () => {
     if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return mockProjects.all.filter((p) => p.label.toLowerCase().includes(query) || p.path.toLowerCase().includes(query)).slice(0, 8);
+    return allProjects.slice(0, 8);
   };
 
   const selectProject = (id: string) => {
@@ -147,8 +158,8 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
   const getDisplayValue = () => {
     if (property.value.length === 0) return 'Select...';
     if (property.type === 'project') {
-      const project = mockProjects.all.find((p) => p.id === property.value[0]);
-      return project?.label || 'Select...';
+      const project = allProjects.find((p) => p.id === property.value[0]);
+      return project?.name || 'Select...';
     }
     if (property.type === 'tools' && property.value.includes('all')) {
       return 'All Tools';
@@ -160,31 +171,31 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
     return property.value.map((v) => options.find((o) => o.id === v)?.label || v).join(', ');
   };
 
-  // Project property with search
+  // Project property with search (API-connected) - MANDATORY, no remove button
   if (property.type === 'project') {
-    const selectedProject = mockProjects.all.find((p) => p.id === property.value[0]);
+    const selectedProject = allProjects.find((p) => p.id === property.value[0]);
+    const searchResults = getProjectSearchResults();
 
     return (
-      <div className="flex items-start gap-3 group">
+      <div className="flex items-start gap-3">
         <div className="flex items-center gap-2 w-24 text-sm text-muted-foreground pt-1">
           <Icon className="w-4 h-4" />
           <span>{typeConfig?.label}</span>
         </div>
         <div className="flex-1" ref={dropdownRef}>
           {selectedProject ? (
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowDropdown(!showDropdown)} className="flex items-center gap-2 px-2 py-1 text-sm text-foreground hover:bg-muted rounded transition-colors">
-                <Folder className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>{selectedProject.label}</span>
-              </button>
-              <button onClick={() => onUpdate([])} className="p-0.5 hover:text-destructive">
-                <X className="w-3 h-3" />
-              </button>
+            <div className="flex items-center gap-2 px-2 py-1 text-sm text-foreground">
+              <Folder className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>{selectedProject.name}</span>
             </div>
           ) : (
             <div className="relative">
               <div className="flex items-center gap-2 px-2 py-1 border border-border rounded bg-muted/30">
-                <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                {isLoadingProjects ? (
+                  <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+                ) : (
+                  <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                )}
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -194,23 +205,28 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
                     setShowDropdown(true);
                   }}
                   onFocus={() => setShowDropdown(true)}
-                  placeholder="Search projects..."
+                  placeholder="Select project (required)..."
                   className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
                 />
               </div>
 
               {showDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
-                  {searchQuery ? (
-                    getProjectSearchResults().length > 0 ? (
-                      getProjectSearchResults().map((project) => (
+                <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
+                  {isLoadingProjects ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading...
+                    </div>
+                  ) : searchQuery ? (
+                    searchResults.length > 0 ? (
+                      searchResults.map((project) => (
                         <button
                           key={project.id}
                           onClick={() => selectProject(project.id)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
                         >
                           <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="truncate">{project.label}</span>
+                          <span className="truncate">{project.name}</span>
                         </button>
                       ))
                     ) : (
@@ -218,41 +234,64 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
                     )
                   ) : (
                     <>
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                        <Star className="w-3 h-3" />
-                        Favorites
-                      </div>
-                      {mockProjects.favorites.map((project) => (
-                        <button
-                          key={project.id}
-                          onClick={() => selectProject(project.id)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left"
-                        >
-                          <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="truncate">{project.label}</span>
-                        </button>
-                      ))}
-                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">Recent</div>
-                      {mockProjects.recent.map((project) => (
-                        <button
-                          key={project.id}
-                          onClick={() => selectProject(project.id)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left"
-                        >
-                          <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="truncate">{project.label}</span>
-                        </button>
-                      ))}
+                      {favoriteProjects.length > 0 && (
+                        <>
+                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                            <Star className="w-3 h-3" />
+                            Favorites
+                          </div>
+                          {favoriteProjects.map((project) => (
+                            <button
+                              key={project.id}
+                              onClick={() => selectProject(project.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
+                            >
+                              <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <span className="truncate">{project.name}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {recentProjects.length > 0 && (
+                        <>
+                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">Recent</div>
+                          {recentProjects.map((project) => (
+                            <button
+                              key={project.id}
+                              onClick={() => selectProject(project.id)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
+                            >
+                              <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                              <span className="truncate">{project.name}</span>
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      {favoriteProjects.length === 0 && recentProjects.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">No projects available</div>
+                      )}
                     </>
                   )}
+                  {/* Create new project option */}
+                  <div className="border-t border-white/20 dark:border-white/10 mt-1 pt-1">
+                    <button
+                      onClick={() => {
+                        setShowDropdown(false);
+                        // TODO: Open create project modal
+                        alert('Create new project - coming soon');
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-primary hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
+                    >
+                      <Plus className="w-3.5 h-3.5 shrink-0" />
+                      <span>Create new project</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           )}
         </div>
-        <button onClick={onRemove} className="p-1 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity mt-1">
-          <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
-        </button>
+        {/* No remove button - project is mandatory */}
       </div>
     );
   }
@@ -286,12 +325,12 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
             </div>
 
             {showDropdown && searchQuery && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
                 {searchResults.map((file) => (
                   <button
                     key={file.id}
                     onClick={() => addContextFile(file.id)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
                   >
                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <span className="truncate">{file.label}</span>
@@ -301,7 +340,7 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
             )}
 
             {showDropdown && searchQuery && searchResults.length === 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg py-2 px-3 z-20">
+              <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-2 px-3 z-20">
                 <span className="text-sm text-muted-foreground">No files found</span>
               </div>
             )}
@@ -353,12 +392,12 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
           </button>
 
           {showDropdown && (
-            <div className="absolute top-full left-0 mt-1 w-44 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
+            <div className="absolute top-full left-0 mt-1 w-44 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20">
               {priorityOptions.map((opt) => (
                 <button
                   key={opt.id}
                   onClick={() => toggleValue(opt.id)}
-                  className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors', property.value.includes(opt.id) && 'bg-accent')}
+                  className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors', property.value.includes(opt.id) && 'bg-white/20 dark:bg-white/10')}
                 >
                   <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: opt.color }} />
                   <span>{opt.label}</span>
@@ -371,6 +410,41 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
         <button onClick={onRemove} className="p-1 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity">
           <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
         </button>
+      </div>
+    );
+  }
+
+  // Toggle property (subagentDelegates, autoBranch, autoCommit)
+  // autoBranch is mandatory (no remove button)
+  if (['subagentDelegates', 'autoBranch', 'autoCommit'].includes(property.type)) {
+    const isEnabled = property.value.includes('true');
+    const isMandatory = property.type === 'autoBranch';
+
+    return (
+      <div className={cn('flex items-center gap-3', !isMandatory && 'group')}>
+        <div className="flex items-center gap-2 w-24 text-sm text-muted-foreground">
+          <Icon className="w-4 h-4" />
+          <span>{typeConfig?.label}</span>
+        </div>
+        <button
+          onClick={() => onUpdate(isEnabled ? [] : ['true'])}
+          className={cn(
+            'relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors',
+            isEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
+          )}
+        >
+          <span
+            className={cn(
+              'pointer-events-none h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform',
+              isEnabled ? 'translate-x-4' : 'translate-x-0'
+            )}
+          />
+        </button>
+        {!isMandatory && (
+          <button onClick={onRemove} className="p-1 rounded hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity ml-auto">
+            <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        )}
       </div>
     );
   }
@@ -388,19 +462,19 @@ export function PropertyItem({ property, onRemove, onUpdate }: PropertyItemProps
         </button>
 
         {showDropdown && (
-          <div className="absolute top-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+          <div className="absolute top-full left-0 mt-1 w-56 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
             {getOptions().map((opt) => (
               <button
                 key={opt.id}
                 onClick={() => toggleValue(opt.id)}
-                className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors', property.value.includes(opt.id) && 'bg-accent')}
+                className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors', property.value.includes(opt.id) && 'bg-white/20 dark:bg-white/10')}
               >
                 {isSingleSelect ? (
-                  <span className={cn('w-4 h-4 border rounded-full flex items-center justify-center', property.value.includes(opt.id) ? 'border-primary' : 'border-border')}>
+                  <span className={cn('w-4 h-4 border rounded-full flex items-center justify-center', property.value.includes(opt.id) ? 'border-primary' : 'border-white/30')}>
                     {property.value.includes(opt.id) && <span className="w-2 h-2 rounded-full bg-primary" />}
                   </span>
                 ) : (
-                  <span className={cn('w-4 h-4 border rounded flex items-center justify-center text-xs', property.value.includes(opt.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-border')}>
+                  <span className={cn('w-4 h-4 border rounded flex items-center justify-center text-xs', property.value.includes(opt.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-white/30')}>
                     {property.value.includes(opt.id) && '✓'}
                   </span>
                 )}

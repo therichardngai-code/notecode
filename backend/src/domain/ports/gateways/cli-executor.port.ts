@@ -18,6 +18,9 @@ export interface CliSpawnConfig {
   continueRecent?: boolean;
   forkSession?: boolean;
 
+  // Agent
+  agentName?: string;  // Agent name for --agent flag
+
   // Prompts
   initialPrompt?: string;  // User prompt to execute
   systemPrompt?: string;
@@ -34,6 +37,14 @@ export interface CliSpawnConfig {
 
   // MCP
   mcpConfig?: string[];
+
+  // Custom subagents (JSON object for --agents flag)
+  customAgents?: Record<string, {
+    description: string;
+    prompt: string;
+    tools?: string[];
+    model?: string;
+  }>;
 }
 
 export interface CliProcess {

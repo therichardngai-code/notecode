@@ -58,7 +58,7 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
   };
 
   return (
-    <div className="h-9 flex items-center bg-sidebar border-b border-sidebar-border relative">
+    <div className="h-9 flex items-center glass-subtle border-b border-sidebar-border/50 relative">
       {/* Navigation Arrows */}
       <div className="flex items-center gap-0.5 px-2 border-r border-sidebar-border/50 h-full">
         <button
@@ -82,22 +82,22 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
         className="flex-1 flex items-center overflow-x-auto"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {tabs.map((tab, index) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => onTabClick(tab.id)}
             className={cn(
-              'group flex items-center gap-2 px-3 h-9 text-sm whitespace-nowrap transition-colors border-l border-r border-sidebar-border/50',
-              index === 0 && 'border-l-0',
+              'group flex items-center gap-1 pl-2 h-7 my-1 mx-0.5 text-sm whitespace-nowrap transition-colors rounded-lg',
+              tabs.length === 1 ? 'pr-3' : 'pr-0.5',
               activeTabId === tab.id
-                ? 'bg-background text-foreground'
-                : 'text-sidebar-foreground/60 hover:text-sidebar-foreground/80 hover:bg-sidebar-accent/50'
+                ? 'bg-white dark:bg-white/90 text-zinc-900'
+                : 'text-sidebar-foreground/60 hover:text-sidebar-foreground/80 hover:bg-white/10'
             )}
           >
             <span
               className={cn(
-                activeTabId === tab.id ? 'text-foreground' : 'text-sidebar-foreground/50'
+                activeTabId === tab.id ? 'text-zinc-700' : 'text-sidebar-foreground/50'
               )}
             >
               {getTabIcon(tab.icon)}
@@ -121,7 +121,7 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
                   }
                 }}
                 className={cn(
-                  'w-4 h-4 flex items-center justify-center rounded-sm transition-colors ml-1 cursor-pointer',
+                  'w-4 h-4 flex items-center justify-center rounded-sm transition-colors cursor-pointer',
                   'opacity-0 group-hover:opacity-100',
                   'hover:bg-muted'
                 )}
@@ -136,7 +136,7 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
         <button
           type="button"
           onClick={handleAddTabClick}
-          className="w-9 h-9 flex items-center justify-center hover:bg-sidebar-accent transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground shrink-0 border-l border-r border-sidebar-border/50"
+          className="w-7 h-7 my-1 mx-0.5 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground shrink-0"
         >
           <Plus className="w-4 h-4" />
         </button>

@@ -22,6 +22,9 @@ export interface ToolStats {
   };
 }
 
+// Session resume modes
+export type SessionResumeMode = 'renew' | 'retry' | 'fork';
+
 export interface Session {
   id: string;
   taskId: string;
@@ -43,6 +46,10 @@ export interface Session {
   estimatedCostUsd: number;
   modelUsage: ModelUsage[] | null;
   toolStats: ToolStats | null;
+  // Attempt tracking fields - optional until backend supports
+  resumeMode?: SessionResumeMode | null;  // null = first attempt
+  attemptNumber?: number;  // defaults to 1
+  resumedFromSessionId?: string | null;  // Source session ID (for retry/fork)
   createdAt: string;
   updatedAt: string;
 }
@@ -59,12 +66,31 @@ export interface Message {
   toolResult: string | null;
 }
 
+export interface DiffHunk {
+  header: string;
+  lines: { type: 'add' | 'remove' | 'context'; lineNum: number; content: string }[];
+}
+
+export interface Diff {
+  id: string;
+  sessionId: string;
+  messageId: string | null;
+  toolUseId: string;
+  approvalId: string | null;
+  filePath: string;
+  operation: 'edit' | 'write' | 'delete';
+  oldContent: string | null;
+  newContent: string | null;
+  hunks: DiffHunk[] | null;
+  status: 'pending' | 'approved' | 'rejected' | 'applied';
+  createdAt: string;
+}
+
 export interface StartSessionRequest {
   taskId: string;
+  mode?: SessionResumeMode;  // 'renew' | 'retry' | 'fork', default: auto (null for first attempt)
   agentId?: string;
   initialPrompt?: string;
-  resumeSessionId?: string;
-  forkSession?: boolean;
   permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
   maxBudgetUsd?: number;
 }
@@ -81,6 +107,46 @@ interface SessionResponse {
 
 interface MessagesResponse {
   messages: Message[];
+}
+
+interface DiffsResponse {
+  diffs: Diff[];
+}
+
+// Approval types
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'timeout';
+export type ToolCategory = 'safe' | 'requires-approval' | 'dangerous';
+
+export interface ApprovalRequest {
+  id: string;
+  sessionId: string;
+  type: 'tool' | 'diff';
+  payload: {
+    toolName: string;
+    toolInput: {
+      file_path?: string;
+      command?: string;
+      content?: string;
+      old_string?: string;
+      new_string?: string;
+      [key: string]: unknown;
+    };
+  };
+  toolCategory: ToolCategory;
+  status: ApprovalStatus;
+  timeoutAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  createdAt: string;
+}
+
+interface ApprovalsResponse {
+  approvals: ApprovalRequest[];
+}
+
+interface ApprovalResponse {
+  approval: ApprovalRequest;
+  diffs?: Diff[];
 }
 
 /**
@@ -140,6 +206,36 @@ export const sessionsApi = {
    */
   delete: (id: string) =>
     apiClient.delete<{ success: boolean }>(`/api/sessions/${id}`),
+
+  /**
+   * Get session diffs (file changes)
+   */
+  getDiffs: (sessionId: string) =>
+    apiClient.get<DiffsResponse>(`/api/diffs/session/${sessionId}`),
+
+  /**
+   * Get pending approvals for session
+   */
+  getPendingApprovals: (sessionId: string) =>
+    apiClient.get<ApprovalsResponse>(`/api/approvals/session/${sessionId}/pending`),
+
+  /**
+   * Get single approval by ID
+   */
+  getApproval: (approvalId: string) =>
+    apiClient.get<ApprovalResponse>(`/api/approvals/${approvalId}`),
+
+  /**
+   * Approve tool execution
+   */
+  approveRequest: (approvalId: string) =>
+    apiClient.post<{ success: boolean }>(`/api/approvals/${approvalId}/approve`, { decidedBy: 'user' }),
+
+  /**
+   * Reject tool execution
+   */
+  rejectRequest: (approvalId: string) =>
+    apiClient.post<{ success: boolean }>(`/api/approvals/${approvalId}/reject`, { decidedBy: 'user' }),
 };
 
 /**

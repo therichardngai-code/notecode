@@ -32,6 +32,7 @@ const startSessionSchema = z.object({
   forkSession: z.boolean().optional(),
   permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions']).optional(),
   maxBudgetUsd: z.number().positive().optional(),
+  mode: z.enum(['renew', 'retry', 'fork']).optional(),  // renew=fresh, retry=resume, fork=new+context
 });
 
 // Dependencies container for use cases

@@ -1,5 +1,6 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router';
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Kanban, Plus, MoreHorizontal, Tag, Calendar, User, ExternalLink, Archive, Trash2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { columnDefs, priorityConfig } from '@/shared/config/task-config';
@@ -42,10 +43,20 @@ interface TaskCardProps {
 function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }: TaskCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+
+  useEffect(() => {
+    if (showMenu && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+  }, [showMenu]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
         setShowMenu(false);
       }
     };
@@ -56,11 +67,12 @@ function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }:
   }, [showMenu]);
 
   return (
-    <div onClick={onClick} className="p-3 rounded-xl border border-sidebar-border bg-sidebar hover:bg-sidebar-accent transition-colors cursor-pointer group">
+    <div onClick={onClick} className="p-3 rounded-xl glass hover:shadow-md transition-all cursor-pointer group">
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-sm font-medium text-foreground leading-tight">{task.title}</span>
-        <div className="relative shrink-0" ref={menuRef}>
+        <div className="relative shrink-0">
           <div
+            ref={buttonRef}
             onClick={(e) => {
               e.stopPropagation();
               setShowMenu(!showMenu);
@@ -69,15 +81,19 @@ function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }:
           >
             <MoreHorizontal className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
-          {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-44 bg-popover border border-border rounded-lg shadow-lg py-1 z-50">
+          {showMenu && createPortal(
+            <div
+              ref={menuRef}
+              className="fixed w-44 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-[110]"
+              style={{ top: menuPos.top, right: menuPos.right }}
+            >
               <div
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenInNewTab?.();
                   setShowMenu(false);
                 }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left cursor-pointer"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left cursor-pointer"
               >
                 <ExternalLink className="w-4 h-4" />
                 Open in new tab
@@ -88,12 +104,12 @@ function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }:
                   onMoveToArchived?.();
                   setShowMenu(false);
                 }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent transition-colors text-left cursor-pointer"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left cursor-pointer"
               >
                 <Archive className="w-4 h-4" />
                 Move to archived
               </div>
-              <div className="border-t border-border my-1" />
+              <div className="border-t border-white/20 dark:border-white/10 my-1" />
               <div
                 onClick={(e) => {
                   e.stopPropagation();
@@ -105,7 +121,8 @@ function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }:
                 <Trash2 className="w-4 h-4" />
                 Delete
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       </div>
@@ -225,7 +242,7 @@ export function BoardView({ hideHeader, filters = {}, searchQuery = '', tasks: p
   const totalTasks = searchedTasks.length;
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col">
       {/* Header - only show if not embedded */}
       {!hideHeader && (
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">

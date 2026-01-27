@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   AtSign,
@@ -24,17 +24,15 @@ import {
   Search,
   Trash2,
   PanelLeftClose,
+  FileCode,
+  Zap,
+  ShieldAlert,
+  Pencil,
+  FolderOpen,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-
-// Types
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  steps?: number;
-}
+import { useChatSession, type ChatMessage } from '@/shared/hooks';
+import { projectsApi, type Project, type Chat } from '@/adapters/api';
 
 interface ChatHistoryItem {
   id: string;
@@ -90,26 +88,26 @@ const defaultResponse = {
   content: `I understand your question. Let me help you with that.\n\n1. **Analysis**: I've reviewed your request\n2. **Suggestions**: Based on your input, I recommend exploring the documentation\n3. **Next Steps**: Would you like me to elaborate?\n\nFeel free to ask follow-up questions!`,
 };
 
-// Group chats by date
-function groupChatsByDate(chats: ChatHistoryItem[]) {
+// Group chats by date (works with Chat type from API)
+function groupChatsByDate(chats: Chat[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const groups: { label: string; chats: ChatHistoryItem[] }[] = [];
+  const groups: { label: string; chats: Chat[] }[] = [];
   const todayChats = chats.filter((c) => {
-    const d = new Date(c.date);
+    const d = new Date(c.createdAt);
     d.setHours(0, 0, 0, 0);
     return d.getTime() === today.getTime();
   });
   const yesterdayChats = chats.filter((c) => {
-    const d = new Date(c.date);
+    const d = new Date(c.createdAt);
     d.setHours(0, 0, 0, 0);
     return d.getTime() === yesterday.getTime();
   });
   const olderChats = chats.filter((c) => {
-    const d = new Date(c.date);
+    const d = new Date(c.createdAt);
     d.setHours(0, 0, 0, 0);
     return d.getTime() < yesterday.getTime();
   });
@@ -121,8 +119,9 @@ function groupChatsByDate(chats: ChatHistoryItem[]) {
   return groups;
 }
 
-function getRelativeTime(date: Date) {
-  const diffMs = Date.now() - date.getTime();
+function getRelativeTime(date: Date | string) {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const diffMs = Date.now() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 1) return 'Just now';
   if (diffMins < 60) return `${diffMins}m ago`;
@@ -140,7 +139,7 @@ function QuickActionCard({ icon: Icon, label, onClick, delay = 0 }: { icon: Reac
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-start gap-2.5 p-3 rounded-xl border border-sidebar-border bg-sidebar hover:bg-sidebar-accent transition-colors text-left flex-1 min-w-[140px] opacity-0"
+      className="flex flex-col items-start gap-2.5 p-3 rounded-xl glass hover:shadow-md transition-all text-left flex-1 min-w-[140px] opacity-0"
       style={{ animation: `float-up 0.4s ease-out ${0.4 + delay}s forwards` }}
     >
       <Icon className="w-4 h-4 text-muted-foreground" />
@@ -204,29 +203,84 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
   const [input, setInput] = useState('');
   const [selectedMode, setSelectedMode] = useState('auto');
   const [showQuickActions, setShowQuickActions] = useState(true);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
   const [chatTitle, setChatTitle] = useState('New chat');
   const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
-  const [chatHistory, setChatHistory] = useState(sharedChatHistory);
+  const [chatHistory, setChatHistory] = useState<Chat[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const historyPanelRef = useRef<HTMLDivElement>(null);
 
-  // Load initial chat
+  // Project selection state
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load projects on mount
   useEffect(() => {
-    if (initialChatId) {
-      const chat = sharedChatHistory.find((c) => c.id === initialChatId);
+    projectsApi.getRecent(10).then(res => {
+      setProjects(res.projects);
+      if (res.projects.length > 0 && !selectedProjectId) {
+        setSelectedProjectId(res.projects[0].id);
+      }
+    }).catch(console.error);
+  }, []);
+
+  // Load chat history when project changes
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    projectsApi.listChats(selectedProjectId).then(res => {
+      setChatHistory(res.chats);
+    }).catch(console.error);
+  }, [selectedProjectId]);
+
+  // Chat session hook (real API)
+  const {
+    status: chatStatus,
+    messages,
+    isStreaming,
+    startChat,
+    sendFollowUp,
+    cancelStream,
+    resetChat,
+  } = useChatSession({
+    projectId: selectedProjectId,
+    onError: (msg) => console.error('Chat error:', msg),
+  });
+
+  // Chat input options state (aligned with TaskDetail AI Session)
+  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<'default' | 'haiku' | 'sonnet' | 'opus'>('default');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [chatPermissionMode, setChatPermissionMode] = useState<'default' | 'acceptEdits' | 'bypassPermissions'>('default');
+  const [showPermissionDropdown, setShowPermissionDropdown] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const permissionDropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [showContextPicker, setShowContextPicker] = useState(false);
+  const [contextSearch, setContextSearch] = useState('');
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [contextPickerIndex, setContextPickerIndex] = useState(0);
+  const contextPickerRef = useRef<HTMLDivElement>(null);
+  const projectFiles = ['src/index.ts', 'src/app.tsx', 'src/components/Button.tsx', 'package.json', 'tsconfig.json'];
+  const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
+
+  // Load initial chat from history
+  useEffect(() => {
+    if (initialChatId && chatHistory.length > 0) {
+      const chat = chatHistory.find((c) => c.id === initialChatId);
       if (chat) {
         setIsAnimating(true);
         setChatTitle(chat.title);
         setCurrentChatId(chat.id);
-        setMessages(chat.messages);
         setShowQuickActions(false);
         setTimeout(() => setIsAnimating(false), 600);
       }
@@ -254,67 +308,171 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
   // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, isTyping]);
+  }, [messages, isStreaming]);
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    if (!showModelDropdown) return;
+    const h = (e: MouseEvent) => { if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) setShowModelDropdown(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showModelDropdown]);
+
+  useEffect(() => {
+    if (!showPermissionDropdown) return;
+    const h = (e: MouseEvent) => { if (permissionDropdownRef.current && !permissionDropdownRef.current.contains(e.target as Node)) setShowPermissionDropdown(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showPermissionDropdown]);
+
+  useEffect(() => {
+    if (!showContextPicker) return;
+    const h = (e: MouseEvent) => { if (contextPickerRef.current && !contextPickerRef.current.contains(e.target as Node)) setShowContextPicker(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showContextPicker]);
+
+  useEffect(() => { setContextPickerIndex(0); }, [contextSearch]);
+
+  // File handlers
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) setAttachedFiles(prev => [...prev, ...Array.from(e.target.files!).map(f => f.name)]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  const removeAttachedFile = (idx: number) => setAttachedFiles(prev => prev.filter((_, i) => i !== idx));
+
+  // Drag/drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
+    if (e.dataTransfer.files?.length) setAttachedFiles(prev => [...prev, ...Array.from(e.dataTransfer.files).map(f => f.name)]);
+  }, []);
+
+  // Paste handler
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    const files: string[] = [];
+    for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const f = items[i].getAsFile(); if (f) files.push(f.name); } }
+    if (files.length) setAttachedFiles(prev => [...prev, ...files]);
+  }, []);
+
+  // @ context picker handlers
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value, pos = e.target.selectionStart || 0;
+    setInput(v); setCursorPosition(pos);
+    const before = v.slice(0, pos), atIdx = before.lastIndexOf('@');
+    if (atIdx !== -1) {
+      const after = before.slice(atIdx + 1), charBefore = atIdx > 0 ? before[atIdx - 1] : ' ';
+      if ((charBefore === ' ' || atIdx === 0) && !after.includes(' ')) { setContextSearch(after); setShowContextPicker(true); return; }
+    }
+    setShowContextPicker(false);
+  }, []);
+
+  const selectContextFile = useCallback((file: string) => {
+    const before = input.slice(0, cursorPosition), after = input.slice(cursorPosition), atIdx = before.lastIndexOf('@');
+    setInput(before.slice(0, atIdx) + `@${file} ` + after);
+    setShowContextPicker(false); setContextSearch('');
+    if (!attachedFiles.includes(file)) setAttachedFiles(prev => [...prev, file]);
+    chatInputRef.current?.focus();
+  }, [input, cursorPosition, attachedFiles]);
+
+  const handleContextKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!showContextPicker) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(p => Math.min(p + 1, filteredFiles.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setContextPickerIndex(p => Math.max(p - 1, 0)); }
+    else if (e.key === 'Enter' && filteredFiles.length) { e.preventDefault(); selectContextFile(filteredFiles[contextPickerIndex]); }
+    else if (e.key === 'Escape') setShowContextPicker(false);
+  }, [showContextPicker, filteredFiles, contextPickerIndex, selectContextFile]);
+
+  // Close project dropdown on click outside
+  useEffect(() => {
+    if (!showProjectDropdown) return;
+    const h = (e: MouseEvent) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) setShowProjectDropdown(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showProjectDropdown]);
 
   const sendMessage = async (content: string) => {
-    if (!content.trim()) return;
-    if (messages.length === 0) setChatTitle(content.trim().slice(0, 30) + (content.length > 30 ? '...' : ''));
+    if (!content.trim() || isStreaming) return;
+    if (!selectedProjectId) {
+      console.error('No project selected');
+      return;
+    }
 
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: content.trim(), timestamp: new Date() };
-    setMessages((prev) => [...prev, userMsg]);
+    // Set chat title from first message
+    if (messages.length === 0) {
+      setChatTitle(content.trim().slice(0, 30) + (content.length > 30 ? '...' : ''));
+      setShowQuickActions(false);
+
+      // Start new chat session via API
+      await startChat({
+        message: content.trim(),
+        attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
+        model: selectedModel !== 'default' ? selectedModel : undefined,
+        permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
+        disableWebTools: !webSearchEnabled,
+      });
+    } else {
+      // Send follow-up via WebSocket
+      sendFollowUp(content.trim());
+    }
+
     setInput('');
-    setShowQuickActions(false);
-    setIsTyping(true);
-
-    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
-
-    const response = mockResponses[content.trim()] || defaultResponse;
-    const assistantMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: 'assistant', content: response.content, timestamp: new Date(), steps: response.steps };
-    setIsTyping(false);
-    setMessages((prev) => [...prev, assistantMsg]);
+    setAttachedFiles([]);
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!isTyping) sendMessage(input);
+    if (!isStreaming) sendMessage(input);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !showContextPicker) {
       e.preventDefault();
       handleSubmit();
     }
   };
 
   const handleNewChat = () => {
-    setMessages([]);
+    resetChat();
     setShowQuickActions(true);
     setChatTitle('New chat');
     setCurrentChatId(null);
     setShowHistoryDropdown(false);
+    setAttachedFiles([]);
   };
 
   const handleLoadChat = (chat: ChatHistoryItem) => {
+    // Note: Loading historical chats would need backend support for resuming sessions
+    // For now, we just display the history visually
     setIsAnimating(true);
     setChatTitle(chat.title);
     setCurrentChatId(chat.id);
-    setMessages(chat.messages);
     setShowQuickActions(false);
     setShowHistoryPanel(false);
     setTimeout(() => setIsAnimating(false), 600);
   };
 
-  const handleDeleteChat = (e: React.MouseEvent, chatId: string) => {
+  const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
-    setChatHistory((prev) => prev.filter((c) => c.id !== chatId));
-    if (currentChatId === chatId) handleNewChat();
+    if (!selectedProjectId) return;
+    try {
+      await projectsApi.deleteChat(selectedProjectId, chatId);
+      setChatHistory((prev) => prev.filter((c) => c.id !== chatId));
+      if (currentChatId === chatId) handleNewChat();
+    } catch (err) {
+      console.error('Failed to delete chat:', err);
+    }
   };
 
   const hasMessages = messages.length > 0;
   const filteredHistory = chatHistory.filter((c) => c.title.toLowerCase().includes(historySearch.toLowerCase()));
 
   return (
-    <div className="h-full flex bg-background relative overflow-hidden">
+    <div className="h-full flex relative overflow-hidden">
       {/* Animation styles */}
       <style>{`
         @keyframes float-up {
@@ -329,7 +487,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
         <div
           ref={historyPanelRef}
           className={cn(
-            'w-64 border-r border-border flex flex-col bg-background shrink-0 transition-all duration-300 ease-in-out',
+            'w-64 border-r border-border/50 flex flex-col glass-subtle shrink-0 transition-all duration-300 ease-in-out',
             showHistoryPanel ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 absolute'
           )}
         >
@@ -369,7 +527,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
                       <MessageCircle className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm text-foreground block truncate">{chat.title}</span>
-                        <span className="text-xs text-muted-foreground">{getRelativeTime(chat.date)}</span>
+                        <span className="text-xs text-muted-foreground">{getRelativeTime(chat.createdAt)}</span>
                       </div>
                       <button onClick={(e) => handleDeleteChat(e, chat.id)} className="p-1 rounded hover:bg-background opacity-0 group-hover:opacity-100">
                         <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-red-500" />
@@ -455,50 +613,130 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
                 </h1>
 
                 {/* Input Card */}
-                <div className="rounded-2xl border border-sidebar-border bg-sidebar p-4 mb-4 animate-float-up focus-within:border-foreground/30" style={{ animationDelay: '0.2s' }}>
-                  <div className="mb-2">
-                    <button className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border/80 bg-background/50 hover:bg-muted">
-                      <AtSign className="w-3.5 h-3.5" />
-                      Add context
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={cn("rounded-2xl glass p-4 mb-4 animate-float-up relative", isDragOver ? "border-primary border-dashed bg-primary/10" : "focus-within:border-foreground/30")}
+                  style={{ animationDelay: '0.2s' }}
+                >
+                  {isDragOver && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-primary/10 rounded-2xl z-10">
+                      <div className="flex items-center gap-2 text-primary text-sm font-medium"><Paperclip className="w-5 h-5" />Drop files here</div>
+                    </div>
+                  )}
+                  {/* Project picker + Add context */}
+                  <div className="flex items-center gap-2 mb-2">
+                    {/* Project Picker */}
+                    <div className="relative" ref={projectDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border/80 bg-background/50 hover:bg-muted max-w-[160px]"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{projects.find(p => p.id === selectedProjectId)?.name || 'Select project'}</span>
+                        <ChevronDown className="w-3 h-3 shrink-0" />
+                      </button>
+                      {showProjectDropdown && (
+                        <div className="absolute top-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-30 max-h-48 overflow-y-auto">
+                          <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Projects</div>
+                          {projects.length === 0 ? (
+                            <div className="px-3 py-2 text-xs text-muted-foreground">No projects found</div>
+                          ) : (
+                            projects.map(p => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => { setSelectedProjectId(p.id); setShowProjectDropdown(false); }}
+                                className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors hover:bg-accent", selectedProjectId === p.id && "text-primary font-medium")}
+                              >
+                                <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">{p.name}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {/* Add context button */}
+                    <button type="button" onClick={() => { setInput(input + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border/80 bg-background/50 hover:bg-muted">
+                      <AtSign className="w-3.5 h-3.5" />Add context
                     </button>
                   </div>
+                  {attachedFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {attachedFiles.map((f, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-xs text-foreground">
+                          <FileCode className="w-3 h-3" /><span className="max-w-[100px] truncate">{f}</span>
+                          <button onClick={() => removeAttachedFile(i)} className="hover:text-destructive"><X className="w-3 h-3" /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <form onSubmit={handleSubmit}>
-                    <textarea
-                      ref={inputRef}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Ask, search, or make anything..."
-                      className="w-full bg-transparent text-foreground placeholder:text-muted-foreground/60 text-sm resize-none outline-none min-h-[40px] mb-3"
-                      rows={1}
-                    />
+                    <div className="relative mb-3">
+                      <input
+                        ref={chatInputRef}
+                        type="text"
+                        value={input}
+                        onChange={handleInputChange}
+                        onKeyDown={(e) => { handleContextKeyDown(e); if (!showContextPicker) handleKeyDown(e); }}
+                        onPaste={handlePaste}
+                        placeholder="Type @ to add context..."
+                        className="w-full bg-transparent text-foreground placeholder:text-muted-foreground/60 text-sm outline-none"
+                      />
+                      {showContextPicker && filteredFiles.length > 0 && (
+                        <div ref={contextPickerRef} className="absolute bottom-full left-0 mb-1 w-64 max-h-40 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg py-1 z-30">
+                          <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Files</div>
+                          {filteredFiles.slice(0, 6).map((f, i) => (
+                            <button key={f} onClick={() => selectContextFile(f)} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", i === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
+                              <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{f}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-0.5">
-                        <button type="button" className="p-2 rounded-lg hover:bg-muted/50">
-                          <Paperclip className="w-4 h-4 text-muted-foreground" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedMode('auto')}
-                          className={cn('px-3 py-1.5 rounded-lg text-xs font-medium', selectedMode === 'auto' ? 'text-foreground' : 'text-muted-foreground')}
-                        >
-                          Auto
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedMode('all-sources')}
-                          className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium', selectedMode === 'all-sources' ? 'text-foreground' : 'text-muted-foreground')}
-                        >
-                          <Globe className="w-3.5 h-3.5" />
-                          All sources
+                        <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
+                        <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg hover:bg-muted/50"><Paperclip className="w-4 h-4 text-muted-foreground" /></button>
+                        <div className="relative" ref={modelDropdownRef}>
+                          <button type="button" onClick={() => setShowModelDropdown(!showModelDropdown)} className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium", selectedModel !== 'default' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground")}>
+                            <Zap className="w-3.5 h-3.5" />{selectedModel === 'default' ? 'Default' : selectedModel.charAt(0).toUpperCase() + selectedModel.slice(1)}<ChevronDown className="w-3 h-3" />
+                          </button>
+                          {showModelDropdown && (
+                            <div className="absolute bottom-full left-0 mb-1 w-28 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
+                              {(['default', 'haiku', 'sonnet', 'opus'] as const).map(m => (
+                                <button key={m} type="button" onClick={() => { setSelectedModel(m); setShowModelDropdown(false); }} className={cn("w-full px-3 py-1.5 text-left text-xs hover:bg-accent", selectedModel === m ? "text-primary font-medium" : "text-popover-foreground")}>
+                                  {m === 'default' ? 'Default' : m.charAt(0).toUpperCase() + m.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button type="button" onClick={() => setWebSearchEnabled(!webSearchEnabled)} className={cn("flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium", webSearchEnabled ? "text-blue-500 bg-blue-500/10" : "text-muted-foreground hover:text-foreground")}>
+                          <Globe className={cn("w-3.5 h-3.5", webSearchEnabled && "text-blue-500")} />Web
                         </button>
                       </div>
-                      <button
-                        type="submit"
-                        className={cn('w-7 h-7 rounded-lg flex items-center justify-center', input.trim() ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground')}
-                      >
-                        <ArrowUp className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <div className="relative" ref={permissionDropdownRef}>
+                          <button type="button" onClick={() => setShowPermissionDropdown(!showPermissionDropdown)} className={cn("p-1.5 rounded-lg", chatPermissionMode === 'default' && "text-muted-foreground hover:text-foreground hover:bg-muted", chatPermissionMode === 'acceptEdits' && "text-yellow-500 bg-yellow-500/10", chatPermissionMode === 'bypassPermissions' && "text-red-500 bg-red-500/10")}>
+                            {chatPermissionMode === 'default' && <ShieldAlert className="w-4 h-4" />}
+                            {chatPermissionMode === 'acceptEdits' && <Pencil className="w-4 h-4" />}
+                            {chatPermissionMode === 'bypassPermissions' && <Zap className="w-4 h-4" />}
+                          </button>
+                          {showPermissionDropdown && (
+                            <div className="absolute bottom-full right-0 mb-1 w-40 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
+                              <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Permission</div>
+                              <button type="button" onClick={() => { setChatPermissionMode('default'); setShowPermissionDropdown(false); }} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent", chatPermissionMode === 'default' && "text-primary font-medium")}><ShieldAlert className="w-3.5 h-3.5" />Default</button>
+                              <button type="button" onClick={() => { setChatPermissionMode('acceptEdits'); setShowPermissionDropdown(false); }} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent", chatPermissionMode === 'acceptEdits' && "text-yellow-500 font-medium")}><Pencil className="w-3.5 h-3.5" />Accept Edits</button>
+                              <button type="button" onClick={() => { setChatPermissionMode('bypassPermissions'); setShowPermissionDropdown(false); }} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent", chatPermissionMode === 'bypassPermissions' && "text-red-500 font-medium")}><Zap className="w-3.5 h-3.5" />Bypass All</button>
+                            </div>
+                          )}
+                        </div>
+                        <button type="submit" className={cn('w-7 h-7 rounded-lg flex items-center justify-center', input.trim() ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground')}><ArrowUp className="w-4 h-4" /></button>
+                      </div>
                     </div>
                   </form>
                 </div>
@@ -530,7 +768,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
                   {msg.role === 'user' ? <UserMessage content={msg.content} /> : <AssistantMessage message={msg} />}
                 </div>
               ))}
-              {isTyping && <TypingIndicator />}
+              {isStreaming && messages[messages.length - 1]?.content === '' && <TypingIndicator />}
             </div>
           )}
         </div>
@@ -539,51 +777,106 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
         {hasMessages && (
           <div className={cn('p-4', isAnimating && 'opacity-0')} style={isAnimating ? { animation: `float-up 0.4s ease-out ${0.1 + messages.length * 0.1}s forwards` } : undefined}>
             <div className="max-w-3xl mx-auto">
-              <form onSubmit={handleSubmit} className="rounded-2xl border border-sidebar-border bg-sidebar p-3 focus-within:border-foreground/30">
-                <div className="mb-2">
-                  <button type="button" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border/80 bg-background/50 hover:bg-muted">
-                    <AtSign className="w-3.5 h-3.5" />
-                    Add context
+              <form
+                onSubmit={handleSubmit}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={cn("rounded-2xl border p-3 relative", isDragOver ? "border-primary border-dashed bg-primary/10" : "border-sidebar-border bg-sidebar focus-within:border-foreground/30")}
+              >
+                {isDragOver && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-primary/10 rounded-2xl z-10">
+                    <div className="flex items-center gap-2 text-primary text-sm font-medium"><Paperclip className="w-5 h-5" />Drop files here</div>
+                  </div>
+                )}
+                {/* Project indicator + Add context */}
+                <div className="flex items-center gap-2 mb-2">
+                  {/* Project indicator (read-only in chat state) */}
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border/80 bg-background/50 text-muted-foreground max-w-[160px]">
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{projects.find(p => p.id === selectedProjectId)?.name || 'No project'}</span>
+                  </div>
+                  {/* Add context button */}
+                  <button type="button" onClick={() => { setInput(input + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border/80 bg-background/50 hover:bg-muted">
+                    <AtSign className="w-3.5 h-3.5" />Add context
                   </button>
                 </div>
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask, search, or make anything..."
-                  className="w-full bg-transparent text-foreground placeholder:text-muted-foreground/60 text-sm resize-none outline-none min-h-[24px] max-h-[120px] mb-2"
-                  rows={1}
-                />
+                {attachedFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {attachedFiles.map((f, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-xs text-foreground">
+                        <FileCode className="w-3 h-3" /><span className="max-w-[100px] truncate">{f}</span>
+                        <button type="button" onClick={() => removeAttachedFile(i)} className="hover:text-destructive"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="relative mb-2">
+                  <input
+                    ref={chatInputRef}
+                    type="text"
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyDown={(e) => { handleContextKeyDown(e); if (!showContextPicker) handleKeyDown(e); }}
+                    onPaste={handlePaste}
+                    placeholder="Type @ to add context..."
+                    className="w-full bg-transparent text-foreground placeholder:text-muted-foreground/60 text-sm outline-none"
+                  />
+                  {showContextPicker && filteredFiles.length > 0 && (
+                    <div ref={contextPickerRef} className="absolute bottom-full left-0 mb-1 w-64 max-h-40 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg py-1 z-30">
+                      <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Files</div>
+                      {filteredFiles.slice(0, 6).map((f, i) => (
+                        <button key={f} type="button" onClick={() => selectContextFile(f)} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", i === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
+                          <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{f}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-0.5">
-                    <button type="button" className="p-2 rounded-lg hover:bg-muted/50">
-                      <Paperclip className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMode('auto')}
-                      className={cn('px-3 py-1.5 rounded-lg text-xs font-medium', selectedMode === 'auto' ? 'text-foreground' : 'text-muted-foreground')}
-                    >
-                      Auto
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMode('all-sources')}
-                      className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium', selectedMode === 'all-sources' ? 'text-foreground' : 'text-muted-foreground')}
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      All sources
+                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg hover:bg-muted/50"><Paperclip className="w-4 h-4 text-muted-foreground" /></button>
+                    <div className="relative" ref={modelDropdownRef}>
+                      <button type="button" onClick={() => setShowModelDropdown(!showModelDropdown)} className={cn("flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium", selectedModel !== 'default' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground")}>
+                        <Zap className="w-3.5 h-3.5" />{selectedModel === 'default' ? 'Default' : selectedModel.charAt(0).toUpperCase() + selectedModel.slice(1)}<ChevronDown className="w-3 h-3" />
+                      </button>
+                      {showModelDropdown && (
+                        <div className="absolute bottom-full left-0 mb-1 w-28 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
+                          {(['default', 'haiku', 'sonnet', 'opus'] as const).map(m => (
+                            <button key={m} type="button" onClick={() => { setSelectedModel(m); setShowModelDropdown(false); }} className={cn("w-full px-3 py-1.5 text-left text-xs hover:bg-accent", selectedModel === m ? "text-primary font-medium" : "text-popover-foreground")}>
+                              {m === 'default' ? 'Default' : m.charAt(0).toUpperCase() + m.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => setWebSearchEnabled(!webSearchEnabled)} className={cn("flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium", webSearchEnabled ? "text-blue-500 bg-blue-500/10" : "text-muted-foreground hover:text-foreground")}>
+                      <Globe className={cn("w-3.5 h-3.5", webSearchEnabled && "text-blue-500")} />Web
                     </button>
                   </div>
-                  {isTyping ? (
-                    <button type="button" onClick={() => setIsTyping(false)} className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted/50 text-muted-foreground hover:bg-muted">
-                      <Square className="w-3 h-3 fill-current" />
-                    </button>
-                  ) : (
-                    <button type="submit" className={cn('w-7 h-7 rounded-lg flex items-center justify-center', input.trim() ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground')}>
-                      <ArrowUp className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    <div className="relative" ref={permissionDropdownRef}>
+                      <button type="button" onClick={() => setShowPermissionDropdown(!showPermissionDropdown)} className={cn("p-1.5 rounded-lg", chatPermissionMode === 'default' && "text-muted-foreground hover:text-foreground hover:bg-muted", chatPermissionMode === 'acceptEdits' && "text-yellow-500 bg-yellow-500/10", chatPermissionMode === 'bypassPermissions' && "text-red-500 bg-red-500/10")}>
+                        {chatPermissionMode === 'default' && <ShieldAlert className="w-4 h-4" />}
+                        {chatPermissionMode === 'acceptEdits' && <Pencil className="w-4 h-4" />}
+                        {chatPermissionMode === 'bypassPermissions' && <Zap className="w-4 h-4" />}
+                      </button>
+                      {showPermissionDropdown && (
+                        <div className="absolute bottom-full right-0 mb-1 w-40 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
+                          <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Permission</div>
+                          <button type="button" onClick={() => { setChatPermissionMode('default'); setShowPermissionDropdown(false); }} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent", chatPermissionMode === 'default' && "text-primary font-medium")}><ShieldAlert className="w-3.5 h-3.5" />Default</button>
+                          <button type="button" onClick={() => { setChatPermissionMode('acceptEdits'); setShowPermissionDropdown(false); }} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent", chatPermissionMode === 'acceptEdits' && "text-yellow-500 font-medium")}><Pencil className="w-3.5 h-3.5" />Accept Edits</button>
+                          <button type="button" onClick={() => { setChatPermissionMode('bypassPermissions'); setShowPermissionDropdown(false); }} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent", chatPermissionMode === 'bypassPermissions' && "text-red-500 font-medium")}><Zap className="w-3.5 h-3.5" />Bypass All</button>
+                        </div>
+                      )}
+                    </div>
+                    {isStreaming ? (
+                      <button type="button" onClick={cancelStream} className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted/50 text-muted-foreground hover:bg-muted" title="Stop"><Square className="w-3 h-3 fill-current" /></button>
+                    ) : (
+                      <button type="submit" disabled={!selectedProjectId} className={cn('w-7 h-7 rounded-lg flex items-center justify-center', input.trim() && selectedProjectId ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground cursor-not-allowed')}><ArrowUp className="w-4 h-4" /></button>
+                    )}
+                  </div>
                 </div>
               </form>
             </div>

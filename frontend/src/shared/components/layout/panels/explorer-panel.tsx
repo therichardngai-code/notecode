@@ -50,7 +50,7 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab }: Explorer
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search files..."
-            className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-sidebar-border bg-sidebar text-sm focus:outline-none"
+            className="w-full pl-8 pr-3 py-1.5 rounded-lg glass text-sm focus:outline-none"
           />
         </div>
       </div>

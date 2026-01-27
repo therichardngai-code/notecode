@@ -1,11 +1,13 @@
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useUIStore } from '@/shared/stores';
+import { useTaskCreation } from './use-task-creation';
 import type { TaskData } from '@/shared/components/layout';
 
 export function useFloatingPanels() {
   const navigate = useNavigate();
   const { isSettingsPanelOpen, openSettingsPanel, closeSettingsPanel, openNewTaskPanel, closeNewTaskPanel } = useUIStore();
+  const { createTask } = useTaskCreation();
 
   const handleSettingsClick = useCallback(() => {
     if (isSettingsPanelOpen) {
@@ -29,23 +31,21 @@ export function useFloatingPanels() {
 
   const handleOpenFullTask = useCallback(() => {
     closeNewTaskPanel();
-    navigate({ to: '/tasks' });
+    navigate({ to: '/tasks/new' });
   }, [navigate, closeNewTaskPanel]);
 
   const handleCreateTask = useCallback(
-    (task: TaskData) => {
-      console.log('Task created:', task);
-      navigate({ to: '/tasks' });
+    async (task: TaskData) => {
+      await createTask({ ...task, requirement: task.requirement }, { navigateTo: '/tasks' });
     },
-    [navigate]
+    [createTask]
   );
 
   const handleAutoStartTask = useCallback(
-    (task: TaskData) => {
-      console.log('Task auto-started:', task);
-      navigate({ to: '/sessions' });
+    async (task: TaskData) => {
+      await createTask({ ...task, requirement: task.requirement }, { navigateTo: '/sessions', autoStart: true });
     },
-    [navigate]
+    [createTask]
   );
 
   return {

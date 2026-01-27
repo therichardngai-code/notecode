@@ -32,12 +32,27 @@ export interface Task {
   skills: string[];
   tools: ToolConfig | null;
   contextFiles: string[];
+  subagentDelegates?: boolean;  // Enable subagent delegation (Task tool)
   workflowStage: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  // Attempt tracking (aggregate counters) - optional until backend supports
+  totalAttempts?: number;
+  renewCount?: number;
+  retryCount?: number;
+  forkCount?: number;
+  lastAttemptAt?: string | null;
+  // Git integration - optional until backend supports
+  autoBranch?: boolean;       // Create branch on task start
+  autoCommit?: boolean;       // Commit on task complete (skip approval)
+  branchName?: string | null; // Created branch name (set by backend)
+  baseBranch?: string | null; // Branch forked from
+  branchCreatedAt?: string | null; // When branch was created
 }
+
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
 
 export interface CreateTaskRequest {
   projectId: string;
@@ -51,6 +66,11 @@ export interface CreateTaskRequest {
   skills?: string[];
   tools?: ToolConfig;
   contextFiles?: string[];
+  subagentDelegates?: boolean;  // Enable subagent delegation (Task tool)
+  permissionMode?: PermissionMode;  // Agent permission level
+  // Git integration
+  autoBranch?: boolean;
+  autoCommit?: boolean;
 }
 
 export interface UpdateTaskRequest {
@@ -62,6 +82,13 @@ export interface UpdateTaskRequest {
   agentRole?: AgentRole | null;
   provider?: ProviderType | null;
   model?: string | null;
+  skills?: string[];
+  tools?: ToolConfig | null;
+  contextFiles?: string[];
+  subagentDelegates?: boolean;
+  // Git integration
+  autoBranch?: boolean;
+  autoCommit?: boolean;
 }
 
 export interface MoveTaskRequest {

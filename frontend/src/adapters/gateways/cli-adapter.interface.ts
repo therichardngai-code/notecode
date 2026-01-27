@@ -1,7 +1,8 @@
 import type { Session, SessionStatus, StartSessionRequest } from '../api/sessions-api';
+import type { StartChatRequest, ChatTask } from '../api/projects-api';
 
 // Re-export for convenience
-export type { Session, SessionStatus, StartSessionRequest };
+export type { Session, SessionStatus, StartSessionRequest, StartChatRequest, ChatTask };
 
 /**
  * CLI streaming block types
@@ -42,12 +43,44 @@ export interface SessionControlResult {
 }
 
 /**
+ * Chat mode result (includes auto-created task)
+ */
+export interface StartChatResult {
+  task: ChatTask;
+  session: Session;
+  wsUrl: string;
+}
+
+/**
+ * Task mode result
+ */
+export interface StartTaskSessionResult {
+  session: Session;
+  wsUrl?: string;
+}
+
+/**
  * CLI Adapter Interface
- * Aligned with backend session-based API (uses sessionId: string, not processId: number)
+ * Supports both Chat Mode and Task Mode
  */
 export interface ICliAdapter {
-  /** Start a new session - returns session with wsUrl for streaming */
-  start(request: StartSessionRequest, config?: CliAdapterConfig): Promise<Session>;
+  // ============================================
+  // CHAT MODE - AI Chat Tab, Floating Chat
+  // ============================================
+
+  /** Start chat session (auto-creates ephemeral task) */
+  startChat(projectId: string, request: StartChatRequest, config?: CliAdapterConfig): Promise<StartChatResult>;
+
+  // ============================================
+  // TASK MODE - Tasks Tab, Add Task, FullTaskDetails
+  // ============================================
+
+  /** Start task session (for existing task) */
+  startTaskSession(request: StartSessionRequest, config?: CliAdapterConfig): Promise<StartTaskSessionResult>;
+
+  // ============================================
+  // SESSION CONTROL - Both modes
+  // ============================================
 
   /** Stop a running session by sessionId */
   stop(sessionId: string): Promise<SessionControlResult>;

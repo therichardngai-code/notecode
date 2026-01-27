@@ -45,7 +45,7 @@ export function FloatingPanel({
       <div
         ref={panelRef}
         className={cn(
-          "bg-card border border-border rounded-lg shadow-lg flex flex-col max-h-[90vh]",
+          "glass-strong rounded-lg shadow-lg flex flex-col max-h-[90vh]",
           position === 'right' ? "absolute right-4 top-4 bottom-4 w-96" : "w-full max-w-2xl",
           className
         )}

@@ -59,6 +59,128 @@ export class ApprovalPendingEvent implements DomainEvent {
   ) {}
 }
 
+// Git approval created event
+export class GitApprovalCreatedEvent implements DomainEvent {
+  readonly type = 'git:approval:created';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // approvalId
+    public readonly projectId: string,
+    public readonly taskId: string,
+    public readonly commitMessage: string,
+    public readonly filesChanged: string[],
+    public readonly diffSummary: { files: number; additions: number; deletions: number }
+  ) {}
+}
+
+// Git approval resolved event
+export class GitApprovalResolvedEvent implements DomainEvent {
+  readonly type = 'git:approval:resolved';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // approvalId
+    public readonly projectId: string,
+    public readonly status: 'approved' | 'rejected',
+    public readonly commit?: { sha: string; message: string }
+  ) {}
+}
+
+// Git branch created event
+export class GitBranchCreatedEvent implements DomainEvent {
+  readonly type = 'git:branch:created';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // taskId
+    public readonly projectId: string,
+    public readonly branchName: string,
+    public readonly baseBranch: string
+  ) {}
+}
+
+// Git branch deleted event
+export class GitBranchDeletedEvent implements DomainEvent {
+  readonly type = 'git:branch:deleted';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // taskId
+    public readonly projectId: string,
+    public readonly branchName: string
+  ) {}
+}
+
+// Task created event
+export class TaskCreatedEvent implements DomainEvent {
+  readonly type = 'task.created';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // taskId
+    public readonly projectId: string,
+    public readonly title: string
+  ) {}
+}
+
+// Task status changed event
+export class TaskStatusChangedEvent implements DomainEvent {
+  readonly type = 'task.status.changed';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // taskId
+    public readonly projectId: string,
+    public readonly oldStatus: string,
+    public readonly newStatus: string
+  ) {}
+}
+
+// Tool execution event (before/after)
+export class ToolExecutionEvent implements DomainEvent {
+  readonly type: 'tool.before' | 'tool.after';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // sessionId
+    public readonly projectId: string | null,
+    public readonly toolName: string,
+    public readonly phase: 'before' | 'after',
+    public readonly toolInput?: Record<string, unknown>
+  ) {
+    this.type = `tool.${phase}` as 'tool.before' | 'tool.after';
+  }
+}
+
+// Message event (before/after)
+export class MessageEvent implements DomainEvent {
+  readonly type: 'message.before' | 'message.after';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // sessionId
+    public readonly projectId: string | null,
+    public readonly phase: 'before' | 'after',
+    public readonly role: string
+  ) {
+    this.type = `message.${phase}` as 'message.before' | 'message.after';
+  }
+}
+
+// Approval resolved event
+export class ApprovalResolvedEvent implements DomainEvent {
+  readonly type = 'approval.resolved';
+  readonly occurredAt = new Date();
+
+  constructor(
+    public readonly aggregateId: string, // approvalId
+    public readonly sessionId: string,
+    public readonly approved: boolean,
+    public readonly toolName: string
+  ) {}
+}
+
 // Event handler type
 export type EventHandler = (event: DomainEvent) => void;
 

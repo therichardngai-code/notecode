@@ -42,7 +42,7 @@ interface StatCardProps {
 
 function StatCard({ title, value, change, changeType, icon: Icon }: StatCardProps) {
   return (
-    <div className="rounded-xl border border-sidebar-border bg-sidebar p-6">
+    <div className="rounded-xl glass p-6">
       <div className="flex items-center justify-between mb-6">
         <span className="text-base text-muted-foreground">{title}</span>
         <div className="w-10 h-10 rounded-lg bg-muted/50 flex items-center justify-center">
@@ -66,7 +66,7 @@ function TokenUsageChart() {
   const maxValue = Math.max(...tokenUsageData.flatMap(d => [d.input, d.output]));
 
   return (
-    <div className="rounded-xl border border-sidebar-border bg-sidebar p-6">
+    <div className="rounded-xl glass p-6">
       <div className="flex items-center justify-between mb-8">
         <h3 className="text-base font-medium text-foreground">Token Usage (Last 7 Days)</h3>
         <div className="flex items-center gap-5 text-sm">
@@ -105,7 +105,7 @@ function TokenUsageChart() {
 
 function ModelUsageChart() {
   return (
-    <div className="rounded-xl border border-sidebar-border bg-sidebar p-6">
+    <div className="rounded-xl glass p-6">
       <h3 className="text-base font-medium text-foreground mb-8">Model Usage Distribution</h3>
 
       {/* Horizontal Bar Chart */}
@@ -131,7 +131,7 @@ function ModelUsageChart() {
 
 function RecentActivityList() {
   return (
-    <div className="rounded-xl border border-sidebar-border bg-sidebar p-6">
+    <div className="rounded-xl glass p-6">
       <h3 className="text-base font-medium text-foreground mb-6">Recent Activity</h3>
 
       <div className="space-y-1">
@@ -151,7 +151,7 @@ function RecentActivityList() {
 
 function DashboardPage() {
   return (
-    <div className="h-full flex flex-col bg-background overflow-y-auto">
+    <div className="h-full flex flex-col overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div className="flex items-center gap-3">

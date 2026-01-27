@@ -109,7 +109,7 @@ function SessionCard({ session, isSelected, onSelect, onOpenInNewTab, onStop, on
       onClick={onSelect}
       className={cn(
         'w-full flex items-start gap-4 p-4 rounded-xl border transition-colors text-left group cursor-pointer',
-        isSelected ? 'border-primary bg-primary/5' : 'border-sidebar-border bg-sidebar hover:bg-sidebar-accent'
+        isSelected ? 'border-primary glass-strong' : 'glass hover:shadow-md'
       )}
     >
       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: config.bgColor }}>
@@ -294,7 +294,7 @@ export function SessionsView({
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full flex flex-col">
       {/* Header - only show if not embedded */}
       {!hideHeader && (
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">

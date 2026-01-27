@@ -7,3 +7,8 @@ export * from './api-client';
 export * from './projects-api';
 export * from './tasks-api';
 export * from './sessions-api';
+export * from './git-api';
+export * from './system-api';
+export * from './settings-api';
+export * from './version-api';
+export * from './backup-api';

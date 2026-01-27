@@ -16,6 +16,7 @@ export const sessionKeys = {
   details: () => [...sessionKeys.all, 'detail'] as const,
   detail: (id: string) => [...sessionKeys.details(), id] as const,
   messages: (id: string) => [...sessionKeys.all, 'messages', id] as const,
+  diffs: (id: string) => [...sessionKeys.all, 'diffs', id] as const,
 };
 
 /**
@@ -62,6 +63,18 @@ export function useSessionMessages(id: string, limit = 50) {
     queryFn: () => sessionsApi.getMessages(id, limit),
     select: (data) => data.messages,
     enabled: !!id,
+  });
+}
+
+/**
+ * Fetch session diffs (file changes)
+ */
+export function useSessionDiffs(sessionId: string) {
+  return useQuery({
+    queryKey: sessionKeys.diffs(sessionId),
+    queryFn: () => sessionsApi.getDiffs(sessionId),
+    select: (data) => data.diffs,
+    enabled: !!sessionId,
   });
 }
 

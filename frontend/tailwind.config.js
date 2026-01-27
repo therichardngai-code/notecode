@@ -5,6 +5,11 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    'glass',
+    'glass-subtle',
+    'glass-strong',
+  ],
   theme: {
     extend: {
       colors: {
