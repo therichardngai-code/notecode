@@ -3,7 +3,7 @@
  * Implements IMessageRepository using Drizzle ORM
  */
 
-import { eq, desc, and, lt } from 'drizzle-orm';
+import { eq, desc, and, lt, sql } from 'drizzle-orm';
 import { IMessageRepository, MessageFilters } from '../../domain/ports/repositories/message.repository.port.js';
 import { Message } from '../../domain/entities/message.entity.js';
 import { Block, MessageRole } from '../../domain/value-objects/block-types.vo.js';
@@ -51,6 +51,20 @@ export class SqliteMessageRepository implements IMessageRepository {
 
     // Return in chronological order
     return rows.map(row => this.toEntity(row)).reverse();
+  }
+
+  async findByProviderSessionId(providerSessionId: string, limit: number = 200): Promise<Message[]> {
+    const db = getDatabase();
+    // Join messages with sessions to find all messages for same conversation
+    const rows = db.all<MessageRow>(sql`
+      SELECT m.* FROM messages m
+      JOIN sessions s ON m.session_id = s.id
+      WHERE s.provider_session_id = ${providerSessionId}
+      ORDER BY m.timestamp ASC
+      LIMIT ${limit}
+    `);
+
+    return rows.map(row => this.toEntity(row));
   }
 
   async save(message: Message): Promise<Message> {

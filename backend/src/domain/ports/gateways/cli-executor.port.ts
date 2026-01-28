@@ -37,14 +37,6 @@ export interface CliSpawnConfig {
 
   // MCP
   mcpConfig?: string[];
-
-  // Custom subagents (JSON object for --agents flag)
-  customAgents?: Record<string, {
-    description: string;
-    prompt: string;
-    tools?: string[];
-    model?: string;
-  }>;
 }
 
 export interface CliProcess {
@@ -58,7 +50,8 @@ export type CliOutputType =
   | 'tool_result'
   | 'thinking'
   | 'result'
-  | 'system';
+  | 'system'
+  | 'stream_event';  // Real-time text deltas from --include-partial-messages
 
 export interface CliOutput {
   type: CliOutputType;

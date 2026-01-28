@@ -70,19 +70,26 @@ export class ClaudeCliAdapter implements ICliExecutor {
       console.error('[ClaudeCliAdapter] Spawn error:', err.message);
     });
 
+    // Capture stderr for debugging
+    let stderrBuffer = '';
+    proc.stderr?.on('data', (data) => {
+      stderrBuffer += data.toString();
+      console.error('[ClaudeCliAdapter] stderr:', data.toString().trim());
+    });
+
     // Wait for session_id in output
     const cliProcess = await this.waitForSessionId(processId);
-    // debugLog('[ClaudeCliAdapter] Got session ID:', cliProcess.sessionId);
+
+    // When resuming, use the original session ID (Claude updates original file but may return different ID)
+    const sessionId = config.resumeSessionId ?? cliProcess.sessionId;
 
     // Send initial prompt via stdin if provided
     if (config.initialPrompt) {
-      // debugLog('[ClaudeCliAdapter] Sending initial prompt...');
       await this.sendMessage(processId, config.initialPrompt);
-      // debugLog('[ClaudeCliAdapter] Initial prompt sent');
     }
 
     spawnComplete = true;
-    return cliProcess;
+    return { processId, sessionId };
   }
 
   private buildArgs(config: CliSpawnConfig): string[] {
@@ -92,15 +99,15 @@ export class ClaudeCliAdapter implements ICliExecutor {
       '--output-format', 'stream-json',
       '--input-format', 'stream-json',
       '--verbose',
+      '--include-partial-messages',  // Enable real-time text streaming
       '--model', config.model,
     ];
 
-    // Session options
-    if (config.sessionId) {
-      args.push('--session-id', config.sessionId);
-    }
+    // Session options (--session-id not allowed with --resume)
     if (config.resumeSessionId) {
       args.push('--resume', config.resumeSessionId);
+    } else if (config.sessionId) {
+      args.push('--session-id', config.sessionId);
     }
     if (config.continueRecent) {
       args.push('--continue');
@@ -146,11 +153,6 @@ export class ClaudeCliAdapter implements ICliExecutor {
       for (const configPath of config.mcpConfig) {
         args.push('--mcp-config', configPath);
       }
-    }
-
-    // Custom subagents (--agents JSON)
-    if (config.customAgents && Object.keys(config.customAgents).length > 0) {
-      args.push('--agents', JSON.stringify(config.customAgents));
     }
 
     // Note: initialPrompt is sent via stdin after spawn, not as CLI argument
@@ -201,10 +203,24 @@ export class ClaudeCliAdapter implements ICliExecutor {
     return new Promise((resolve, reject) => {
       let resolved = false;
 
+      // Listen for early exit (CLI crash/error before session ID)
+      const exitHandler = (code: number) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          clearTimeout(fallbackTimeout);
+          console.error(`[ClaudeCliAdapter] CLI exited early with code ${code}`);
+          reject(new Error(`CLI exited with code ${code} before session started`));
+        }
+      };
+      this.exitCallbacks.get(processId)?.add(exitHandler);
+
       // Fallback: if no session_id after 5s, generate one
       const fallbackTimeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
+          clearTimeout(timeout);
+          this.exitCallbacks.get(processId)?.delete(exitHandler);
           const generatedSessionId = `cli-${processId}-${Date.now()}`;
           resolve({ processId, sessionId: generatedSessionId });
         }
@@ -212,6 +228,9 @@ export class ClaudeCliAdapter implements ICliExecutor {
 
       const timeout = setTimeout(() => {
         if (!resolved) {
+          resolved = true;
+          clearTimeout(fallbackTimeout);
+          this.exitCallbacks.get(processId)?.delete(exitHandler);
           reject(new Error('Timeout waiting for session ID'));
         }
       }, 30000);
@@ -227,6 +246,7 @@ export class ClaudeCliAdapter implements ICliExecutor {
           resolved = true;
           clearTimeout(timeout);
           clearTimeout(fallbackTimeout);
+          this.exitCallbacks.get(processId)?.delete(exitHandler);
           this.outputCallbacks.get(processId)?.delete(handler);
           resolve({ processId, sessionId });
         }
@@ -323,6 +343,10 @@ export class ClaudeCliAdapter implements ICliExecutor {
         return { type: 'thinking', content: obj, timestamp };
       case 'result':
         return { type: 'result', content: obj, timestamp };
+      case 'stream_event':
+        // Real-time streaming events from --include-partial-messages
+        // Contains event.type: content_block_delta with event.delta.text
+        return { type: 'stream_event', content: obj, timestamp };
       default:
         return { type: 'system', content: obj, timestamp };
     }

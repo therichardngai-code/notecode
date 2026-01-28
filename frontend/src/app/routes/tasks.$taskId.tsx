@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
@@ -8,7 +9,7 @@ import {
   ChevronDown, ChevronRight, AlertTriangle, ShieldAlert, RotateCcw, RefreshCw, Copy,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, useStartSession, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
 import { statusConfig, priorityConfig, type StatusId } from '@/shared/config/task-config';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
@@ -16,6 +17,7 @@ import type { TaskStatus } from '@/adapters/api/tasks-api';
 import type { Message, Diff, ApprovalRequest, Session, SessionResumeMode } from '@/adapters/api/sessions-api';
 import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
+import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 
 export const Route = createFileRoute('/tasks/$taskId')({
   component: TaskDetailPage,
@@ -104,7 +106,24 @@ function messageToChat(msg: Message): ChatMessage {
       if (msg.role === 'assistant' && blockContent.startsWith('{')) {
         try {
           const parsed = JSON.parse(blockContent);
-          if (parsed.content && Array.isArray(parsed.content)) {
+          // Skip API response metadata objects (have model, id, usage fields)
+          if (parsed.model && parsed.id && (parsed.usage || parsed.stop_reason !== undefined)) {
+            // This is raw API response metadata - extract text if present, skip metadata
+            if (parsed.content && Array.isArray(parsed.content)) {
+              for (const item of parsed.content) {
+                if (item.type === 'text' && item.text) {
+                  content += item.text;
+                } else if (item.type === 'tool_use' && item.name) {
+                  commands.push({
+                    cmd: item.name,
+                    status: 'success',
+                    input: item.input as Record<string, unknown>,
+                  });
+                }
+              }
+            }
+            // Don't append raw metadata JSON
+          } else if (parsed.content && Array.isArray(parsed.content)) {
             for (const item of parsed.content) {
               if (item.type === 'text' && item.text) {
                 content += item.text;
@@ -354,6 +373,7 @@ function SessionHistory({ sessions }: { sessions: Session[] }) {
 
 function TaskDetailPage() {
   const { taskId } = Route.useParams();
+  const queryClient = useQueryClient();
 
   // Shared hook - single source of truth (API only)
   const {
@@ -409,6 +429,11 @@ function TaskDetailPage() {
   const chatMessages: ChatMessage[] = apiMessages.map(messageToChat);
   const sessionDiffs: UIDiff[] = apiDiffs.map(diffToUI);
 
+  // Keep chatMessagesRef in sync for WebSocket callback dedup (avoids stale closure)
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
+
   // Pending approvals state
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [processingApproval, setProcessingApproval] = useState<string | null>(null);
@@ -435,7 +460,7 @@ function TaskDetailPage() {
   const handleApproveRequest = async (approvalId: string) => {
     setProcessingApproval(approvalId);
     try {
-      if (isWsConnected && isSessionRunning) {
+      if (isWsConnected && isSessionLive) {
         sendApprovalResponse(approvalId, true);
         setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
       } else {
@@ -452,7 +477,7 @@ function TaskDetailPage() {
   const handleRejectRequest = async (approvalId: string) => {
     setProcessingApproval(approvalId);
     try {
-      if (isWsConnected && isSessionRunning) {
+      if (isWsConnected && isSessionLive) {
         sendApprovalResponse(approvalId, false);
         setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
       } else {
@@ -469,19 +494,54 @@ function TaskDetailPage() {
   // Start session with mode (retry/renew/fork)
   const handleStartSessionWithMode = async (mode: SessionResumeMode) => {
     if (!taskId) return;
-    // Reset real-time chat state for new session
+    // Capture chat input BEFORE clearing state - pass as initialPrompt to backend
+    const newPrompt = chatInput.trim() || undefined;
+    // Prevent height collapse: lock container height before clearing state
+    const container = aiSessionContainerRef.current;
+    const scrollTop = container?.scrollTop ?? 0;
+    if (container) {
+      container.style.minHeight = `${container.offsetHeight}px`;
+    }
+    // Clear chat state for new session
     setRealtimeMessages([]);
     setCurrentAssistantMessage('');
-    setIsWaitingForResponse(false);
+    setChatInput(''); // Clear after capturing
+    setAttachedFiles([]); // Clear attached files
+    setWsSessionStatus(null); // Reset WebSocket status for new session
     setJustStartedSession(null); // Clear previous
+    // Restore scroll position after state clears, then release height lock
+    requestAnimationFrame(() => {
+      if (container) {
+        container.scrollTop = scrollTop;
+        // Release height lock after new content starts loading
+        setTimeout(() => { container.style.minHeight = ''; }, 1000);
+      }
+    });
+    // Add user message optimistically if there's a prompt (shows immediately in UI)
+    if (newPrompt) {
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: newPrompt,
+      };
+      setRealtimeMessages([userMessage]);
+    }
+    // Show "AI is thinking..." BEFORE async call (not after - race condition with WebSocket)
+    setIsWaitingForResponse(true);
     try {
-      const response = await startSessionMutation.mutateAsync({ taskId, mode });
+      const response = await startSessionMutation.mutateAsync({
+        taskId,
+        mode,
+        initialPrompt: newPrompt, // Pass chat input as new instruction
+      });
       console.log('Session started:', response.session.id, 'wsUrl:', response.wsUrl);
       // Set just-started session for immediate WebSocket connection
-      setJustStartedSession({ id: response.session.id, status: response.session.status });
+      // Always use 'running' status to ensure WebSocket connects (actual status comes via WebSocket)
+      setJustStartedSession({ id: response.session.id, status: 'running' });
       // Switch to AI Session tab to show real-time chat
       setActiveInfoTab('ai-session');
     } catch (err) {
+      setIsWaitingForResponse(false);
       console.error('Failed to start session:', err);
     }
   };
@@ -525,6 +585,14 @@ function TaskDetailPage() {
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState('');
   const [currentToolUse, setCurrentToolUse] = useState<ToolUseBlock | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  // Track session status from WebSocket (more immediate than React Query)
+  const [wsSessionStatus, setWsSessionStatus] = useState<string | null>(null);
+  // Ref for streaming buffer (avoids stale closure in finalization)
+  const streamingBufferRef = useRef<string>('');
+  // Ref for AI session container (prevents height collapse on Resume)
+  const aiSessionContainerRef = useRef<HTMLDivElement>(null);
+  // Ref for chatMessages to enable dedup in WebSocket callback (avoids stale closure)
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
 
   // Sample project files - in real implementation, fetch from API
   const projectFiles = [
@@ -535,37 +603,59 @@ function TaskDetailPage() {
   // Filter files based on search
   const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
 
-  // Check if session is running (use activeSession which includes just-started)
-  const isSessionRunning = activeSession?.status === 'running';
+  // Check if session is running (use activeSession AND wsSessionStatus for immediate updates)
+  // wsSessionStatus provides immediate feedback from WebSocket before React Query refetches
+  // Keep WS connected for non-terminal states (queued, running, paused)
+  // Disconnect only on terminal states (completed, failed, cancelled)
+  const terminalStates = ['completed', 'failed', 'cancelled'];
+  const isSessionLive = activeSession &&
+    !terminalStates.includes(activeSession.status) &&
+    (wsSessionStatus === null || !terminalStates.includes(wsSessionStatus));
 
   // WebSocket connection for real-time chat
   const { isConnected: isWsConnected, sendUserInput, sendCancel, sendApprovalResponse } = useSessionWebSocket({
     sessionId: activeSessionId,
-    enabled: isSessionRunning,
+    enabled: isSessionLive,
     onMessage: (text, isFinal) => {
       if (isFinal) {
-        if (currentAssistantMessage || text) {
-          const finalContent = currentAssistantMessage + (text || '');
-          setRealtimeMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: finalContent }]);
-          setCurrentAssistantMessage('');
+        // Use ref for authoritative buffer value (avoids stale closure)
+        const finalContent = streamingBufferRef.current + (text || '');
+        if (finalContent) {
+          // Dedupe: check against BOTH realtimeMessages AND chatMessages (API)
+          const apiHasContent = chatMessagesRef.current.some(m => m.content === finalContent);
+          if (!apiHasContent) {
+            setRealtimeMessages(prev => {
+              if (prev.some(m => m.content === finalContent)) return prev;
+              return [...prev, { id: Date.now().toString(), role: 'assistant', content: finalContent }];
+            });
+          }
         }
+        streamingBufferRef.current = '';
+        setCurrentAssistantMessage('');
         setCurrentToolUse(null);
         setIsWaitingForResponse(false);
       } else {
-        setCurrentAssistantMessage(prev => prev + text);
+        streamingBufferRef.current += text;
+        setCurrentAssistantMessage(streamingBufferRef.current);
       }
     },
     onToolUse: (tool) => {
       setCurrentToolUse(tool);
     },
     onStatus: (status) => {
+      // Update WebSocket session status immediately (before React Query refetch)
+      setWsSessionStatus(status);
       if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-        if (currentAssistantMessage) {
-          setRealtimeMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: currentAssistantMessage }]);
-          setCurrentAssistantMessage('');
-        }
+        // NOTE: Don't add message here - onMessage('', true) already handles it
+        // Adding here causes duplication due to stale closure
         setCurrentToolUse(null);
         setIsWaitingForResponse(false);
+        // Refetch session data to update status in UI
+        if (activeSessionId) {
+          queryClient.invalidateQueries({ queryKey: sessionKeys.messages(activeSessionId) });
+          queryClient.invalidateQueries({ queryKey: sessionKeys.detail(activeSessionId) });
+          queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+        }
       }
     },
     onApprovalRequired: (data) => {
@@ -584,6 +674,17 @@ function TaskDetailPage() {
     },
     onError: (message) => {
       console.error('WebSocket error:', message);
+      setIsWaitingForResponse(false);
+    },
+    onDisconnected: () => {
+      // Reset waiting state when WebSocket disconnects to prevent chat from being blocked
+      // Use ref for authoritative buffer value (avoids stale closure)
+      if (streamingBufferRef.current) {
+        setRealtimeMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: streamingBufferRef.current }]);
+        streamingBufferRef.current = '';
+        setCurrentAssistantMessage('');
+      }
+      setCurrentToolUse(null);
       setIsWaitingForResponse(false);
     },
   });
@@ -755,7 +856,7 @@ function TaskDetailPage() {
     const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: fullContent };
 
     // If WebSocket is connected (session running), send via WebSocket
-    if (isWsConnected && isSessionRunning) {
+    if (isWsConnected && isSessionLive) {
       setRealtimeMessages(prev => [...prev, userMessage]);
       setChatInput('');
       setAttachedFiles([]);
@@ -1203,31 +1304,20 @@ function TaskDetailPage() {
 
             {/* AI Session Tab */}
             {activeInfoTab === 'ai-session' && (() => {
-              // Combine all message sources: API messages + realtime messages
-              const allMessages = [...chatMessages, ...realtimeMessages];
+              // Combine API messages + realtime messages, deduplicating by content
+              // (realtime messages may duplicate API messages after backend saves)
+              const apiContentSet = new Set(chatMessages.map(m => m.content));
+              const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
+              const allMessages = [...chatMessages, ...uniqueRealtimeMessages];
               const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
               return (
-              <div className="space-y-4 max-h-[400px] overflow-y-auto">
+              <div ref={aiSessionContainerRef} className="space-y-4 max-h-[400px] overflow-y-auto">
                 {/* Session Starting Indicator */}
                 {isStartingSession && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Starting session...</span>
-                  </div>
-                )}
-
-                {/* WebSocket connection indicator - shown when session is running */}
-                {isSessionRunning && !isStartingSession && (
-                  <div className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 rounded text-xs",
-                    isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600"
-                  )}>
-                    <span className={cn(
-                      "w-2 h-2 rounded-full",
-                      isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"
-                    )} />
-                    {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
                   </div>
                 )}
 
@@ -1259,7 +1349,7 @@ function TaskDetailPage() {
                     </div>
                   ) : (
                     <div key={message.id} className="mb-6">
-                      <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">{message.content}</div>
+                      <MarkdownMessage content={message.content} className="text-sm text-foreground" />
                       {message.files && message.files.map((file, idx) => (
                         <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-muted/30 rounded text-xs font-mono text-muted-foreground">
                           <FileCode className="w-3 h-3" /><span className="flex-1">{file.name}</span>
@@ -1360,8 +1450,8 @@ function TaskDetailPage() {
                 {/* Streaming assistant message */}
                 {currentAssistantMessage && (
                   <div className="mb-6">
-                    <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">{currentAssistantMessage}</div>
-                    <span className="inline-block w-2 h-4 bg-primary animate-pulse" />
+                    <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+                    <span className="inline-block w-2 h-4 bg-primary animate-pulse mt-1" />
                   </div>
                 )}
                 {/* Current tool in use */}
@@ -1386,6 +1476,13 @@ function TaskDetailPage() {
                   </div>
                 )}
                 {isTyping && <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Thinking...</span></div>}
+                {/* Connection indicator at bottom - prevents jump when appearing */}
+                {isSessionLive && !isStartingSession && (
+                  <div className={cn("flex items-center gap-2 px-2 py-1.5 rounded text-xs", isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600")}>
+                    <span className={cn("w-2 h-2 rounded-full", isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse")} />
+                    {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
+                  </div>
+                )}
               </div>
             );
             })()}
@@ -1613,7 +1710,7 @@ function TaskDetailPage() {
               "rounded-2xl border p-3 transition-colors relative",
               isDragOver
                 ? "border-primary border-dashed bg-primary/10"
-                : isWsConnected && isSessionRunning
+                : isWsConnected && isSessionLive
                   ? "border-green-500/30 bg-green-500/5 focus-within:border-green-500/50"
                   : "border-border bg-muted/30 focus-within:border-primary/50"
             )}
@@ -1656,7 +1753,7 @@ function TaskDetailPage() {
                 onChange={handleChatInputChange}
                 onKeyDown={(e) => { handleContextPickerKeyDown(e); if (!showContextPicker) handleChatKeyDown(e); }}
                 onPaste={handlePaste}
-                placeholder={isSessionRunning && isWsConnected ? "Type @ to add context..." : "Type @ to add files..."}
+                placeholder={isSessionLive && isWsConnected ? "Type @ to add context..." : "Type @ to add files..."}
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
                 disabled={isTyping || isWaitingForResponse}
               />
@@ -1778,11 +1875,11 @@ function TaskDetailPage() {
                   )}
                 </div>
                 {/* Action Buttons */}
-                {isWaitingForResponse && isSessionRunning ? (
+                {isWaitingForResponse && isSessionLive ? (
                   <button onClick={() => { sendCancel(); setIsWaitingForResponse(false); setCurrentAssistantMessage(''); }} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-xs font-medium">
                     <X className="w-3.5 h-3.5" />Cancel
                   </button>
-                ) : isSessionRunning && isWsConnected ? (
+                ) : isSessionLive && isWsConnected ? (
                   <button onClick={() => sendMessage(chatInput)} disabled={!chatInput.trim() || isWaitingForResponse} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
                     <Sparkles className="w-3.5 h-3.5" />Send
                   </button>
@@ -1790,7 +1887,7 @@ function TaskDetailPage() {
                   <button onClick={handleStartTask} disabled={isUpdating} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
                     <Play className="w-3.5 h-3.5" />Start
                   </button>
-                ) : task.status === 'in-progress' && !isSessionRunning ? (
+                ) : task.status === 'in-progress' && !isSessionLive ? (
                   <button onClick={() => handleStartSessionWithMode('retry')} disabled={isStartingSession} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
                     {isStartingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Resume
                   </button>

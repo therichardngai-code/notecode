@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ChevronDown,
+  ChevronRight,
   ExternalLink,
   ChevronsRight,
   Plus,
@@ -21,9 +22,12 @@ import {
   Square,
   Loader2,
   FolderOpen,
+  Terminal,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useChatSession, type ChatMessage } from '@/shared/hooks';
+import { useChatSession, type ChatMessage, type ToolCommand } from '@/shared/hooks';
+import type { ToolUseBlock } from '@/shared/hooks/use-session-websocket';
 import { projectsApi, type Project, type Chat } from '@/adapters/api';
 
 // Chat history type (shared with AIChatView)
@@ -94,6 +98,7 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
     status: chatStatus,
     messages,
     isStreaming,
+    currentToolUse,
     startChat,
     sendFollowUp,
     cancelStream,
@@ -102,6 +107,17 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
     projectId: selectedProjectId,
     onError: (msg) => console.error('Chat error:', msg),
   });
+
+  // Expanded commands state (for tool input details)
+  const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
+  const toggleCommand = useCallback((key: string) => {
+    setExpandedCommands(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   // Chat input options state (aligned with TaskDetail AI Session)
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -163,10 +179,9 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load messages when selecting a chat
+  // Update chat title when selecting a chat from history
   useEffect(() => {
     if (selectedChat) {
-      setMessages(selectedChat.messages);
       setChatTitle(selectedChat.title);
     }
   }, [selectedChat]);
@@ -459,12 +474,107 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
                         {message.steps} steps
                       </div>
                     )}
-                    <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{message.content}</div>
+                    <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">{message.content}</div>
+                    {/* Tool commands */}
+                    {message.commands && message.commands.length > 0 && (
+                      <div className="space-y-1 mt-2">
+                        {message.commands.map((cmd, idx) => {
+                          const cmdKey = `${message.id}-${idx}`;
+                          const isExpanded = expandedCommands.has(cmdKey);
+                          const hasInput = cmd.input && Object.keys(cmd.input).length > 0;
+                          return (
+                            <div key={idx} className="bg-muted/30 rounded text-xs font-mono overflow-hidden">
+                              <button
+                                onClick={() => hasInput && toggleCommand(cmdKey)}
+                                className={cn("w-full flex items-center gap-2 px-2 py-1", hasInput && "hover:bg-muted/50 cursor-pointer")}
+                              >
+                                {hasInput ? (
+                                  isExpanded ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                                ) : (
+                                  <Terminal className="w-3 h-3 text-muted-foreground" />
+                                )}
+                                <span className="flex-1 text-foreground text-left">{cmd.cmd}</span>
+                                {cmd.status === 'success' && <CheckCircle className="w-3 h-3 text-green-500" />}
+                              </button>
+                              {isExpanded && (
+                                <div className="px-3 py-2 border-t border-border/50 bg-background/50 space-y-1">
+                                  {cmd.input && 'file_path' in cmd.input && (
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                      <FileCode className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">{String(cmd.input.file_path)}</span>
+                                    </div>
+                                  )}
+                                  {cmd.input && 'query' in cmd.input && (
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                      <Globe className="w-3 h-3 shrink-0" />
+                                      <span className="truncate">{String(cmd.input.query)}</span>
+                                    </div>
+                                  )}
+                                  {cmd.input && 'command' in cmd.input && (
+                                    <div className="flex items-start gap-2 text-muted-foreground">
+                                      <Terminal className="w-3 h-3 shrink-0 mt-0.5" />
+                                      <code className="text-[10px] break-all">{String(cmd.input.command)}</code>
+                                    </div>
+                                  )}
+                                  {cmd.input && 'pattern' in cmd.input && (
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                      <span className="text-[10px] font-medium">Pattern:</span>
+                                      <code className="text-[10px]">{String(cmd.input.pattern)}</code>
+                                    </div>
+                                  )}
+                                  {cmd.input && 'url' in cmd.input && (
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                      <Globe className="w-3 h-3 shrink-0" />
+                                      <span className="truncate text-[10px]">{String(cmd.input.url)}</span>
+                                    </div>
+                                  )}
+                                  {cmd.input && 'content' in cmd.input && (
+                                    <pre className="mt-1 p-2 bg-muted/50 rounded text-[10px] max-h-[80px] overflow-auto whitespace-pre-wrap text-foreground/80">
+                                      {String(cmd.input.content).slice(0, 300)}{String(cmd.input.content).length > 300 ? '...' : ''}
+                                    </pre>
+                                  )}
+                                  {cmd.input && 'todos' in cmd.input && Array.isArray(cmd.input.todos) && (
+                                    <div className="space-y-1">
+                                      {(cmd.input.todos as Array<{content?: string; status?: string}>).slice(0, 5).map((todo, i) => (
+                                        <div key={i} className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                          <span className={cn("w-2 h-2 rounded-full", todo.status === 'completed' ? 'bg-green-500' : todo.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400')} />
+                                          <span className="truncate">{todo.content}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {/* Fallback: show raw JSON if no known fields */}
+                                  {cmd.input && !('file_path' in cmd.input || 'query' in cmd.input || 'command' in cmd.input || 'pattern' in cmd.input || 'url' in cmd.input || 'content' in cmd.input || 'todos' in cmd.input) && (
+                                    <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
+                                      {JSON.stringify(cmd.input, null, 2).slice(0, 300)}
+                                    </pre>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )
               )}
+              {/* Current tool in use */}
+              {currentToolUse && (
+                <div className="mb-4 bg-muted/30 rounded-lg p-3 border border-border/50">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                    <Wrench className="w-3.5 h-3.5 animate-pulse" />
+                    <span className="font-medium">{currentToolUse.name}</span>
+                  </div>
+                  {currentToolUse.input && Object.keys(currentToolUse.input).length > 0 && (
+                    <pre className="text-[10px] text-muted-foreground/80 max-h-[60px] overflow-auto whitespace-pre-wrap">
+                      {JSON.stringify(currentToolUse.input, null, 2).slice(0, 300)}
+                    </pre>
+                  )}
+                </div>
+              )}
               {/* Streaming indicator */}
-              {isStreaming && messages[messages.length - 1]?.content === '' && (
+              {isStreaming && messages[messages.length - 1]?.content === '' && !currentToolUse && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Thinking...</span>

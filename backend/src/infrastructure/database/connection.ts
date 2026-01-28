@@ -218,7 +218,66 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_diffs_tool_use_id ON diffs(tool_use_id);
   `);
 
+  // Run schema migrations for new columns (ALTER TABLE)
+  runSchemaMigrations();
+
   console.log('Database migrations completed');
+}
+
+/**
+ * Run schema migrations to add new columns to existing tables
+ * Uses try-catch to handle "column already exists" errors gracefully
+ */
+function runSchemaMigrations(): void {
+  if (!sqlite) return;
+
+  // Helper to safely add column (ignores "duplicate column" error)
+  const addColumnIfNotExists = (table: string, column: string, type: string) => {
+    try {
+      sqlite!.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    } catch (error: unknown) {
+      // Ignore "duplicate column name" error (column already exists)
+      const msg = error instanceof Error ? error.message : '';
+      if (!msg.includes('duplicate column name')) {
+        console.warn(`Migration warning: ${msg}`);
+      }
+    }
+  };
+
+  // Sessions table migrations
+  addColumnIfNotExists('sessions', 'parent_session_id', 'TEXT');
+  addColumnIfNotExists('sessions', 'resume_mode', 'TEXT');
+  addColumnIfNotExists('sessions', 'attempt_number', 'INTEGER DEFAULT 1');
+  addColumnIfNotExists('sessions', 'resumed_from_session_id', 'TEXT');
+  addColumnIfNotExists('sessions', 'initial_prompt', 'TEXT');
+  addColumnIfNotExists('sessions', 'included_context_files', 'TEXT');
+  addColumnIfNotExists('sessions', 'included_skills', 'TEXT');
+
+  // Projects table migrations
+  addColumnIfNotExists('projects', 'system_prompt', 'TEXT');
+
+  // Tasks table migrations
+  addColumnIfNotExists('tasks', 'parent_id', 'TEXT');
+  addColumnIfNotExists('tasks', 'dependencies', 'TEXT');
+  addColumnIfNotExists('tasks', 'subagent_delegates', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'auto_branch', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'auto_commit', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'branch_name', 'TEXT');
+  addColumnIfNotExists('tasks', 'base_branch', 'TEXT');
+  addColumnIfNotExists('tasks', 'branch_created_at', 'TEXT');
+  addColumnIfNotExists('tasks', 'permission_mode', 'TEXT');
+  addColumnIfNotExists('tasks', 'total_attempts', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'renew_count', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'retry_count', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'fork_count', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('tasks', 'last_attempt_at', 'TEXT');
+
+  // Settings table migrations
+  addColumnIfNotExists('settings', 'fallback_model', 'TEXT');
+  addColumnIfNotExists('settings', 'system_prompt', 'TEXT');
+
+  // Messages table migrations
+  addColumnIfNotExists('messages', 'approval_id', 'TEXT');
 }
 
 export async function closeDatabase(): Promise<void> {

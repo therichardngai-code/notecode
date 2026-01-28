@@ -195,6 +195,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     taskRepo,
     projectRepo,
     agentRepo,
+    messageRepo,
     settingsRepo,
     cliExecutor,
     eventBus

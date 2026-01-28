@@ -5,9 +5,9 @@ export { usePanelState, panelRoutes, panelTypeToRoute, type PanelType } from './
 export { useFloatingPanels } from './use-floating-panels';
 export { useTaskCreation, type TaskFormData, type TaskProperty } from './use-task-creation';
 export { useTaskDetail, type TaskDetailProperty } from './use-task-detail';
-export { useSessions, useSession, useSessionMessages, useSessionDiffs, useStartSession } from './use-sessions-query';
+export { useSessions, useSession, useSessionMessages, useSessionDiffs, useStartSession, sessionKeys } from './use-sessions-query';
 export { useSessionWebSocket, type UseSessionWebSocketOptions, type ConnectionState, type ToolUseBlock } from './use-session-websocket';
-export { useChatSession, type ChatMessage, type ChatSessionStatus, type UseChatSessionOptions } from './use-chat-session';
+export { useChatSession, type ChatMessage, type ChatSessionStatus, type UseChatSessionOptions, type ToolCommand } from './use-chat-session';
 export { useFolderPicker } from './use-folder-picker';
 export { useSettings, useUpdateSettings, useSetApiKey, useRemoveApiKey, useEncryptionStatus } from './use-settings';
 export { useVersionCheck, useCurrentVersion } from './use-version-check';

@@ -7,7 +7,14 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { projectsApi, type StartChatRequest, type ChatTask } from '@/adapters/api/projects-api';
 import { type Session, getSessionWebSocketUrl } from '@/adapters/api/sessions-api';
-import type { OutputMessage, StatusMessage, ServerMessage } from './use-session-websocket';
+import type { OutputMessage, StatusMessage, ServerMessage, ToolUseBlock } from './use-session-websocket';
+
+// Tool command for display (same as TaskDetailPage)
+export interface ToolCommand {
+  cmd: string;
+  status: 'success' | 'error';
+  input?: Record<string, unknown>;
+}
 
 // Chat message type
 export interface ChatMessage {
@@ -17,10 +24,148 @@ export interface ChatMessage {
   timestamp: Date;
   steps?: number;
   isStreaming?: boolean;
+  commands?: ToolCommand[];
 }
 
 // Chat session state
 export type ChatSessionStatus = 'idle' | 'starting' | 'connected' | 'streaming' | 'error';
+
+/**
+ * Parse CLI message content - can be stringified JSON or direct object
+ * Aligned with use-session-websocket.ts parseCliContent
+ */
+function parseCliContent(content: unknown): Record<string, unknown> | null {
+  if (typeof content === 'string') {
+    try {
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof content === 'object' && content !== null) {
+    return content as Record<string, unknown>;
+  }
+  return null;
+}
+
+/**
+ * Extract text from Claude CLI message content
+ * Aligned with use-session-websocket.ts extractTextFromContent
+ */
+function extractTextFromContent(content: unknown): string {
+  const parsed = parseCliContent(content);
+  if (!parsed) return typeof content === 'string' ? content : '';
+
+  // Handle Claude message format: { content: [{ type: 'text', text: '...' }] }
+  if (Array.isArray(parsed.content)) {
+    return (parsed.content as Array<{ type?: string; text?: string }>)
+      .filter(block => block.type === 'text' && typeof block.text === 'string')
+      .map(block => block.text)
+      .join('');
+  }
+  // Handle direct text
+  if (parsed.type === 'text' && typeof parsed.text === 'string') {
+    return parsed.text as string;
+  }
+  return '';
+}
+
+/**
+ * Extract tool_use blocks from Claude CLI message content
+ * Aligned with use-session-websocket.ts extractToolUseBlocks
+ */
+function extractToolUseBlocks(content: unknown): ToolCommand[] {
+  const parsed = parseCliContent(content);
+  if (!parsed || !Array.isArray(parsed.content)) return [];
+
+  return (parsed.content as Array<{ type?: string; id?: string; name?: string; input?: Record<string, unknown> }>)
+    .filter(block => block.type === 'tool_use' && block.name)
+    .map(block => ({
+      cmd: block.name || '',
+      status: 'success' as const,
+      input: block.input || {},
+    }));
+}
+
+/**
+ * Process content to extract text and tools
+ * Handles multiple formats: array of blocks, direct objects, nested JSON
+ */
+function processBlocks(content: unknown): { text: string; tools: ToolCommand[] } {
+  let text = '';
+  const tools: ToolCommand[] = [];
+
+  // If content is a string, try to parse it as JSON first
+  let data = content;
+  if (typeof content === 'string') {
+    try {
+      data = JSON.parse(content);
+    } catch {
+      // Plain text, not JSON
+      return { text: content, tools: [] };
+    }
+  }
+
+  // Handle array of blocks (WebSocket format: [{ type: 'text', content: '...' }])
+  const blocks = Array.isArray(data) ? data : [data];
+
+  for (const block of blocks) {
+    if (typeof block !== 'object' || block === null) continue;
+    const b = block as { type?: string; content?: unknown; text?: string; name?: string; input?: Record<string, unknown>; tool?: { name: string; input: Record<string, unknown> } };
+
+    // Direct tool_use block with name (API format)
+    if (b.type === 'tool_use' && b.name) {
+      tools.push({ cmd: b.name, status: 'success', input: b.input ?? {} });
+      continue;
+    }
+
+    // Direct tool_use block with tool object (WebSocket format)
+    if (b.type === 'tool_use' && b.tool?.name) {
+      tools.push({ cmd: b.tool.name, status: 'success', input: b.tool.input || {} });
+      continue;
+    }
+
+    // Text block - may contain nested JSON with tool_use
+    if (b.type === 'text') {
+      const blockContent = b.content ?? b.text ?? '';
+
+      // If blockContent is string, try to parse nested JSON
+      if (typeof blockContent === 'string' && blockContent.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(blockContent);
+          if (parsed.content && Array.isArray(parsed.content)) {
+            for (const item of parsed.content as Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }>) {
+              if (item.type === 'text' && item.text) {
+                text += item.text;
+              } else if (item.type === 'tool_use' && item.name) {
+                tools.push({ cmd: item.name, status: 'success', input: item.input ?? {} });
+              }
+            }
+            continue;
+          }
+        } catch {
+          // Not valid JSON, treat as plain text
+        }
+      }
+      if (typeof blockContent === 'string') {
+        text += blockContent;
+      }
+    }
+
+    // Message block with nested content array (direct from CLI)
+    if (b.type === 'message' && Array.isArray(b.content)) {
+      for (const item of b.content as Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }>) {
+        if (item.type === 'text' && item.text) {
+          text += item.text;
+        } else if (item.type === 'tool_use' && item.name) {
+          tools.push({ cmd: item.name, status: 'success', input: item.input ?? {} });
+        }
+      }
+    }
+  }
+
+  return { text, tools };
+}
 
 // Hook options
 export interface UseChatSessionOptions {
@@ -36,6 +181,7 @@ export interface UseChatSessionReturn {
   currentTask: ChatTask | null;
   currentSession: Session | null;
   isStreaming: boolean;
+  currentToolUse: ToolUseBlock | null;
 
   // Actions
   startChat: (request: Omit<StartChatRequest, 'message'> & { message: string }) => Promise<void>;
@@ -56,10 +202,12 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const [currentTask, setCurrentTask] = useState<ChatTask | null>(null);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [currentToolUse, setCurrentToolUse] = useState<ToolUseBlock | null>(null);
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
   const currentAssistantMessageRef = useRef<string>('');
+  const currentCommandsRef = useRef<ToolCommand[]>([]);
 
   // Cleanup WebSocket
   const cleanupWs = useCallback(() => {
@@ -98,17 +246,58 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
         switch (message.type) {
           case 'output': {
             const outputMsg = message as OutputMessage;
-            if (outputMsg.data.type === 'text' && outputMsg.data.content) {
-              // Append to current assistant message
-              currentAssistantMessageRef.current += outputMsg.data.content;
+            // Don't cast to Record - preserve array type for proper detection
+            const data = outputMsg.data;
+            let text = '';
+            const tools: ToolCommand[] = [];
 
-              // Update the last assistant message (streaming)
+            // Handle array format FIRST (WebSocket format: [{ type: 'text', content: '...' }])
+            if (Array.isArray(data)) {
+              const { text: t, tools: extractedTools } = processBlocks(data);
+              text = t;
+              tools.push(...extractedTools);
+            }
+            // Handle object formats
+            else if (typeof data === 'object' && data !== null) {
+              const dataObj = data as Record<string, unknown>;
+
+              // Handle direct tool_use events (WebSocket format: { type: 'tool_use', tool: {...} })
+              if (dataObj.type === 'tool_use' && (dataObj as { tool?: { name: string; input: Record<string, unknown> } }).tool) {
+                const toolData = (dataObj as { tool: { name: string; input: Record<string, unknown> } }).tool;
+                tools.push({ cmd: toolData.name, status: 'success', input: toolData.input || {} });
+              }
+              // Handle message type with content (WebSocket format: { type: 'message', content: [...] })
+              else if (dataObj.type === 'message' && dataObj.content) {
+                text = extractTextFromContent(dataObj.content);
+                const extractedTools = extractToolUseBlocks(dataObj.content);
+                tools.push(...extractedTools);
+              }
+              // Fallback: try processBlocks on data.content or data itself
+              else {
+                const dataToProcess = dataObj.content ?? dataObj;
+                if (dataToProcess) {
+                  const { text: t, tools: extractedTools } = processBlocks(dataToProcess);
+                  text = t;
+                  tools.push(...extractedTools);
+                }
+              }
+            }
+
+            // Update state with extracted text and tools
+            if (text) {
+              currentAssistantMessageRef.current += text;
+            }
+            for (const tool of tools) {
+              setCurrentToolUse({ id: '', name: tool.cmd, input: tool.input || {} });
+              currentCommandsRef.current.push(tool);
+            }
+            if (text || tools.length > 0) {
               setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
                 if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
                   return [
                     ...prev.slice(0, -1),
-                    { ...lastMsg, content: currentAssistantMessageRef.current }
+                    { ...lastMsg, content: currentAssistantMessageRef.current, commands: currentCommandsRef.current.length > 0 ? [...currentCommandsRef.current] : undefined }
                   ];
                 }
                 return prev;
@@ -122,8 +311,10 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
             if (statusMsg.status === 'running') {
               setIsStreaming(true);
               setStatus('streaming');
-              // Add empty assistant message for streaming
+              // Reset for new streaming message
               currentAssistantMessageRef.current = '';
+              currentCommandsRef.current = [];
+              setCurrentToolUse(null);
               setMessages(prev => [
                 ...prev,
                 {
@@ -137,11 +328,16 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
             } else if (statusMsg.status === 'completed' || statusMsg.status === 'failed' || statusMsg.status === 'cancelled') {
               setIsStreaming(false);
               setStatus('connected');
-              // Mark last message as not streaming
+              setCurrentToolUse(null);
+              // Mark last message as not streaming and finalize commands
               setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
                 if (lastMsg && lastMsg.isStreaming) {
-                  return [...prev.slice(0, -1), { ...lastMsg, isStreaming: false }];
+                  return [...prev.slice(0, -1), {
+                    ...lastMsg,
+                    isStreaming: false,
+                    commands: currentCommandsRef.current.length > 0 ? [...currentCommandsRef.current] : lastMsg.commands
+                  }];
                 }
                 return prev;
               });
@@ -232,7 +428,9 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setCurrentTask(null);
     setCurrentSession(null);
     setIsStreaming(false);
+    setCurrentToolUse(null);
     currentAssistantMessageRef.current = '';
+    currentCommandsRef.current = [];
   }, [cleanupWs]);
 
   // Cleanup on unmount
@@ -246,6 +444,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     currentTask,
     currentSession,
     isStreaming,
+    currentToolUse,
     startChat,
     sendFollowUp,
     cancelStream,

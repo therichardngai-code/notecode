@@ -33,8 +33,8 @@ export interface OutputMessage {
   type: 'output';
   data: {
     // Backend sends: 'message' (assistant text), 'tool_use', 'tool_result', 'thinking', 'result', 'system'
-    // Also handle: 'text' (legacy), 'tool_blocked', 'usage'
-    type: 'text' | 'message' | 'tool_use' | 'tool_result' | 'thinking' | 'usage' | 'tool_blocked' | 'result' | 'system';
+    // Also handle: 'text' (legacy), 'tool_blocked', 'usage', 'stream_event' (real-time streaming)
+    type: 'text' | 'message' | 'tool_use' | 'tool_result' | 'thinking' | 'usage' | 'tool_blocked' | 'result' | 'system' | 'stream_event';
     content?: string | Record<string, unknown>;
     tool?: { name: string; input: Record<string, unknown> };
     result?: string;
@@ -148,11 +148,29 @@ function parseCliContent(content: unknown): Record<string, unknown> | null {
 
 /**
  * Extract text from Claude CLI message content
- * Content can be: string, { content: [{ type: 'text', text: '...' }] }, or other formats
+ * Content can be: string, direct array [{type:'text',text:'...'}], { content: [...] }, or full API response
  */
 function extractTextFromContent(content: unknown): string {
+  // Handle direct array format: [{type:'text',text:'...'}]
+  if (Array.isArray(content)) {
+    return content
+      .filter((block): block is { type: string; text: string } =>
+        typeof block === 'object' && block !== null && block.type === 'text' && typeof block.text === 'string'
+      )
+      .map(block => block.text)
+      .join('');
+  }
+
   const parsed = parseCliContent(content);
   if (!parsed) return typeof content === 'string' ? content : '';
+
+  // Handle full API response format: { model: '...', role: 'assistant', content: [...] }
+  if (parsed.model && parsed.role && Array.isArray(parsed.content)) {
+    return (parsed.content as Array<{ type?: string; text?: string }>)
+      .filter(block => block.type === 'text' && typeof block.text === 'string')
+      .map(block => block.text)
+      .join('');
+  }
 
   // Handle Claude message format: { content: [{ type: 'text', text: '...' }] }
   if (Array.isArray(parsed.content)) {
@@ -172,12 +190,30 @@ function extractTextFromContent(content: unknown): string {
 
 /**
  * Extract tool_use blocks from Claude CLI message content
+ * Handles: direct array, { content: [...] }, full API response { model:'...', content:[...] }
  */
 function extractToolUseBlocks(content: unknown): ToolUseBlock[] {
-  const parsed = parseCliContent(content);
-  if (!parsed || !Array.isArray(parsed.content)) return [];
+  // Handle direct array format
+  if (Array.isArray(content)) {
+    return content
+      .filter((block): block is { type: string; id: string; name: string; input: Record<string, unknown> } =>
+        typeof block === 'object' && block !== null && block.type === 'tool_use'
+      )
+      .map(block => ({
+        id: block.id || '',
+        name: block.name || '',
+        input: block.input || {},
+      }));
+  }
 
-  return parsed.content
+  const parsed = parseCliContent(content);
+  if (!parsed) return [];
+
+  // Handle full API response or nested content array
+  const contentArray = Array.isArray(parsed.content) ? parsed.content : null;
+  if (!contentArray) return [];
+
+  return contentArray
     .filter((block): block is { type: string; id: string; name: string; input: Record<string, unknown> } =>
       typeof block === 'object' && block !== null && block.type === 'tool_use'
     )
@@ -296,14 +332,57 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
                 severity: message.data.severity || 'warning',
               });
             }
-            // Handle assistant messages for streaming (backend sends type: 'message')
-            if (message.data.type === 'message' && message.data.content) {
-              // Extract text
-              const text = extractTextFromContent(message.data.content);
-              if (text) {
-                cbs.onMessage?.(text, false);
+            // Handle assistant messages (backend sends type: 'message')
+            // Formats to handle:
+            // 1. Full API response at data level: { type:'message', role:'assistant', content:[...], model:'...' }
+            // 2. Nested format: { type:'message', content: { role:'assistant', content:'text' or [...] } }
+            // 3. Direct array: { type:'message', content: [{type:'text',text:'...'}] }
+            // 4. Legacy no-role format: { type:'message', content: {...} }
+            if (message.data.type === 'message') {
+              const data = message.data as Record<string, unknown>;
+              let text = '';
+              let processed = false;
+
+              // Format 1: Full API response at data level (has model, role at data level)
+              if (data.role === 'assistant' && data.model) {
+                if (Array.isArray(data.content)) {
+                  text = (data.content as Array<{ type?: string; text?: string }>)
+                    .filter(block => block.type === 'text' && typeof block.text === 'string')
+                    .map(block => block.text)
+                    .join('');
+                } else if (typeof data.content === 'string') {
+                  text = data.content;
+                }
+                processed = true;
               }
-              // Extract tool_use blocks
+
+              // Format 2-4: Content is nested object or array
+              if (!processed && data.content) {
+                const msgContent = data.content as Record<string, unknown>;
+
+                // Only process assistant messages - user messages come from API
+                if (msgContent.role === 'assistant') {
+                  if (typeof msgContent.content === 'string') {
+                    text = msgContent.content;
+                  } else if (Array.isArray(msgContent.content)) {
+                    text = (msgContent.content as Array<{ type?: string; text?: string }>)
+                      .filter(block => block.type === 'text' && typeof block.text === 'string')
+                      .map(block => block.text)
+                      .join('');
+                  }
+                  processed = true;
+                } else if (!msgContent.role) {
+                  // Legacy no-role format or direct array
+                  text = extractTextFromContent(data.content);
+                  processed = true;
+                }
+              }
+
+              if (text) {
+                cbs.onMessage?.(text, true);
+              }
+
+              // Extract tool_use blocks for all formats
               const toolBlocks = extractToolUseBlocks(message.data.content);
               for (const tool of toolBlocks) {
                 cbs.onToolUse?.(tool);
@@ -320,6 +399,18 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
                 name: message.data.tool.name,
                 input: message.data.tool.input,
               });
+            }
+            // Handle stream_event for real-time text streaming (typewriter effect)
+            if (message.data.type === 'stream_event') {
+              const content = message.data.content as Record<string, unknown> | undefined;
+              const event = content?.event as Record<string, unknown> | undefined;
+              // Extract text delta from content_block_delta events
+              if (event?.type === 'content_block_delta') {
+                const delta = event.delta as Record<string, unknown> | undefined;
+                if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+                  cbs.onMessage?.(delta.text, false);
+                }
+              }
             }
             cbs.onOutput?.(message.data);
             break;

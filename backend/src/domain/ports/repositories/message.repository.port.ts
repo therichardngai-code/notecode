@@ -15,6 +15,7 @@ export interface IMessageRepository {
   findById(id: string): Promise<Message | null>;
   findBySessionId(sessionId: string, filters?: MessageFilters): Promise<Message[]>;
   findRecent(sessionId: string, limit?: number): Promise<Message[]>;
+  findByProviderSessionId(providerSessionId: string, limit?: number): Promise<Message[]>;
   save(message: Message): Promise<Message>;
   saveBatch(messages: Message[]): Promise<Message[]>;
   delete(id: string): Promise<boolean>;

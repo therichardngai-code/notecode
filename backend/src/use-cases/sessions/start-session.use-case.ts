@@ -11,11 +11,13 @@ import { ISessionRepository } from '../../domain/ports/repositories/session.repo
 import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
 import { IAgentRepository } from '../../domain/ports/repositories/agent.repository.port.js';
+import { IMessageRepository } from '../../domain/ports/repositories/message.repository.port.js';
 import { ISettingsRepository } from '../../adapters/repositories/sqlite-settings.repository.js';
 import { ICliExecutor, CliSpawnConfig } from '../../domain/ports/gateways/cli-executor.port.js';
 import { IEventBus, SessionStartedEvent } from '../../domain/events/event-bus.js';
 import { Project } from '../../domain/entities/project.entity.js';
 import { Session } from '../../domain/entities/session.entity.js';
+import { Message } from '../../domain/entities/message.entity.js';
 import { SessionStatus, TaskStatus, ProviderType } from '../../domain/value-objects/task-status.vo.js';
 import { createEmptyTokenUsage, createEmptyToolStats } from '../../domain/value-objects/token-usage.vo.js';
 
@@ -48,6 +50,7 @@ export class StartSessionUseCase {
     private taskRepo: ITaskRepository,
     private projectRepo: IProjectRepository,
     private agentRepo: IAgentRepository,
+    private messageRepo: IMessageRepository,
     private settingsRepo: ISettingsRepository,
     private cliExecutor: ICliExecutor,
     private eventBus: IEventBus
@@ -135,6 +138,7 @@ export class StartSessionUseCase {
       : null;
 
     // 8. Create session entity with context tracking for delta injection
+    // Note: initialPrompt (storedPrompt) will be set after prompt resolution below
     const session = new Session(
       sessionId,
       task.id,
@@ -144,6 +148,7 @@ export class StartSessionUseCase {
       resumeMode,
       attemptNumber,
       resumedFromSessionId,
+      null, // initialPrompt - set after prompt resolution
       `${task.title} - Session ${attemptNumber}`,
       SessionStatus.QUEUED,
       provider,
@@ -172,8 +177,43 @@ export class StartSessionUseCase {
       ? `\n\n<skills>\n${resolvedSkillPaths.map(p => `@${p}`).join('\n')}\n</skills>`
       : '';
 
-    const taskPrompt = request.initialPrompt
-      ?? `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${skillFilesSection}`;
+    // Determine effective prompt (to CLI) and display prompt (for user message):
+    // 1. If request.initialPrompt provided → use it (user typed new message)
+    // 2. If retry/fork without new prompt → look up previous session's initialPrompt
+    // 3. Otherwise → build from task description (CLI gets XML, display gets plain text)
+    let effectivePrompt: string;      // Sent to CLI (may include XML wrapper)
+    let displayPrompt: string;        // Saved to user message (user-friendly)
+    let storedPrompt: string | null = null;  // What to store in session.initialPrompt
+
+    if (request.initialPrompt) {
+      // User provided new prompt - use as-is for both
+      effectivePrompt = request.initialPrompt;
+      displayPrompt = request.initialPrompt;
+      storedPrompt = request.initialPrompt;
+    } else if ((request.mode === 'retry' || request.mode === 'fork') && existingSessions.length > 0) {
+      // Retry/Fork without new prompt - look up previous session's initialPrompt
+      const lastSessionWithPrompt = existingSessions
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .find(s => s.initialPrompt);
+      if (lastSessionWithPrompt?.initialPrompt) {
+        effectivePrompt = lastSessionWithPrompt.initialPrompt;
+        displayPrompt = lastSessionWithPrompt.initialPrompt;
+        // Don't store again - inherit from chain
+      } else {
+        // No previous prompt found, fall back to task description
+        effectivePrompt = `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${skillFilesSection}`;
+        displayPrompt = task.description || task.title || 'Start task';
+      }
+    } else {
+      // New session - build from task description
+      // CLI gets full XML with context, display gets plain description
+      effectivePrompt = `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${skillFilesSection}`;
+      displayPrompt = task.description || task.title || 'Start task';
+      storedPrompt = displayPrompt;  // Store user-friendly version for retry
+    }
+
+    // Store the prompt in session entity (for retry persistence)
+    session.initialPrompt = storedPrompt;
 
     // 10. Build system prompt: settings (global) → project (override) → agent memory (append)
     const systemPrompt = await this.buildSystemPrompt(project, settings, session.agentId);
@@ -181,29 +221,27 @@ export class StartSessionUseCase {
     // 11. Build allowed tools list
     let allowedTools = task.tools?.mode === 'allowlist' ? [...task.tools.tools] : undefined;
 
-    // If subagentDelegates enabled, ensure Task tool is allowed
+    // If subagentDelegates enabled, discover agents and add as Task(agentname)
     if (task.subagentDelegates) {
-      if (allowedTools) {
-        if (!allowedTools.includes('Task')) {
-          allowedTools.push('Task');
+      const discoveredAgents = this.discoverCustomAgents(provider, project.path);
+      if (discoveredAgents) {
+        const agentTools = Object.keys(discoveredAgents).map(name => `Task(${name})`);
+        if (allowedTools) {
+          // Add Task(agentname) for each discovered agent
+          allowedTools.push(...agentTools);
         }
+        // If no allowlist, all tools including Task(agentname) are available by default
       }
-      // If no allowlist, Task is already available by default
     }
 
-    // 12. Discover custom agents if subagentDelegates enabled
-    const customAgents = task.subagentDelegates
-      ? this.discoverCustomAgents(provider, project.path)
-      : undefined;
-
-    // 13. Build CLI spawn config
+    // 12. Build CLI spawn config
     const cliConfig: CliSpawnConfig = {
       provider: provider,
       model: model,
       workingDir: session.workingDir,
       sessionId: sessionId,
       agentName: task.agentRole ?? undefined,  // Pass agent role to --agent flag
-      initialPrompt: taskPrompt,
+      initialPrompt: effectivePrompt,
       systemPrompt: systemPrompt,
       resumeSessionId: resumeFromSessionId,
       forkSession: shouldFork,
@@ -212,7 +250,6 @@ export class StartSessionUseCase {
       permissionMode: request.permissionMode ?? task.permissionMode ?? 'default',
       maxBudgetUsd: request.maxBudgetUsd,
       fallbackModel: fallbackModel,
-      customAgents: customAgents,
     };
 
     // 12. Spawn CLI process
@@ -223,7 +260,15 @@ export class StartSessionUseCase {
       session.start(cliProcess.sessionId, cliProcess.processId);
       await this.sessionRepo.save(session);
 
-      // 14. Publish event
+      // 14. Save initial prompt as user message (user-friendly, not XML)
+      const userMessage = Message.createUserMessage(
+        randomUUID(),
+        session.id,
+        displayPrompt
+      );
+      await this.messageRepo.save(userMessage);
+
+      // 15. Publish event
       this.eventBus.publish([
         new SessionStartedEvent(session.id, task.id, session.provider)
       ]);

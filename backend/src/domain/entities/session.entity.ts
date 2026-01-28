@@ -46,6 +46,7 @@ export class Session {
     public resumeMode: ResumeMode | null, // Mode used to create this session
     public attemptNumber: number, // Which attempt (1, 2, 3...)
     public resumedFromSessionId: string | null, // Direct link to source session
+    public initialPrompt: string | null, // User's prompt for this session (persists for retry)
     public name: string,
     public status: SessionStatus,
     public provider: ProviderType | null,
@@ -75,6 +76,7 @@ export class Session {
     resumeMode: ResumeMode | null = null,
     attemptNumber: number = 1,
     resumedFromSessionId: string | null = null,
+    initialPrompt: string | null = null,
     includedContextFiles: string[] = [],
     includedSkills: string[] = []
   ): Session {
@@ -88,6 +90,7 @@ export class Session {
       resumeMode,
       attemptNumber,
       resumedFromSessionId,
+      initialPrompt,
       name,
       SessionStatus.QUEUED,
       provider,

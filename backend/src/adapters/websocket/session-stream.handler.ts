@@ -111,10 +111,22 @@ export class SessionStreamHandler {
       }
       this.clients.get(sessionId)!.add(ws);
 
-      // Subscribe to CLI output if session is running
-      if (session.processId && this.cliExecutor.isRunning(session.processId)) {
+      // ALWAYS send historical messages first (catch-up for late-connecting clients)
+      await this.sendCatchUpMessages(ws, sessionId);
+
+      // Subscribe to future CLI output if session is still running
+      const isProcessRunning = session.processId !== null && this.cliExecutor.isRunning(session.processId);
+      if (isProcessRunning && session.processId !== null) {
         this.subscribeToCliOutput(sessionId, session.processId);
       }
+
+      // Determine correct status (infer from process state if DB not yet updated)
+      let statusToSend = session.status;
+      if (!isProcessRunning && session.status === SessionStatus.RUNNING) {
+        // GAP: Process exited but DB not updated yet - infer completed
+        statusToSend = SessionStatus.COMPLETED;
+      }
+      this.sendToClient(ws, { type: 'status', status: statusToSend });
 
       // Handle incoming messages from client
       ws.on('message', async (data: Buffer) => {
@@ -201,6 +213,9 @@ export class SessionStreamHandler {
         }
         try {
           await this.cliExecutor.terminate(session.processId);
+          // Update session status to cancelled
+          session.cancel();
+          await this.sessionRepo.save(session);
           this.broadcast(sessionId, {
             type: 'status',
             status: 'cancelled',
@@ -344,15 +359,17 @@ export class SessionStreamHandler {
             costUsd: (result.total_cost_usd as number) ?? 0,
           }];
 
-          if (isSuccess) {
-            session.complete(tokenUsage, modelUsage);
-          } else {
-            session.fail(subtype || 'unknown error');
-            session.tokenUsage = tokenUsage;
-            session.modelUsage = modelUsage;
+          // Only update if session is still running (not cancelled)
+          if (session.status === 'running') {
+            if (isSuccess) {
+              session.complete(tokenUsage, modelUsage);
+            } else {
+              session.fail(subtype || 'unknown error');
+              session.tokenUsage = tokenUsage;
+              session.modelUsage = modelUsage;
+            }
+            await this.sessionRepo.save(session);
           }
-
-          await this.sessionRepo.save(session);
         }
 
         this.broadcast(sessionId, {
@@ -362,11 +379,25 @@ export class SessionStreamHandler {
       }
     });
 
-    // Subscribe to exit
-    this.cliExecutor.onExit(processId, (code: number) => {
+    // Subscribe to exit - persist status to DB as fallback
+    this.cliExecutor.onExit(processId, async (code: number) => {
+      const terminalStatus = code === 0 ? 'completed' : 'failed';
+
+      // Persist terminal status to DB (fallback if result event missed)
+      try {
+        const session = await this.sessionRepo.findById(sessionId);
+        if (session && !['completed', 'failed', 'cancelled'].includes(session.status)) {
+          session.status = terminalStatus as SessionStatus;
+          session.endedAt = new Date();
+          await this.sessionRepo.save(session);
+        }
+      } catch (error) {
+        console.error('[WS] Failed to persist terminal status:', error);
+      }
+
       this.broadcast(sessionId, {
         type: 'status',
-        status: code === 0 ? 'completed' : 'failed',
+        status: terminalStatus,
       });
       this.sessionProcessMap.delete(sessionId);
     });
@@ -390,6 +421,28 @@ export class SessionStreamHandler {
 
   private sendError(ws: WebSocket, message: string): void {
     this.sendToClient(ws, { type: 'error', message });
+  }
+
+  /**
+   * Send catch-up messages for late-connecting clients
+   * Called on EVERY WS connect to ensure client has all past messages
+   */
+  private async sendCatchUpMessages(ws: WebSocket, sessionId: string): Promise<void> {
+    const messages = await this.messageRepo.findBySessionId(sessionId);
+    for (const message of messages) {
+      const content = message.blocks.length > 0
+        ? message.blocks.map(b => ('content' in b ? b.content : '')).join('')
+        : '';
+
+      this.sendToClient(ws, {
+        type: 'output',
+        data: {
+          type: 'message',
+          content: { role: message.role, content },
+          timestamp: message.timestamp,
+        },
+      });
+    }
   }
 
   /**

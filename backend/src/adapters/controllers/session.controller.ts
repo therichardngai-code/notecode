@@ -196,7 +196,7 @@ export function registerSessionController(
     }
   });
 
-  // GET /api/sessions/:id/messages - Get session messages
+  // GET /api/sessions/:id/messages - Get session messages (full conversation if resumed)
   app.get('/api/sessions/:id/messages', async (request, reply) => {
     const { id } = request.params as { id: string };
     const { limit } = request.query as { limit?: string };
@@ -210,10 +210,16 @@ export function registerSessionController(
       return reply.send({ messages: [] });
     }
 
-    const messages = await messageRepo.findRecent(
-      id,
-      limit ? parseInt(limit, 10) : 50
-    );
+    // If session has providerSessionId, get full conversation history
+    const messages = session.providerSessionId
+      ? await messageRepo.findByProviderSessionId(
+          session.providerSessionId,
+          limit ? parseInt(limit, 10) : 200
+        )
+      : await messageRepo.findRecent(
+          id,
+          limit ? parseInt(limit, 10) : 50
+        );
 
     return reply.send({ messages });
   });

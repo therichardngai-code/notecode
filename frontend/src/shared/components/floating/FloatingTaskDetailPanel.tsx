@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   X, ChevronsRight, Sparkles, Folder, Bot, Zap, Calendar, User, Play, Pause, CheckCircle, Clock,
   ExternalLink, GripVertical, Archive, Pencil, Check, Plus, Wrench, Maximize2, ChevronDown, ChevronRight,
@@ -12,12 +13,13 @@ import {
   propertyTypes, statusPropertyType,
   agentLabels, providerLabels, modelLabels,
 } from '@/shared/config/property-config';
-import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, type TaskDetailProperty } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
 import type { Message, Diff, ApprovalRequest, Session, SessionResumeMode } from '@/adapters/api/sessions-api';
 import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type TaskGitStatus, type GitCommitApproval } from '@/adapters/api/git-api';
+import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 
 interface FloatingTaskDetailPanelProps {
   isOpen: boolean;
@@ -54,51 +56,74 @@ interface UIDiff {
   chunks: { header: string; lines: { type: string; lineNum: number; content: string }[] }[];
 }
 
-// Convert API Message to ChatMessage UI format
+// Convert API Message to ChatMessage UI format (same as FullView)
 function messageToChat(msg: Message): ChatMessage {
-  // Extract text content from blocks
-  // Block format: { type: 'text', content: string }
-  // - User messages: content is plain text
-  // - Assistant messages: content is JSON-stringified Claude API response
   let content = '';
   const commands: ToolCommand[] = [];
-  const blocks = msg.blocks as Array<{ type: string; content?: string; text?: string }>;
+  const blocks = msg.blocks as Array<{ type: string; content?: string; text?: string; name?: string; input?: Record<string, unknown>; id?: string }>;
 
   for (const block of blocks) {
-    if (block.type !== 'text') continue;
-    const blockContent = block.content || block.text || '';
+    // Handle direct tool_use blocks
+    if (block.type === 'tool_use' && block.name) {
+      commands.push({
+        cmd: block.name,
+        status: 'success',
+        input: block.input,
+      });
+      continue;
+    }
 
-    if (msg.role === 'assistant' && blockContent.startsWith('{')) {
-      // Parse JSON-stringified Claude API response
-      try {
-        const parsed = JSON.parse(blockContent);
-        if (parsed.content && Array.isArray(parsed.content)) {
-          for (const item of parsed.content) {
-            if (item.type === 'text' && item.text) {
-              content += item.text;
-            } else if (item.type === 'tool_use' && item.name) {
-              // Tool call - add to commands with input
-              commands.push({
-                cmd: item.name,
-                status: 'success',
-                input: item.input as Record<string, unknown>,
-              });
+    // Handle text blocks
+    if (block.type === 'text') {
+      const blockContent = block.content || block.text || '';
+
+      // Try to parse JSON content (nested Claude message format)
+      if (msg.role === 'assistant' && blockContent.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(blockContent);
+          // Skip API response metadata objects (have model, id, usage fields)
+          if (parsed.model && parsed.id && (parsed.usage || parsed.stop_reason !== undefined)) {
+            // This is raw API response metadata - extract text if present, skip metadata
+            if (parsed.content && Array.isArray(parsed.content)) {
+              for (const item of parsed.content) {
+                if (item.type === 'text' && item.text) {
+                  content += item.text;
+                } else if (item.type === 'tool_use' && item.name) {
+                  commands.push({
+                    cmd: item.name,
+                    status: 'success',
+                    input: item.input as Record<string, unknown>,
+                  });
+                }
+              }
             }
+            // Don't append raw metadata JSON
+          } else if (parsed.content && Array.isArray(parsed.content)) {
+            for (const item of parsed.content) {
+              if (item.type === 'text' && item.text) {
+                content += item.text;
+              } else if (item.type === 'tool_use' && item.name) {
+                commands.push({
+                  cmd: item.name,
+                  status: 'success',
+                  input: item.input as Record<string, unknown>,
+                });
+              }
+            }
+          } else {
+            content += blockContent;
           }
+        } catch {
+          content += blockContent;
         }
-      } catch {
-        // Not valid JSON, use as-is
+      } else {
         content += blockContent;
       }
-    } else {
-      // User message or non-JSON content
-      content += blockContent;
     }
   }
 
-  // Also check msg.toolName for tool results
   if (msg.toolName && !commands.find(c => c.cmd === msg.toolName)) {
-    commands.push({ cmd: msg.toolName, status: 'success' });
+    commands.push({ cmd: msg.toolName, status: 'success', input: msg.toolInput as Record<string, unknown> });
   }
 
   return {
@@ -420,6 +445,7 @@ function PropertyRow({ icon: Icon, label, value }: { icon: React.ElementType; la
 
 export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTaskDetailPanelProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const panelRef = useRef<HTMLDivElement>(null);
   const [panelWidth, setPanelWidth] = useState(480);
   const [isResizing, setIsResizing] = useState(false);
@@ -451,7 +477,23 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const latestSession = [...sessions].sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )[0];
-  const activeSessionId = latestSession?.id || '';
+
+  // Start session mutation (invalidates queries automatically) - same as FullView
+  const startSessionMutation = useStartSession();
+
+  // Track just-started session for immediate WebSocket connection (before query refetch)
+  const [justStartedSession, setJustStartedSession] = useState<{ id: string; status: string } | null>(null);
+
+  // Clear justStartedSession once query has the same session (sync complete)
+  useEffect(() => {
+    if (justStartedSession && latestSession?.id === justStartedSession.id) {
+      setJustStartedSession(null);
+    }
+  }, [justStartedSession, latestSession?.id]);
+
+  // Use just-started session if available, otherwise use latest from query
+  const activeSession = justStartedSession || latestSession;
+  const activeSessionId = activeSession?.id || '';
 
   // Fetch messages and diffs from active session
   const { data: apiMessages = [] } = useSessionMessages(activeSessionId);
@@ -461,48 +503,77 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const sessionMessages: ChatMessage[] = apiMessages.map(messageToChat);
   const sessionDiffs: UIDiff[] = apiDiffs.map(diffToUI);
 
-  // Real-time chat state for WebSocket messages
+  // Real-time chat state for WebSocket messages (same as FullView)
   const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState<string>('');
+  const [currentToolUse, setCurrentToolUse] = useState<ToolUseBlock | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  // Track session status from WebSocket (more immediate than React Query)
+  const [wsSessionStatus, setWsSessionStatus] = useState<string | null>(null);
+  // Ref for streaming buffer (avoids stale closure in finalization)
+  const streamingBufferRef = useRef<string>('');
+  // Ref for AI session container (prevents height collapse on Resume)
+  const aiSessionContainerRef = useRef<HTMLDivElement>(null);
+  // Ref for chatMessages to enable dedup in WebSocket callback (avoids stale closure)
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
 
   // WebSocket connection for active running session
-  const isSessionRunning = latestSession?.status === 'running';
+  // Check if session is running (use activeSession AND wsSessionStatus for immediate updates)
+  // Keep WS connected for non-terminal states (queued, running, paused)
+  // Disconnect only on terminal states (completed, failed, cancelled)
+  const terminalStates = ['completed', 'failed', 'cancelled'];
+  const isSessionLive = activeSession &&
+    !terminalStates.includes(activeSession.status) &&
+    (wsSessionStatus === null || !terminalStates.includes(wsSessionStatus));
   const {
     isConnected: isWsConnected,
     sendUserInput,
     sendCancel,
     sendApprovalResponse,
   } = useSessionWebSocket({
-    sessionId: isSessionRunning ? activeSessionId : null,
-    enabled: isSessionRunning,
-    onOutput: (data) => {
-      if (data.type === 'text' && data.content) {
-        // Accumulate text content for current assistant message
-        setCurrentAssistantMessage((prev) => prev + data.content);
-      } else if (data.type === 'tool_use' && data.tool) {
-        // Tool usage - append to current message
-        setCurrentAssistantMessage((prev) =>
-          prev + `\n[Using tool: ${data.tool?.name}]`
-        );
-      } else if (data.type === 'tool_result' && data.result) {
-        // Tool result
-        setCurrentAssistantMessage((prev) =>
-          prev + `\n[Result: ${data.result?.slice(0, 100)}${(data.result?.length ?? 0) > 100 ? '...' : ''}]`
-        );
+    sessionId: activeSessionId,
+    enabled: isSessionLive,
+    // Same callbacks as FullView (tasks.$taskId.tsx)
+    onMessage: (text, isFinal) => {
+      if (isFinal) {
+        // Use ref for authoritative buffer value (avoids stale closure)
+        const finalContent = streamingBufferRef.current + (text || '');
+        if (finalContent) {
+          // Dedupe: check against BOTH realtimeMessages AND chatMessages (API)
+          const apiHasContent = chatMessagesRef.current.some(m => m.content === finalContent);
+          if (!apiHasContent) {
+            setRealtimeMessages(prev => {
+              if (prev.some(m => m.content === finalContent)) return prev;
+              return [...prev, { id: Date.now().toString(), role: 'assistant', content: finalContent }];
+            });
+          }
+        }
+        streamingBufferRef.current = '';
+        setCurrentAssistantMessage('');
+        setCurrentToolUse(null);
+        setIsWaitingForResponse(false);
+      } else {
+        streamingBufferRef.current += text;
+        setCurrentAssistantMessage(streamingBufferRef.current);
       }
     },
+    onToolUse: (tool) => {
+      setCurrentToolUse(tool);
+    },
     onStatus: (status) => {
+      // Update WebSocket session status immediately (before React Query refetch)
+      setWsSessionStatus(status);
       if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-        // Session ended - finalize current message
-        if (currentAssistantMessage) {
-          setRealtimeMessages((prev) => [
-            ...prev,
-            { id: Date.now().toString(), role: 'assistant', content: currentAssistantMessage },
-          ]);
-          setCurrentAssistantMessage('');
-        }
+        // NOTE: Don't add message here - onMessage('', true) already handles it
+        // Adding here causes duplication due to stale closure
+        setCurrentToolUse(null);
         setIsWaitingForResponse(false);
+        // Refetch session data to update status in UI
+        if (activeSessionId) {
+          queryClient.invalidateQueries({ queryKey: sessionKeys.messages(activeSessionId) });
+          queryClient.invalidateQueries({ queryKey: sessionKeys.detail(activeSessionId) });
+          queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
+        }
       }
     },
     onApprovalRequired: (data) => {
@@ -525,6 +596,17 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     },
     onError: (message) => {
       console.error('WebSocket error:', message);
+      setIsWaitingForResponse(false);
+    },
+    onDisconnected: () => {
+      // Reset waiting state when WebSocket disconnects to prevent chat from being blocked
+      // Use ref for authoritative buffer value (avoids stale closure)
+      if (streamingBufferRef.current) {
+        setRealtimeMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: streamingBufferRef.current }]);
+        streamingBufferRef.current = '';
+        setCurrentAssistantMessage('');
+      }
+      setCurrentToolUse(null);
       setIsWaitingForResponse(false);
     },
   });
@@ -567,7 +649,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const handleApprove = async (approvalId: string) => {
     setProcessingApproval(approvalId);
     try {
-      if (isWsConnected && isSessionRunning) {
+      if (isWsConnected && isSessionLive) {
         // Send via WebSocket for immediate response
         sendApprovalResponse(approvalId, true);
         setPendingApprovals((prev) => prev.filter((a) => a.id !== approvalId));
@@ -586,7 +668,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const handleReject = async (approvalId: string) => {
     setProcessingApproval(approvalId);
     try {
-      if (isWsConnected && isSessionRunning) {
+      if (isWsConnected && isSessionLive) {
         // Send via WebSocket for immediate response
         sendApprovalResponse(approvalId, false);
         setPendingApprovals((prev) => prev.filter((a) => a.id !== approvalId));
@@ -602,28 +684,62 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     }
   };
 
-  // Start session with mode (retry/renew/fork)
-  const [isStartingSession, setIsStartingSession] = useState(false);
+  // Start session with mode (retry/renew/fork) - same as FullView
   const handleStartSessionWithMode = async (mode: SessionResumeMode) => {
     if (!taskId) return;
-    setIsStartingSession(true);
-    // Reset real-time chat state for new session
+    // Capture chat input BEFORE clearing state - pass as initialPrompt to backend
+    const newPrompt = chatInput.trim() || undefined;
+    // Prevent height collapse: lock container height before clearing state
+    const container = aiSessionContainerRef.current;
+    const scrollTop = container?.scrollTop ?? 0;
+    if (container) {
+      container.style.minHeight = `${container.offsetHeight}px`;
+    }
+    // Clear chat state for new session
     setRealtimeMessages([]);
     setCurrentAssistantMessage('');
-    setIsWaitingForResponse(false);
+    setChatInput(''); // Clear after capturing
+    setAttachedFiles([]); // Clear attached files
+    setWsSessionStatus(null); // Reset WebSocket status for new session
+    setJustStartedSession(null); // Clear previous
+    setChatMessages([]); // Clear old session messages - will refetch for new session
+    // Restore scroll position after state clears, then release height lock
+    requestAnimationFrame(() => {
+      if (container) {
+        container.scrollTop = scrollTop;
+        // Release height lock after new content starts loading
+        setTimeout(() => { container.style.minHeight = ''; }, 1000);
+      }
+    });
+    // Add user message optimistically if there's a prompt (shows immediately in UI)
+    if (newPrompt) {
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: newPrompt,
+      };
+      setRealtimeMessages([userMessage]);
+    }
+    // Show "AI is thinking..." BEFORE async call (not after - race condition with WebSocket)
+    setIsWaitingForResponse(true);
     try {
-      const response = await sessionsApi.start({ taskId, mode });
-      // Session started - WebSocket will auto-connect via useSessionWebSocket hook
-      // when latestSession.status becomes 'running'
+      const response = await startSessionMutation.mutateAsync({
+        taskId,
+        mode,
+        initialPrompt: newPrompt, // Pass chat input as new instruction
+      });
       console.log('Session started:', response.session.id, 'wsUrl:', response.wsUrl);
+      // Set just-started session for immediate WebSocket connection
+      // Always use 'running' status to ensure WebSocket connects (actual status comes via WebSocket)
+      setJustStartedSession({ id: response.session.id, status: 'running' });
       // Switch to AI Session tab to show real-time chat
       setActiveInfoTab('ai-session');
     } catch (err) {
+      setIsWaitingForResponse(false);
       console.error('Failed to start session:', err);
-    } finally {
-      setIsStartingSession(false);
     }
   };
+  const isStartingSession = startSessionMutation.isPending;
 
   // Full View handler - opens task in current tab
   const handleFullView = () => {
@@ -646,6 +762,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+
+  // Keep chatMessagesRef in sync for WebSocket callback dedup (avoids stale closure)
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
 
   // Chat input options state
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -847,11 +968,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   }, [contextSearch]);
 
   // Sync chat messages with API data
+  // CRITICAL: Must depend on activeSessionId to sync when session changes
+  // (not just length - old and new session could have same message count)
   useEffect(() => {
-    if (sessionMessages.length > 0) {
-      setChatMessages(sessionMessages);
-    }
-  }, [sessionMessages.length]);
+    setChatMessages(sessionMessages);
+  }, [activeSessionId, sessionMessages.length]);
   const [diffApprovals, setDiffApprovals] = useState<Record<string, 'approved' | 'rejected' | null>>({});
   const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
   const toggleCommand = (key: string) => {
@@ -918,13 +1039,12 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: fullContent };
 
     // If WebSocket is connected (session running), send via WebSocket
-    if (isWsConnected && isSessionRunning) {
-      setRealtimeMessages((prev) => [...prev, userMessage]);
+    if (isWsConnected && isSessionLive) {
+      setRealtimeMessages(prev => [...prev, userMessage]);
       setChatInput('');
-      setAttachedFiles([]); // Clear attached files after send
+      setAttachedFiles([]);
       setIsWaitingForResponse(true);
-      setCurrentAssistantMessage(''); // Reset for new response
-      // Send with model, permission, and web search overrides
+      setCurrentAssistantMessage('');
       sendUserInput(content.trim(), {
         model: selectedModel !== 'default' ? `claude-3-5-${selectedModel}-latest` : undefined,
         permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
@@ -932,39 +1052,29 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
         disableWebTools: !webSearchEnabled, // true = disable web search
       });
     } else {
-      // Fallback: just add to local messages (no active session)
-      setChatMessages((prev) => [...prev, userMessage]);
+      // Fallback: just add to local messages (no active session) - same as FullView
       setChatInput('');
       setAttachedFiles([]);
       setIsTyping(true);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'No active session. Start the task to begin an AI session.',
-      };
-      setChatMessages((prev) => [...prev, aiMessage]);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       setIsTyping(false);
     }
   };
-  const handleChatKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(chatInput); } };
+
+  const handleChatKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey && !showContextPicker) { e.preventDefault(); sendMessage(chatInput); }
+  };
+
+  // Start task: Update status to in-progress AND start a new session - same as FullView
   const handleStartTask = async () => {
-    if (task) {
-      await updateStatus('in-progress' as TaskStatus);
-      await sendMessage(`Start working on "${task.title}"`);
-    }
+    await updateStatus('in-progress' as TaskStatus);
+    await handleStartSessionWithMode('renew');
   };
-  const handleCancelTask = async () => {
-    if (task) {
-      await updateStatus('cancelled' as TaskStatus);
-      await sendMessage(`Cancel task "${task.title}"`);
-    }
-  };
+  const handleCancelTask = () => updateStatus('cancelled' as TaskStatus);
+  // Continue task: Update status to in-progress AND start a new session - same as FullView
   const handleContinueTask = async () => {
-    if (task) {
-      await updateStatus('in-progress' as TaskStatus);
-      await sendMessage(`Continue working on "${task.title}"`);
-    }
+    await updateStatus('in-progress' as TaskStatus);
+    await handleStartSessionWithMode('renew');
   };
   const handleDiffFileClick = (fileId: string) => {
     setSelectedDiffFile(fileId);
@@ -1224,31 +1334,20 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
             )}
 
             {activeInfoTab === 'ai-session' && (() => {
-              // Combine all message sources: API messages + local messages + realtime messages
-              const allMessages = [...chatMessages, ...realtimeMessages];
+              // Combine API messages + realtime messages, deduplicating by content
+              // (realtime messages may duplicate API messages after backend saves)
+              const apiContentSet = new Set(chatMessages.map(m => m.content));
+              const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
+              const allMessages = [...chatMessages, ...uniqueRealtimeMessages];
               const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
               return (
-              <div className="space-y-4 max-h-[300px] overflow-y-auto">
+              <div ref={aiSessionContainerRef} className="space-y-4 max-h-[300px] overflow-y-auto">
                 {/* Session Starting Indicator */}
                 {isStartingSession && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs">
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Starting session...</span>
-                  </div>
-                )}
-
-                {/* WebSocket connection indicator - shown when session is running */}
-                {isSessionRunning && !isStartingSession && (
-                  <div className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 rounded text-xs",
-                    isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600"
-                  )}>
-                    <span className={cn(
-                      "w-2 h-2 rounded-full",
-                      isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"
-                    )} />
-                    {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
                   </div>
                 )}
 
@@ -1278,7 +1377,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                     <div key={message.id} className="flex justify-end mb-4"><div className="bg-muted border border-border rounded-full px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div></div>
                   ) : (
                     <div key={message.id} className="mb-6">
-                      <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">{message.content}</div>
+                      <MarkdownMessage content={message.content} className="text-sm text-foreground" />
                       {message.files && message.files.length > 0 && (
                         <div className="space-y-1 mt-2">
                           {message.files.map((file, idx) => (
@@ -1312,15 +1411,62 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                                 </button>
                                 {isExpanded && cmd.input && (
                                   <div className="px-3 py-2 border-t border-border/50 bg-background/50 space-y-1">
+                                    {/* File path - Read, Write, Edit, Glob */}
                                     {'file_path' in cmd.input && (
                                       <div className="flex items-center gap-2 text-muted-foreground">
                                         <FileCode className="w-3 h-3 shrink-0" />
                                         <span className="truncate">{String(cmd.input.file_path)}</span>
                                       </div>
                                     )}
+                                    {/* Query - WebSearch */}
+                                    {'query' in cmd.input && (
+                                      <div className="flex items-center gap-2 text-muted-foreground">
+                                        <Globe className="w-3 h-3 shrink-0" />
+                                        <span className="truncate">{String(cmd.input.query)}</span>
+                                      </div>
+                                    )}
+                                    {/* Command - Bash */}
+                                    {'command' in cmd.input && (
+                                      <div className="flex items-start gap-2 text-muted-foreground">
+                                        <Terminal className="w-3 h-3 shrink-0 mt-0.5" />
+                                        <code className="text-[10px] break-all">{String(cmd.input.command)}</code>
+                                      </div>
+                                    )}
+                                    {/* Pattern - Grep, Glob */}
+                                    {'pattern' in cmd.input && (
+                                      <div className="flex items-center gap-2 text-muted-foreground">
+                                        <span className="text-[10px] font-medium">Pattern:</span>
+                                        <code className="text-[10px]">{String(cmd.input.pattern)}</code>
+                                      </div>
+                                    )}
+                                    {/* URL - WebFetch */}
+                                    {'url' in cmd.input && (
+                                      <div className="flex items-center gap-2 text-muted-foreground">
+                                        <Globe className="w-3 h-3 shrink-0" />
+                                        <span className="truncate text-[10px]">{String(cmd.input.url)}</span>
+                                      </div>
+                                    )}
+                                    {/* Content - Write, Edit */}
                                     {'content' in cmd.input && (
                                       <pre className="mt-1 p-2 bg-muted/50 rounded text-[10px] max-h-[120px] overflow-auto whitespace-pre-wrap text-foreground/80">
-                                        {String(cmd.input.content)}
+                                        {String(cmd.input.content).slice(0, 500)}{String(cmd.input.content).length > 500 ? '...' : ''}
+                                      </pre>
+                                    )}
+                                    {/* Todos - TodoWrite */}
+                                    {'todos' in cmd.input && Array.isArray(cmd.input.todos) && (
+                                      <div className="space-y-1">
+                                        {(cmd.input.todos as Array<{content?: string; status?: string}>).slice(0, 5).map((todo, i) => (
+                                          <div key={i} className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                            <span className={cn("w-2 h-2 rounded-full", todo.status === 'completed' ? 'bg-green-500' : todo.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400')} />
+                                            <span className="truncate">{todo.content}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {/* Fallback: show raw JSON if no known fields */}
+                                    {!('file_path' in cmd.input || 'query' in cmd.input || 'command' in cmd.input || 'pattern' in cmd.input || 'url' in cmd.input || 'content' in cmd.input || 'todos' in cmd.input) && (
+                                      <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
+                                        {JSON.stringify(cmd.input, null, 2).slice(0, 300)}
                                       </pre>
                                     )}
                                   </div>
@@ -1343,17 +1489,29 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                     </div>
                   )
                 ))}
-                {/* Streaming assistant message (WebSocket) */}
+                {/* Streaming assistant message (same as FullView) */}
                 {currentAssistantMessage && (
                   <div className="mb-6">
-                    <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">
-                      {currentAssistantMessage}
-                      <span className="inline-block w-2 h-4 bg-primary/50 animate-pulse ml-0.5" />
-                    </div>
+                    <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+                    <span className="inline-block w-2 h-4 bg-primary/50 animate-pulse mt-1" />
                   </div>
                 )}
-                {/* Waiting for response indicator */}
-                {isWaitingForResponse && !currentAssistantMessage && (
+                {/* Current tool in use (same as FullView) */}
+                {currentToolUse && (
+                  <div className="mb-4 bg-muted/30 rounded-lg p-3 border border-border/50">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                      <Wrench className="w-3.5 h-3.5 animate-pulse" />
+                      <span className="font-medium">{currentToolUse.name}</span>
+                    </div>
+                    {currentToolUse.input && Object.keys(currentToolUse.input).length > 0 && (
+                      <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
+                        {JSON.stringify(currentToolUse.input, null, 2).slice(0, 500)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+                {/* Waiting indicator (same as FullView) */}
+                {isWaitingForResponse && !currentAssistantMessage && !currentToolUse && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
                     <div className="flex gap-1">
                       <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1364,6 +1522,13 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                   </div>
                 )}
                 {isTyping && <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4"><div className="flex gap-1"><span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} /></div><span>Thinking...</span></div>}
+                {/* Connection indicator at bottom - prevents jump when appearing */}
+                {isSessionLive && !isStartingSession && (
+                  <div className={cn("flex items-center gap-2 px-2 py-1.5 rounded text-xs", isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600")}>
+                    <span className={cn("w-2 h-2 rounded-full", isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse")} />
+                    {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
+                  </div>
+                )}
               </div>
               );
             })()}
@@ -1594,7 +1759,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
               "rounded-2xl border p-3 transition-colors relative",
               isDragOver
                 ? "border-primary border-dashed bg-primary/10"
-                : isWsConnected && isSessionRunning
+                : isWsConnected && isSessionLive
                   ? "border-green-500/30 bg-green-500/5 focus-within:border-green-500/50"
                   : "border-border bg-muted/30 focus-within:border-primary/50"
             )}
@@ -1637,7 +1802,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                 onChange={handleChatInputChange}
                 onKeyDown={(e) => { handleContextPickerKeyDown(e); if (!showContextPicker) handleChatKeyDown(e); }}
                 onPaste={handlePaste}
-                placeholder={isSessionRunning && isWsConnected ? "Type @ to add context..." : "Type @ to add files..."}
+                placeholder={isSessionLive && isWsConnected ? "Type @ to add context..." : "Type @ to add files..."}
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
                 disabled={isTyping || isWaitingForResponse}
               />
@@ -1759,16 +1924,16 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                   )}
                 </div>
                 {/* Show Cancel button when waiting for response in running session */}
-                {isWaitingForResponse && isSessionRunning ? (
+                {isWaitingForResponse && isSessionLive ? (
                 <button onClick={() => { sendCancel(); setIsWaitingForResponse(false); setCurrentAssistantMessage(''); }} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-xs font-medium"><X className="w-3.5 h-3.5" />Cancel</button>
-              ) : isSessionRunning && isWsConnected ? (
+              ) : isSessionLive && isWsConnected ? (
                 /* Show Send button when connected to running session */
                 <button onClick={() => sendMessage(chatInput)} disabled={!chatInput.trim() || isWaitingForResponse} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
                   <Sparkles className="w-3.5 h-3.5" />Send
                 </button>
               ) : task.status === 'not-started' ? (
                 <button onClick={handleStartTask} disabled={isUpdating} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50"><Play className="w-3.5 h-3.5" />Start</button>
-              ) : task.status === 'in-progress' && !isSessionRunning ? (
+              ) : task.status === 'in-progress' && !isSessionLive ? (
                 /* Task in-progress but no running session - show Resume options */
                 <button onClick={() => handleStartSessionWithMode('retry')} disabled={isStartingSession} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
                   {isStartingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Resume
@@ -1806,7 +1971,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                     message.role === 'user' ? (
                       <div key={message.id} className="flex justify-end mb-4"><div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div></div>
                     ) : (
-                      <div key={message.id} className="mb-6"><div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">{message.content}</div></div>
+                      <div key={message.id} className="mb-6"><MarkdownMessage content={message.content} className="text-sm text-foreground" /></div>
                     )
                   ))}
                 </div>

@@ -98,6 +98,7 @@ export const sessions = sqliteTable('sessions', {
   resumeMode: text('resume_mode'), // 'renew' | 'retry' | 'fork' | null (first run)
   attemptNumber: integer('attempt_number').default(1), // Which attempt (1st, 2nd, 3rd...)
   resumedFromSessionId: text('resumed_from_session_id'), // Direct link to source session
+  initialPrompt: text('initial_prompt'), // User's prompt for this session (for retry persistence)
   name: text('name'),
   status: text('status').default('queued'),
   provider: text('provider'),
