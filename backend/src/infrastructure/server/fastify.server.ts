@@ -86,10 +86,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     credentials: true,
   });
 
-  // Register rate limiting
+  // Register rate limiting (1000/min for dev - React SPA makes many concurrent requests)
   await app.register(rateLimit, {
     global: true,
-    max: 100,
+    max: 1000,
     timeWindow: 60000,
     keyGenerator: (req) => req.ip,
     errorResponseBuilder: (_req, context) => ({

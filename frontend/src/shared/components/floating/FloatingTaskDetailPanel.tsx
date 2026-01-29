@@ -1284,6 +1284,14 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                 Sessions
                 {sessions.length > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({sessions.length})</span>}
               </button>
+              {/* Expand to sub-panel button */}
+              <button
+                onClick={() => { setSubPanelTab('chat-session'); setIsSubPanelOpen(true); }}
+                className="ml-auto p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                title="Expand to panel"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             {activeInfoTab === 'activity' && (

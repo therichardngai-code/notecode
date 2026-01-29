@@ -6,7 +6,7 @@ import {
   Calendar, User, Folder, Bot, Sparkles, Zap, Play, Clock, Plus, Pencil, Check,
   AtSign, Paperclip, Globe, X, Pause, CheckCircle, Archive, MessageSquare,
   FileCode, GitBranch, Terminal, ThumbsUp, ThumbsDown, ExternalLink, Loader2, Wrench,
-  ChevronDown, ChevronRight, AlertTriangle, ShieldAlert, RotateCcw, RefreshCw, Copy,
+  ChevronDown, ChevronRight, AlertTriangle, ShieldAlert, RotateCcw, RefreshCw, Copy, Maximize2,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
@@ -840,6 +840,7 @@ function TaskDetailPage() {
   // File Details sub-panel state
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [subPanelTab, setSubPanelTab] = useState<'chat-session' | 'diffs'>('diffs');
+  const [isSubPanelOpen, setIsSubPanelOpen] = useState(false);
 
   // Chat handler - use WebSocket when connected
   const sendMessage = async (content: string) => {
@@ -895,8 +896,9 @@ function TaskDetailPage() {
   };
 
   // File Details handlers
-  const handleDiffFileClick = (fileId: string) => { setSelectedDiffFile(fileId); setSubPanelTab('diffs'); };
-  const handleCloseFileDetails = () => { setSelectedDiffFile(null); };
+  const handleDiffFileClick = (fileId: string) => { setSelectedDiffFile(fileId); setSubPanelTab('diffs'); setIsSubPanelOpen(true); };
+  const handleCloseFileDetails = () => { setSelectedDiffFile(null); setIsSubPanelOpen(false); };
+  const handleExpandToSubPanel = () => { setSubPanelTab('chat-session'); setIsSubPanelOpen(true); };
   const handleApproveDiff = (diffId: string) => setDiffApprovals(prev => ({ ...prev, [diffId]: 'approved' }));
   const handleRejectDiff = (diffId: string) => setDiffApprovals(prev => ({ ...prev, [diffId]: 'rejected' }));
 
@@ -940,7 +942,7 @@ function TaskDetailPage() {
   return (
     <div className="h-full flex">
       {/* Main Content - adjusts width when File Details is open */}
-      <div className={cn("flex-1 flex flex-col transition-all duration-300", selectedDiffFile ? "max-w-[50%]" : "")}>
+      <div className={cn("flex-1 flex flex-col transition-all duration-300", (selectedDiffFile || isSubPanelOpen) ? "max-w-[50%]" : "")}>
       <ScrollArea className="flex-1">
         <div className="p-6 max-w-4xl mx-auto">
           {isEditing ? (
@@ -1133,6 +1135,14 @@ function TaskDetailPage() {
                 )}
                 Sessions
                 {sessions.length > 0 && <span className="ml-1 text-xs text-muted-foreground">({sessions.length})</span>}
+              </button>
+              {/* Expand to sub-panel button */}
+              <button
+                onClick={handleExpandToSubPanel}
+                className="ml-auto p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                title="Expand to panel"
+              >
+                <Maximize2 className="w-4 h-4" />
               </button>
             </div>
 
@@ -1907,8 +1917,8 @@ function TaskDetailPage() {
       </div>
       </div>
 
-      {/* File Details Panel - shown on the right when a diff file is selected */}
-      {selectedDiffFile && (
+      {/* File Details Panel - shown on the right when a diff file is selected or sub-panel is open */}
+      {(selectedDiffFile || isSubPanelOpen) && (
         <div className="w-1/2 border-l border-border flex flex-col bg-sidebar">
           {/* File Details Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
