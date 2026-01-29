@@ -26,5 +26,8 @@ export interface GlobalSettings {
   yoloMode: boolean;
   approvalGate: ApprovalGateConfig;
   autoExtractSummary: boolean;
+  currentActiveProjectId?: string; // Default project for task creation
+  dataRetentionEnabled?: boolean; // Enable auto-delete old tasks
+  dataRetentionDays?: number; // Days before delete (default: 90)
   updatedAt: Date;
 }

@@ -8,6 +8,13 @@
       "when": 1769440786426,
       "tag": "0000_damp_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1769632579522,
+      "tag": "0001_hesitant_tempest",
+      "breakpoints": true
     }
   ]
 }

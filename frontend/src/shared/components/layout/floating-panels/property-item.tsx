@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Trash2, Search, Folder, Star, FileText, Loader2, Plus } from 'lucide-react';
+import { X, Trash2, Search, Folder, Star, FileText, Loader2, FolderOpen } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import {
   propertyTypes,
@@ -12,7 +12,8 @@ import {
   permissionModeOptions,
   mockFileSystem,
 } from '@/shared/config/property-config';
-import { useProjects, useFavoriteProjects, useRecentProjects } from '@/shared/hooks/use-projects-query';
+import { useProjects, useFavoriteProjects, useRecentProjects, useCreateProject } from '@/shared/hooks/use-projects-query';
+import { useFolderPicker } from '@/shared/hooks/use-folder-picker';
 
 export interface Property {
   id: string;
@@ -40,6 +41,18 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
   const { data: favoriteProjects = [], isLoading: loadingFavorites } = useFavoriteProjects();
   const { data: recentProjects = [], isLoading: loadingRecent } = useRecentProjects(6);
   const isLoadingProjects = loadingAll || loadingFavorites || loadingRecent;
+
+  // Create project via folder picker
+  const createProject = useCreateProject();
+  const { selectFolder, isSelecting: isSelectingFolder } = useFolderPicker({
+    onSelect: async (path, name) => {
+      const result = await createProject.mutateAsync({ name, path });
+      if (result?.id) {
+        onUpdate([result.id]);
+        setShowDropdown(false);
+      }
+    },
+  });
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -114,23 +127,24 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
       return;
     }
 
-    // Handle "All Tools" selection for tools
+    // Handle "All Tools" selection for tools (allowlist mode - selected = allowed)
     if (property.type === 'tools') {
-      const allToolIds = toolsOptions.filter((t) => t.id !== 'all').map((t) => t.id);
-      if (id === 'all') {
-        if (property.value.includes('all')) {
+      const allToolIds = toolsOptions.filter((t) => t.id !== 'All').map((t) => t.id);
+
+      if (id === 'All') {
+        if (property.value.length === allToolIds.length) {
+          // Deselect all
           onUpdate([]);
         } else {
-          onUpdate(['all', ...allToolIds]);
+          // Select all individual tools
+          onUpdate(allToolIds);
         }
         return;
       } else {
         if (property.value.includes(id)) {
-          onUpdate(property.value.filter((v) => v !== id && v !== 'all'));
+          onUpdate(property.value.filter((v) => v !== id));
         } else {
-          const newValues = [...property.value.filter((v) => v !== 'all'), id];
-          const hasAllIndividual = allToolIds.every((t) => newValues.includes(t));
-          onUpdate(hasAllIndividual ? ['all', ...allToolIds] : newValues);
+          onUpdate([...property.value, id]);
         }
         return;
       }
@@ -161,8 +175,11 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
       const project = allProjects.find((p) => p.id === property.value[0]);
       return project?.name || 'Select...';
     }
-    if (property.type === 'tools' && property.value.includes('all')) {
-      return 'All Tools';
+    // Show "All Tools" when all individual tools are selected
+    if (property.type === 'tools') {
+      const allToolIds = toolsOptions.filter((t) => t.id !== 'All').map((t) => t.id);
+      const hasAllTools = allToolIds.every((t) => property.value.includes(t));
+      if (hasAllTools) return 'All Tools';
     }
     if (property.type === 'context') {
       return `${property.value.length} file${property.value.length > 1 ? 's' : ''} selected`;
@@ -182,112 +199,124 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
           <Icon className="w-4 h-4" />
           <span>{typeConfig?.label}</span>
         </div>
-        <div className="flex-1" ref={dropdownRef}>
-          {selectedProject ? (
-            <div className="flex items-center gap-2 px-2 py-1 text-sm text-foreground">
-              <Folder className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>{selectedProject.name}</span>
-            </div>
-          ) : (
-            <div className="relative">
-              <div className="flex items-center gap-2 px-2 py-1 border border-border rounded bg-muted/30">
-                {isLoadingProjects ? (
-                  <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
-                ) : (
-                  <Search className="w-3.5 h-3.5 text-muted-foreground" />
-                )}
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setShowDropdown(true);
-                  }}
-                  onFocus={() => setShowDropdown(true)}
-                  placeholder="Select project (required)..."
-                  className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
-                />
+        <div className="flex-1 relative" ref={dropdownRef}>
+          {/* Clickable button to show selected project or open dropdown */}
+          <button
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="flex items-center gap-2 px-2 py-1 text-sm text-foreground hover:bg-muted rounded transition-colors"
+          >
+            <Folder className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>{selectedProject?.name || 'Select project...'}</span>
+          </button>
+
+          {showDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
+              {/* Search input inside dropdown */}
+              <div className="px-2 py-1.5 border-b border-white/10">
+                <div className="flex items-center gap-2 px-2 py-1 border border-border rounded bg-muted/30">
+                  {isLoadingProjects ? (
+                    <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search projects..."
+                    className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
               </div>
 
-              {showDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
-                  {isLoadingProjects ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading...
-                    </div>
-                  ) : searchQuery ? (
-                    searchResults.length > 0 ? (
-                      searchResults.map((project) => (
+              {isLoadingProjects ? (
+                <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading...
+                </div>
+              ) : searchQuery ? (
+                searchResults.length > 0 ? (
+                  searchResults.map((project) => (
+                    <button
+                      key={project.id}
+                      onClick={() => selectProject(project.id)}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left',
+                        property.value[0] === project.id && 'bg-white/10'
+                      )}
+                    >
+                      <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{project.name}</span>
+                      {property.value[0] === project.id && <span className="ml-auto text-primary">✓</span>}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">No projects found</div>
+                )
+              ) : (
+                <>
+                  {favoriteProjects.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <Star className="w-3 h-3" />
+                        Favorites
+                      </div>
+                      {favoriteProjects.map((project) => (
                         <button
                           key={project.id}
                           onClick={() => selectProject(project.id)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left',
+                            property.value[0] === project.id && 'bg-white/10'
+                          )}
                         >
                           <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                           <span className="truncate">{project.name}</span>
+                          {property.value[0] === project.id && <span className="ml-auto text-primary">✓</span>}
                         </button>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">No projects found</div>
-                    )
-                  ) : (
-                    <>
-                      {favoriteProjects.length > 0 && (
-                        <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                            <Star className="w-3 h-3" />
-                            Favorites
-                          </div>
-                          {favoriteProjects.map((project) => (
-                            <button
-                              key={project.id}
-                              onClick={() => selectProject(project.id)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
-                            >
-                              <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                              <span className="truncate">{project.name}</span>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                      {recentProjects.length > 0 && (
-                        <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">Recent</div>
-                          {recentProjects.map((project) => (
-                            <button
-                              key={project.id}
-                              onClick={() => selectProject(project.id)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
-                            >
-                              <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                              <span className="truncate">{project.name}</span>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                      {favoriteProjects.length === 0 && recentProjects.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">No projects available</div>
-                      )}
+                      ))}
                     </>
                   )}
-                  {/* Create new project option */}
-                  <div className="border-t border-white/20 dark:border-white/10 mt-1 pt-1">
-                    <button
-                      onClick={() => {
-                        setShowDropdown(false);
-                        // TODO: Open create project modal
-                        alert('Create new project - coming soon');
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-primary hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
-                    >
-                      <Plus className="w-3.5 h-3.5 shrink-0" />
-                      <span>Create new project</span>
-                    </button>
-                  </div>
-                </div>
+                  {recentProjects.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">Recent</div>
+                      {recentProjects.map((project) => (
+                        <button
+                          key={project.id}
+                          onClick={() => selectProject(project.id)}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left',
+                            property.value[0] === project.id && 'bg-white/10'
+                          )}
+                        >
+                          <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate">{project.name}</span>
+                          {property.value[0] === project.id && <span className="ml-auto text-primary">✓</span>}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {favoriteProjects.length === 0 && recentProjects.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">No projects available</div>
+                  )}
+                </>
               )}
+              {/* Open folder to create project */}
+              <div className="border-t border-white/20 dark:border-white/10 mt-1 pt-1">
+                <button
+                  onClick={() => selectFolder('Select Project Folder')}
+                  disabled={isSelectingFolder || createProject.isPending}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-primary hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+                >
+                  {isSelectingFolder || createProject.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+                  ) : (
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span>Open Folder</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -463,24 +492,31 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
 
         {showDropdown && (
           <div className="absolute top-full left-0 mt-1 w-56 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
-            {getOptions().map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => toggleValue(opt.id)}
-                className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors', property.value.includes(opt.id) && 'bg-white/20 dark:bg-white/10')}
-              >
-                {isSingleSelect ? (
-                  <span className={cn('w-4 h-4 border rounded-full flex items-center justify-center', property.value.includes(opt.id) ? 'border-primary' : 'border-white/30')}>
-                    {property.value.includes(opt.id) && <span className="w-2 h-2 rounded-full bg-primary" />}
-                  </span>
-                ) : (
-                  <span className={cn('w-4 h-4 border rounded flex items-center justify-center text-xs', property.value.includes(opt.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-white/30')}>
-                    {property.value.includes(opt.id) && '✓'}
-                  </span>
-                )}
-                {opt.label}
-              </button>
-            ))}
+            {getOptions().map((opt) => {
+              // For tools "All" option, check if all individual tools are selected
+              const isAllToolsSelected = property.type === 'tools' && opt.id === 'All' &&
+                toolsOptions.filter((t) => t.id !== 'All').every((t) => property.value.includes(t.id));
+              const isSelected = isAllToolsSelected || property.value.includes(opt.id);
+
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => toggleValue(opt.id)}
+                  className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors', isSelected && 'bg-white/20 dark:bg-white/10')}
+                >
+                  {isSingleSelect ? (
+                    <span className={cn('w-4 h-4 border rounded-full flex items-center justify-center', isSelected ? 'border-primary' : 'border-white/30')}>
+                      {isSelected && <span className="w-2 h-2 rounded-full bg-primary" />}
+                    </span>
+                  ) : (
+                    <span className={cn('w-4 h-4 border rounded flex items-center justify-center text-xs', isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-white/30')}>
+                      {isSelected && '✓'}
+                    </span>
+                  )}
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

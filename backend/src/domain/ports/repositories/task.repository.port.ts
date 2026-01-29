@@ -15,6 +15,7 @@ export interface TaskFilters {
 
 export interface ITaskRepository {
   findById(id: string): Promise<Task | null>;
+  findAll(filters?: TaskFilters): Promise<Task[]>;
   findByProjectId(projectId: string, filters?: TaskFilters): Promise<Task[]>;
   findByAgentId(agentId: string): Promise<Task[]>;
   save(task: Task): Promise<Task>;

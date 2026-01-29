@@ -1,4 +1,7 @@
-import { GitBranch, Bell, Wifi, Settings, Plus } from 'lucide-react';
+import { GitBranch, Bell, Wifi, Settings, Plus, FolderOpen } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { useSettings } from '@/shared/hooks/use-settings';
+import { projectsApi } from '@/adapters/api/projects-api';
 
 interface StatusBarProps {
   onSettingsClick?: () => void;
@@ -6,9 +9,26 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ onSettingsClick, onNewTaskClick }: StatusBarProps) {
+  const { data: settings } = useSettings();
+
+  // Fetch active project details if set
+  const { data: activeProject } = useQuery({
+    queryKey: ['projects', settings?.currentActiveProjectId],
+    queryFn: () => projectsApi.getById(settings!.currentActiveProjectId!),
+    enabled: !!settings?.currentActiveProjectId,
+    select: (data) => data.project,
+  });
+
   return (
     <div className="h-6 bg-sidebar border-t border-sidebar-border flex items-center justify-between px-3 text-xs text-sidebar-foreground/70">
       <div className="flex items-center gap-4">
+        {/* Active Project */}
+        {activeProject && (
+          <div className="flex items-center gap-1.5 text-primary" title={`Active Project: ${activeProject.path}`}>
+            <FolderOpen className="w-3 h-3" />
+            <span className="font-medium">{activeProject.name}</span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <GitBranch className="w-3 h-3" />
           <span>main</span>

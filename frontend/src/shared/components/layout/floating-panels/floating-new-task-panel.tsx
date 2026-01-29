@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, ChevronsRight, Sparkles, Plus, Zap, Maximize2, GripVertical } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useUIStore } from '@/shared/stores';
+import { useSettings } from '@/shared/hooks/use-settings';
 import { propertyTypes } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from './property-item';
 
@@ -18,7 +19,8 @@ interface FloatingNewTaskPanelProps {
 }
 
 export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask }: FloatingNewTaskPanelProps) {
-  const { isNewTaskPanelOpen, closeNewTaskPanel, activeProjectId } = useUIStore();
+  const { isNewTaskPanelOpen, closeNewTaskPanel } = useUIStore();
+  const { data: settings } = useSettings();
 
   const [title, setTitle] = useState('New Task');
   const [requirement, setRequirement] = useState('');
@@ -122,13 +124,14 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
     if (isNewTaskPanelOpen) {
       setTitle('New Task');
       setRequirement('');
+      const defaultProjectId = settings?.currentActiveProjectId;
       setProperties([
-        // Use activeProjectId if available, otherwise user must select
-        { id: 'project-default', type: 'project', value: activeProjectId ? [activeProjectId] : [] },
+        // Use currentActiveProjectId from settings if available, otherwise user must select
+        { id: 'project-default', type: 'project', value: defaultProjectId ? [defaultProjectId] : [] },
         { id: 'autoBranch-default', type: 'autoBranch', value: ['true'] },
       ]);
     }
-  }, [isNewTaskPanelOpen, activeProjectId]);
+  }, [isNewTaskPanelOpen, settings?.currentActiveProjectId]);
 
   const addProperty = (type: Property['type']) => {
     if (properties.find((p) => p.type === type)) {

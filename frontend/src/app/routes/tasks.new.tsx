@@ -4,7 +4,7 @@ import { ArrowLeft, Sparkles, Plus, Zap, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { propertyTypes } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
-import { useTaskCreation } from '@/shared/hooks';
+import { useTaskCreation, useSettings } from '@/shared/hooks';
 
 export const Route = createFileRoute('/tasks/new')({
   component: NewTaskPage,
@@ -12,6 +12,7 @@ export const Route = createFileRoute('/tasks/new')({
 
 function NewTaskPage() {
   const navigate = useNavigate();
+  const { data: settings } = useSettings();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   // Initialize with mandatory defaults: project (required), autoBranch (ON)
@@ -23,6 +24,17 @@ function NewTaskPage() {
   const addPropertyRef = useRef<HTMLDivElement>(null);
 
   const { createTask, isPending } = useTaskCreation();
+
+  // Set default project from settings when loaded
+  useEffect(() => {
+    if (settings?.currentActiveProjectId) {
+      setProperties((prev) =>
+        prev.map((p) =>
+          p.type === 'project' ? { ...p, value: [settings.currentActiveProjectId!] } : p
+        )
+      );
+    }
+  }, [settings?.currentActiveProjectId]);
 
   // Close dropdown on click outside
   useEffect(() => {

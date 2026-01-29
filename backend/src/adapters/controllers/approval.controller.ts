@@ -8,6 +8,10 @@ import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { IApprovalRepository } from '../../domain/ports/repositories/approval.repository.port.js';
 import { IDiffRepository } from '../../domain/ports/repositories/diff.repository.port.js';
+import { ISessionRepository } from '../../domain/ports/repositories/session.repository.port.js';
+import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
+import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
+import { ISettingsRepository } from '../repositories/sqlite-settings.repository.js';
 import { ResolveApprovalUseCase } from '../../use-cases/approvals/resolve-approval.use-case.js';
 import { Approval, ApprovalStatus, ToolCategory } from '../../domain/entities/approval.entity.js';
 import { IEventBus, ApprovalPendingEvent } from '../../domain/events/event-bus.js';
@@ -15,6 +19,7 @@ import {
   ApprovalGateConfig,
   DEFAULT_APPROVAL_GATE,
 } from '../../domain/value-objects/approval-gate-config.vo.js';
+import { ApprovalGateConfig as UserApprovalGateConfig } from '../repositories/sqlite-settings.repository.js';
 
 // Schema for resolving approval
 const resolveApprovalSchema = z.object({
@@ -37,13 +42,22 @@ export interface ApprovalControllerDeps {
   resolveApprovalUseCase: ResolveApprovalUseCase;
   eventBus: IEventBus;
   config?: ApprovalGateConfig;
+  // Optional: for dynamic config endpoint
+  sessionRepo?: ISessionRepository;
+  taskRepo?: ITaskRepository;
+  projectRepo?: IProjectRepository;
+  settingsRepo?: ISettingsRepository;
 }
 
 export function registerApprovalController(
   app: FastifyInstance,
   deps: ApprovalControllerDeps
 ): void {
-  const { approvalRepo, diffRepo, resolveApprovalUseCase, eventBus, config = DEFAULT_APPROVAL_GATE } = deps;
+  const {
+    approvalRepo, diffRepo, resolveApprovalUseCase, eventBus,
+    config = DEFAULT_APPROVAL_GATE,
+    sessionRepo, taskRepo, projectRepo, settingsRepo
+  } = deps;
 
   // GET /api/approvals/pending - List pending approvals
   app.get('/api/approvals/pending', async (_request, reply) => {
@@ -228,6 +242,44 @@ export function registerApprovalController(
       remainingMs: approval.remainingTimeMs,
     });
   });
+
+  // GET /api/approvals/config/:sessionId - Get merged approval config for session
+  // Hook calls this to get dynamic config based on project/global settings
+  app.get('/api/approvals/config/:sessionId', async (request, reply) => {
+    const { sessionId } = request.params as { sessionId: string };
+
+    // If repos not available, return default config
+    if (!sessionRepo || !taskRepo || !projectRepo || !settingsRepo) {
+      return reply.send(config);
+    }
+
+    try {
+      const session = await sessionRepo.findById(sessionId);
+      if (!session) {
+        return reply.send(config);
+      }
+
+      const task = await taskRepo.findById(session.taskId);
+      if (!task) {
+        return reply.send(config);
+      }
+
+      const project = await projectRepo.findById(task.projectId);
+      const settings = await settingsRepo.getGlobal();
+
+      // Merge: project > global > defaults
+      const mergedConfig = mergeApprovalGateConfigs(
+        config,
+        settings.approvalGate,
+        project?.approvalGate
+      );
+
+      return reply.send(mergedConfig);
+    } catch (error) {
+      app.log.error({ error, sessionId }, 'Failed to get approval config');
+      return reply.send(config);
+    }
+  });
 }
 
 // Helper: Determine tool category based on config
@@ -274,4 +326,90 @@ function determineToolCategory(
 // Helper: Check if tool is a file operation
 function isFileOperation(toolName: string): boolean {
   return ['Write', 'Edit', 'NotebookEdit', 'Bash'].includes(toolName);
+}
+
+/**
+ * Merge user-defined approval gate configs with defaults
+ * Priority: project > global > defaults
+ * User rules map to internal config:
+ * - 'deny' pattern → NOT USED (tool names only now)
+ * - 'approve' tool → add to autoAllowTools
+ * - 'ask' tool → add to requireApprovalTools
+ */
+function mergeApprovalGateConfigs(
+  defaults: ApprovalGateConfig,
+  globalGate: UserApprovalGateConfig | null | undefined,
+  projectGate: UserApprovalGateConfig | null | undefined
+): ApprovalGateConfig {
+  // Start with defaults
+  const merged: ApprovalGateConfig = {
+    enabled: defaults.enabled,
+    timeoutSeconds: defaults.timeoutSeconds,
+    defaultOnTimeout: defaults.defaultOnTimeout,
+    autoAllowTools: [...defaults.autoAllowTools],
+    requireApprovalTools: [...defaults.requireApprovalTools],
+    dangerousPatterns: {
+      commands: [...defaults.dangerousPatterns.commands],
+      files: [...defaults.dangerousPatterns.files],
+    },
+  };
+
+  // Apply global settings rules
+  if (globalGate?.enabled && globalGate.rules) {
+    applyUserRules(merged, globalGate.rules);
+  }
+
+  // Apply project settings rules (override global)
+  if (projectGate?.enabled && projectGate.rules) {
+    applyUserRules(merged, projectGate.rules);
+  }
+
+  // If either gate is disabled, disable the whole thing
+  if (globalGate?.enabled === false || projectGate?.enabled === false) {
+    merged.enabled = false;
+  }
+
+  return merged;
+}
+
+/**
+ * Apply user-defined rules to config
+ * Tool names only: 'approve' → autoAllow, 'ask' → requireApproval, 'deny' → remove from autoAllow
+ */
+function applyUserRules(
+  config: ApprovalGateConfig,
+  rules: Array<{ pattern: string; action: 'approve' | 'deny' | 'ask' }>
+): void {
+  for (const rule of rules) {
+    const toolName = rule.pattern; // Scope is tool names only
+
+    switch (rule.action) {
+      case 'approve':
+        // Add to auto-allow if not already there
+        if (!config.autoAllowTools.includes(toolName)) {
+          config.autoAllowTools.push(toolName);
+        }
+        // Remove from require-approval if present
+        config.requireApprovalTools = config.requireApprovalTools.filter(t => t !== toolName);
+        break;
+
+      case 'deny':
+        // Remove from auto-allow
+        config.autoAllowTools = config.autoAllowTools.filter(t => t !== toolName);
+        // Add to require-approval (will be denied by default)
+        if (!config.requireApprovalTools.includes(toolName)) {
+          config.requireApprovalTools.push(toolName);
+        }
+        break;
+
+      case 'ask':
+        // Remove from auto-allow
+        config.autoAllowTools = config.autoAllowTools.filter(t => t !== toolName);
+        // Add to require-approval
+        if (!config.requireApprovalTools.includes(toolName)) {
+          config.requireApprovalTools.push(toolName);
+        }
+        break;
+    }
+  }
 }

@@ -30,6 +30,10 @@ export interface CliSpawnConfig {
   allowedTools?: string[];
   disallowedTools?: string[];
   permissionMode?: PermissionMode;
+  disableWebTools?: boolean;  // Disable WebSearch/WebFetch
+
+  // Context files
+  files?: string[];  // Files to add to context
 
   // Budget
   maxBudgetUsd?: number;

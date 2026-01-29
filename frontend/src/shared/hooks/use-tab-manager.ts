@@ -7,6 +7,7 @@ export interface Tab {
   icon: 'ai' | 'file';
   route?: string;
   filePath?: string;
+  fileContent?: string; // For file preview tabs
 }
 
 // Route to tab config mapping
@@ -36,13 +37,21 @@ export function useTabManager() {
     const currentPath = location.pathname;
     const activeTab = tabs.find((t) => t.id === activeTabId);
 
+    // Skip if tab has fileContent (it's a preview tab, not a route tab)
+    if (activeTab?.fileContent) return;
+
     if (activeTab && activeTab.route !== currentPath) {
       const config = routeTabConfig[currentPath];
-      if (config) {
-        setTabs((prev) =>
-          prev.map((tab) => (tab.id === activeTabId ? { ...tab, title: config.title, icon: config.icon, route: currentPath } : tab))
-        );
-      }
+      setTabs((prev) =>
+        prev.map((tab) => {
+          if (tab.id !== activeTabId) return tab;
+          if (config) {
+            return { ...tab, title: config.title, icon: config.icon, route: currentPath };
+          }
+          // For dynamic routes not in config (like /tasks/{id}), just update the route
+          return { ...tab, route: currentPath };
+        })
+      );
     }
   }, [location.pathname, activeTabId, tabs]);
 
@@ -143,6 +152,20 @@ export function useTabManager() {
     setActiveTabId(newTab.id);
   }, []);
 
+  // Open file content preview as a new tab
+  const handleOpenFileContentAsTab = useCallback((filePath: string, content: string) => {
+    const fileName = filePath.split(/[/\\]/).pop() || 'file.txt';
+    const newTab: Tab = {
+      id: Date.now().toString(),
+      title: fileName,
+      icon: 'file',
+      filePath,
+      fileContent: content,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  }, []);
+
   // Open task in NEW tab (from task card menu "Open in new tab")
   const handleOpenTaskAsTab = useCallback(
     (taskId: string, taskTitle: string) => {
@@ -184,6 +207,7 @@ export function useTabManager() {
     handleOpenInNewTab,
     handleFileClick,
     handleOpenFileInNewTab,
+    handleOpenFileContentAsTab,
     handleOpenTaskAsTab,
     handleOpenTaskInCurrentTab,
     updateCurrentTab,

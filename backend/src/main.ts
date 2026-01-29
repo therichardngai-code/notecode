@@ -5,6 +5,8 @@
 
 import { createServer } from './infrastructure/server/fastify.server.js';
 import { initializeDatabase, closeDatabase } from './infrastructure/database/connection.js';
+import { SqliteSettingsRepository } from './adapters/repositories/sqlite-settings.repository.js';
+import { DataRetentionService } from './domain/services/data-retention.service.js';
 
 async function main(): Promise<void> {
   const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -14,6 +16,11 @@ async function main(): Promise<void> {
 
   // Initialize database
   await initializeDatabase();
+
+  // Run data retention cleanup on startup
+  const settingsRepo = new SqliteSettingsRepository();
+  const retentionService = new DataRetentionService(settingsRepo);
+  await retentionService.runCleanup();
 
   // Create and start server
   const server = await createServer();

@@ -8,6 +8,14 @@ import { settings } from '../../infrastructure/database/schema.js';
 import { getDatabase } from '../../infrastructure/database/connection.js';
 import { encrypt, decrypt, isEncryptionConfigured } from '../../infrastructure/crypto/index.js';
 
+export interface ApprovalGateConfig {
+  enabled: boolean;
+  rules?: Array<{
+    pattern: string;
+    action: 'approve' | 'deny' | 'ask';
+  }>;
+}
+
 export interface GlobalSettings {
   id: string;
   userName?: string;
@@ -19,6 +27,10 @@ export interface GlobalSettings {
   apiKeys?: Record<string, string>;
   yoloMode: boolean;
   autoExtractSummary: boolean;
+  currentActiveProjectId?: string | null;
+  dataRetentionEnabled: boolean;
+  dataRetentionDays: number; // Days before auto-delete inactive tasks (default 90)
+  approvalGate?: ApprovalGateConfig | null;
 }
 
 export interface ISettingsRepository {
@@ -45,6 +57,8 @@ export class SqliteSettingsRepository implements ISettingsRepository {
         fallbackModel: 'haiku',
         yoloMode: false,
         autoExtractSummary: false,
+        dataRetentionEnabled: false,
+        dataRetentionDays: 90,
       };
       await db.insert(settings).values({
         id: 'global',
@@ -54,6 +68,8 @@ export class SqliteSettingsRepository implements ISettingsRepository {
         fallbackModel: 'haiku',
         yoloMode: false,
         autoExtractSummary: false,
+        dataRetentionEnabled: false,
+        dataRetentionDays: 90,
       });
       return defaultSettings;
     }
@@ -70,6 +86,10 @@ export class SqliteSettingsRepository implements ISettingsRepository {
       apiKeys: row.apiKeys ? this.decryptApiKeys(row.apiKeys) : undefined,
       yoloMode: row.yoloMode ?? false,
       autoExtractSummary: row.autoExtractSummary ?? true,
+      currentActiveProjectId: row.currentActiveProjectId ?? undefined,
+      dataRetentionEnabled: row.dataRetentionEnabled ?? false,
+      dataRetentionDays: row.dataRetentionDays ?? 90,
+      approvalGate: row.approvalGate ? JSON.parse(row.approvalGate) : null,
     };
   }
 
@@ -86,6 +106,10 @@ export class SqliteSettingsRepository implements ISettingsRepository {
     if (updates.apiKeys !== undefined) data.apiKeys = this.encryptApiKeys(updates.apiKeys);
     if (updates.yoloMode !== undefined) data.yoloMode = updates.yoloMode;
     if (updates.autoExtractSummary !== undefined) data.autoExtractSummary = updates.autoExtractSummary;
+    if (updates.currentActiveProjectId !== undefined) data.currentActiveProjectId = updates.currentActiveProjectId;
+    if (updates.dataRetentionEnabled !== undefined) data.dataRetentionEnabled = updates.dataRetentionEnabled;
+    if (updates.dataRetentionDays !== undefined) data.dataRetentionDays = updates.dataRetentionDays;
+    if (updates.approvalGate !== undefined) data.approvalGate = updates.approvalGate ? JSON.stringify(updates.approvalGate) : null;
 
     await db
       .update(settings)

@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Kanban, LayoutList, Filter, X, ChevronDown, Folder, Bot, Sparkles, Zap, Search, Plus, Cpu } from 'lucide-react';
+import { Kanban, LayoutList, Filter, X, Folder, Bot, Sparkles, Zap, Search, Plus, Cpu, ChevronDown, Star, Check } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useUIStore } from '@/shared/stores';
 import { useTaskStore } from '@/shared/stores/task-store';
@@ -11,16 +11,16 @@ import { SessionsView, mapApiSessionToUI } from './sessions';
 import { useProjects } from '@/shared/hooks/use-projects-query';
 import { useTasks } from '@/shared/hooks/use-tasks-query';
 import { useSessions, useStopSession, useDeleteSession } from '@/shared/hooks/use-sessions-query';
+import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 
-// Search params for handling ?id=taskId, ?session=sessionId, ?projectId=projectId
-type TasksSearch = { id?: string; session?: string; projectId?: string };
+// Search params for handling ?id=taskId, ?session=sessionId
+type TasksSearch = { id?: string; session?: string };
 
 export const Route = createFileRoute('/tasks/')({
   component: TasksIndexPage,
   validateSearch: (search: Record<string, unknown>): TasksSearch => ({
     id: typeof search.id === 'string' ? search.id : undefined,
     session: typeof search.session === 'string' ? search.session : undefined,
-    projectId: typeof search.projectId === 'string' ? search.projectId : undefined,
   }),
 });
 
@@ -115,41 +115,83 @@ function TasksIndexPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Record<string, string[]>>({});
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [showProjectPopover, setShowProjectPopover] = useState(false);
+  const [projectSearch, setProjectSearch] = useState('');
   const projectButtonRef = useRef<HTMLButtonElement>(null);
-  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+  const projectSearchRef = useRef<HTMLInputElement>(null);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
+  const [pendingProject, setPendingProject] = useState<{ id: string; name: string } | null>(null);
 
-  // Update dropdown position when opened
-  useEffect(() => {
-    if (showProjectDropdown && projectButtonRef.current) {
-      const rect = projectButtonRef.current.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom + 4, left: rect.left });
-    }
-  }, [showProjectDropdown]);
+  // Get active project from settings & mutation to update it
+  const { data: settings, isLoading: settingsLoading } = useSettings();
+  const updateSettings = useUpdateSettings();
+  const activeProjectId = settings?.currentActiveProjectId || null;
 
   // Fetch projects from API
   const { data: projects, isLoading: projectsLoading } = useProjects();
+  const activeProject = projects?.find(p => p.id === activeProjectId);
+
+  // Update popover position when opened & focus search input
+  useEffect(() => {
+    if (showProjectPopover && projectButtonRef.current) {
+      const rect = projectButtonRef.current.getBoundingClientRect();
+      setPopoverPos({ top: rect.bottom + 4, left: rect.left });
+      // Focus search input after render
+      setTimeout(() => projectSearchRef.current?.focus(), 0);
+    } else {
+      setProjectSearch(''); // Clear search when closed
+    }
+  }, [showProjectPopover]);
+
+  // Filter projects by search query
+  const filteredProjects = projects?.filter(p =>
+    p.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
+    p.path.toLowerCase().includes(projectSearch.toLowerCase())
+  );
+
+  // Handle project selection - show confirmation dialog
+  const handleProjectSelect = (projectId: string, projectName: string) => {
+    // Skip confirmation if selecting the same project
+    if (projectId === activeProjectId) {
+      setShowProjectPopover(false);
+      return;
+    }
+    setPendingProject({ id: projectId, name: projectName });
+    setShowProjectPopover(false);
+  };
+
+  // Confirm project change
+  const confirmProjectChange = () => {
+    if (pendingProject) {
+      updateSettings.mutate({ currentActiveProjectId: pendingProject.id });
+      setPendingProject(null);
+    }
+  };
+
+  // Cancel project change
+  const cancelProjectChange = () => {
+    setPendingProject(null);
+  };
 
   // Get URL search params
-  const { id: taskIdFromUrl, session: sessionIdFromUrl, projectId: projectIdFromUrl } = Route.useSearch();
+  const { id: taskIdFromUrl, session: sessionIdFromUrl } = Route.useSearch();
 
-  // Auto-select project from URL param or first project when loaded
+  // Sync active project to UI store for FloatingNewTaskPanel to use
   useEffect(() => {
-    if (projectIdFromUrl && projects?.some(p => p.id === projectIdFromUrl)) {
-      setSelectedProjectId(projectIdFromUrl);
-    } else if (projects?.length && !selectedProjectId) {
-      setSelectedProjectId(projects[0].id);
-    }
-  }, [projects, selectedProjectId, projectIdFromUrl]);
+    setActiveProjectId(activeProjectId);
+  }, [activeProjectId, setActiveProjectId]);
 
-  // Sync selected project to UI store for FloatingNewTaskPanel to use
-  useEffect(() => {
-    setActiveProjectId(selectedProjectId);
-  }, [selectedProjectId, setActiveProjectId]);
+  // Fetch ALL tasks (no projectId filter - backend now supports this)
+  const { data: apiTasks, isLoading: tasksLoading } = useTasks();
 
-  // Fetch tasks from API when project selected
-  const { data: apiTasks, isLoading: tasksLoading } = useTasks(selectedProjectId || '');
+  // Build dynamic project filter options from API data
+  const projectFilterOptions = projects?.map(p => ({ id: p.id, label: p.name })) || [];
+
+  // Filter tasks by selected projects (client-side filtering)
+  const projectFilterIds = filters.project || [];
+  const filteredApiTasks = projectFilterIds.length > 0
+    ? apiTasks?.filter(t => projectFilterIds.includes(t.projectId))
+    : apiTasks;
 
   // Fetch sessions from API (all sessions, not task-filtered)
   // Note: Backend defaults to 20, pass higher limit to show more
@@ -160,22 +202,25 @@ function TasksIndexPage() {
   // Map API sessions to UI format
   const mappedSessions = apiSessions?.map(mapApiSessionToUI) || [];
 
-  // Map API tasks to BoardView format
-  const mappedTasks = apiTasks?.map(t => ({
+  // Map filtered tasks to BoardView format
+  const mappedTasks = filteredApiTasks?.map(t => ({
     id: t.id,
     title: t.title,
     description: t.description,
     columnId: t.status,
     priority: t.priority as 'low' | 'medium' | 'high' | undefined,
+    projectId: t.projectId, // For filtering by project ID
     project: projects?.find(p => p.id === t.projectId)?.name,
     agent: t.agentRole || undefined,
     provider: t.provider || undefined,
     model: t.model || undefined,
     assignee: t.assignee || undefined,
     dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : undefined,
+    // Time tracking fields
+    startedAt: t.startedAt || undefined,
+    completedAt: t.completedAt || undefined,
+    updatedAt: t.updatedAt,
   }));
-
-  const selectedProject = projects?.find(p => p.id === selectedProjectId);
 
   // Auto-open task detail when id/session is in URL (for "Open in new tab" feature)
   useEffect(() => {
@@ -250,43 +295,79 @@ function TasksIndexPage() {
       {/* Header */}
       <div className="flex items-center px-6 py-3 border-b border-border relative z-30">
         <div className="flex items-center gap-3">
-          {/* Project Selector */}
+          {/* Active Project Selector with Search Popover */}
           <div className="relative opacity-0 animate-float-up" style={{ animationDelay: '0.05s' }}>
             <button
               ref={projectButtonRef}
-              onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+              onClick={() => setShowProjectPopover(!showProjectPopover)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg glass text-sm font-medium hover:shadow-md transition-all min-w-[140px]"
+              title={activeProject?.path || 'Select active project'}
             >
-              <Folder className="w-4 h-4 text-muted-foreground" />
-              <span className="truncate">{projectsLoading ? 'Loading...' : selectedProject?.name || 'Select Project'}</span>
+              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+              <span className="truncate">
+                {settingsLoading || projectsLoading
+                  ? 'Loading...'
+                  : activeProject?.name || 'Select Project'}
+              </span>
               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-auto" />
             </button>
-            {showProjectDropdown && createPortal(
+            {showProjectPopover && createPortal(
               <>
-                <div className="fixed inset-0 z-[100]" onClick={() => setShowProjectDropdown(false)} />
+                <div className="fixed inset-0 z-[100]" onClick={() => setShowProjectPopover(false)} />
                 <div
-                  className="fixed w-56 glass-strong rounded-lg shadow-lg py-1 z-[110] max-h-64 overflow-y-auto"
-                  style={{ top: dropdownPos.top, left: dropdownPos.left }}
+                  className="fixed w-72 glass-strong rounded-lg shadow-xl border border-border z-[110] overflow-hidden"
+                  style={{ top: popoverPos.top, left: popoverPos.left }}
                 >
-                  {projects?.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => {
-                        setSelectedProjectId(project.id);
-                        setShowProjectDropdown(false);
-                      }}
-                      className={cn(
-                        'w-full flex flex-col px-3 py-2 text-sm hover:bg-accent transition-colors text-left',
-                        project.id === selectedProjectId && 'bg-accent'
-                      )}
-                    >
-                      <span className="font-medium text-foreground">{project.name}</span>
-                      <span className="text-xs text-muted-foreground truncate">{project.path}</span>
-                    </button>
-                  ))}
-                  {!projects?.length && !projectsLoading && (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">No projects found</div>
-                  )}
+                  {/* Header */}
+                  <div className="px-3 py-2 border-b border-border bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                      <span className="text-sm font-medium text-foreground">Active Project</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">New tasks will use this project</p>
+                  </div>
+                  {/* Search Input */}
+                  <div className="p-2 border-b border-border">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        ref={projectSearchRef}
+                        type="text"
+                        value={projectSearch}
+                        onChange={(e) => setProjectSearch(e.target.value)}
+                        placeholder="Search projects..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-md bg-muted/50 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+                  {/* Project List */}
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {filteredProjects?.map((project) => (
+                      <button
+                        key={project.id}
+                        onClick={() => handleProjectSelect(project.id, project.name)}
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors text-left',
+                          project.id === activeProjectId && 'bg-accent'
+                        )}
+                      >
+                        <div className="w-4 h-4 flex items-center justify-center">
+                          {project.id === activeProjectId && (
+                            <Check className="w-4 h-4 text-primary" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-foreground block">{project.name}</span>
+                          <span className="text-xs text-muted-foreground truncate block">{project.path}</span>
+                        </div>
+                      </button>
+                    ))}
+                    {filteredProjects?.length === 0 && (
+                      <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                        {projectSearch ? 'No matching projects' : 'No projects found'}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </>,
               document.body
@@ -377,7 +458,7 @@ function TasksIndexPage() {
             label="Project"
             icon={Folder}
             value={filters.project}
-            options={filterOptions.project}
+            options={projectFilterOptions}
             onChange={(value) => setFilters(prev => ({ ...prev, project: value }))}
             onClear={() => setFilters(prev => { const { project, ...rest } = prev; return rest; })}
           />
@@ -471,6 +552,46 @@ function TasksIndexPage() {
           />
         )}
       </div>
+
+      {/* Project Change Confirmation Dialog */}
+      {pendingProject && createPortal(
+        <>
+          <div className="fixed inset-0 z-[200] bg-black/50" onClick={cancelProjectChange} />
+          <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-96 glass-strong rounded-lg shadow-xl border border-border p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                <Star className="w-5 h-5 text-yellow-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">Change Active Project?</h3>
+                <p className="text-sm text-muted-foreground">New tasks will use this project</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/50 mb-4">
+              <div className="flex items-center gap-2">
+                <Folder className="w-4 h-4 text-muted-foreground" />
+                <span className="font-medium text-foreground">{pendingProject.name}</span>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={cancelProjectChange}
+                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmProjectChange}
+                disabled={updateSettings.isPending}
+                className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {updateSettings.isPending ? 'Changing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </div>
   );
 }

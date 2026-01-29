@@ -27,6 +27,8 @@ function RootLayout() {
   const closeTaskDetailPanel = useUIStore((state) => state.closeTaskDetailPanel);
   const pendingTaskTab = useUIStore((state) => state.pendingTaskTab);
   const clearPendingTaskTab = useUIStore((state) => state.clearPendingTaskTab);
+  const pendingFileTab = useUIStore((state) => state.pendingFileTab);
+  const clearPendingFileTab = useUIStore((state) => state.clearPendingFileTab);
 
   // Tab management hook
   const {
@@ -39,6 +41,7 @@ function RootLayout() {
     handleOpenInNewTab,
     handleFileClick,
     handleOpenFileInNewTab,
+    handleOpenFileContentAsTab,
     handleOpenTaskAsTab,
     setTabs,
   } = useTabManager();
@@ -50,6 +53,14 @@ function RootLayout() {
       clearPendingTaskTab();
     }
   }, [pendingTaskTab, handleOpenTaskAsTab, clearPendingTaskTab]);
+
+  // Handle pending file tab (File Preview feature)
+  useEffect(() => {
+    if (pendingFileTab) {
+      handleOpenFileContentAsTab(pendingFileTab.path, pendingFileTab.content);
+      clearPendingFileTab();
+    }
+  }, [pendingFileTab, handleOpenFileContentAsTab, clearPendingFileTab]);
 
   // Panel state hook
   const {
@@ -110,7 +121,22 @@ function RootLayout() {
 
             {/* Main Content */}
             <main className="flex-1 overflow-auto">
-              <Outlet />
+              {(() => {
+                const activeTab = tabs.find((t) => t.id === activeTabId);
+                if (activeTab?.fileContent) {
+                  return (
+                    <div className="h-full flex flex-col">
+                      <div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground">
+                        <span className="truncate">{activeTab.filePath}</span>
+                      </div>
+                      <pre className="flex-1 p-4 text-sm font-mono overflow-auto whitespace-pre-wrap break-words">
+                        {activeTab.fileContent}
+                      </pre>
+                    </div>
+                  );
+                }
+                return <Outlet />;
+              })()}
             </main>
           </div>
         </div>

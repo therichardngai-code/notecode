@@ -21,4 +21,12 @@ export interface IMessageRepository {
   delete(id: string): Promise<boolean>;
   deleteBySessionId(sessionId: string): Promise<number>;
   countBySessionId(sessionId: string): Promise<number>;
+
+  // Streaming support
+  /** Find active streaming message for session (status='streaming') */
+  findStreamingBySessionId(sessionId: string): Promise<Message | null>;
+  /** Append delta content to streaming message, update offset */
+  appendContent(messageId: string, delta: string): Promise<void>;
+  /** Mark streaming message as complete */
+  markComplete(messageId: string): Promise<void>;
 }

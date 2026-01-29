@@ -12,6 +12,7 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   path: text('path').unique().notNull(),
   systemPrompt: text('system_prompt'), // Per-project system prompt override
+  approvalGate: text('approval_gate'), // JSON ApprovalGateConfig - project override
   isFavorite: integer('is_favorite', { mode: 'boolean' }).default(false),
   lastAccessedAt: text('last_accessed_at'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
@@ -134,6 +135,9 @@ export const messages = sqliteTable('messages', {
   toolInput: text('tool_input'), // JSON
   toolResult: text('tool_result'),
   approvalId: text('approval_id'), // Link to approval if tool required approval
+  // Streaming support
+  status: text('status').default('complete'), // 'streaming' | 'complete'
+  streamOffset: integer('stream_offset').default(0), // Current content length for delta sync
 });
 
 // Settings table (singleton)
@@ -149,6 +153,9 @@ export const settings = sqliteTable('settings', {
   yoloMode: integer('yolo_mode', { mode: 'boolean' }).default(false),
   approvalGate: text('approval_gate'), // JSON ApprovalGateConfig
   autoExtractSummary: integer('auto_extract_summary', { mode: 'boolean' }).default(true),
+  currentActiveProjectId: text('current_active_project_id').references(() => projects.id, { onDelete: 'set null' }),
+  dataRetentionEnabled: integer('data_retention_enabled', { mode: 'boolean' }).default(false),
+  dataRetentionDays: integer('data_retention_days').default(90), // Days before auto-delete inactive tasks
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
 

@@ -139,6 +139,63 @@ export class SqliteMessageRepository implements IMessageRepository {
     return rows.map(row => this.toEntity(row)).reverse();
   }
 
+  // === Streaming Support ===
+
+  /**
+   * Find active streaming message for session
+   */
+  async findStreamingBySessionId(sessionId: string): Promise<Message | null> {
+    const db = getDatabase();
+    const row = await db.query.messages.findFirst({
+      where: and(
+        eq(messages.sessionId, sessionId),
+        eq(messages.status, 'streaming')
+      ),
+    });
+    return row ? this.toEntity(row) : null;
+  }
+
+  /**
+   * Append delta content to streaming message
+   */
+  async appendContent(messageId: string, delta: string): Promise<void> {
+    const db = getDatabase();
+
+    // Get current message
+    const row = await db.query.messages.findFirst({
+      where: eq(messages.id, messageId),
+    });
+    if (!row) return;
+
+    // Parse current blocks and append to text content
+    const blocks = row.blocks ? JSON.parse(row.blocks) : [];
+    const textBlock = blocks.find((b: { type: string }) => b.type === 'text');
+    if (textBlock) {
+      textBlock.content += delta;
+    } else {
+      blocks.push({ type: 'text', content: delta });
+    }
+
+    // Update with new content and offset
+    const newOffset = (row.streamOffset ?? 0) + delta.length;
+    await db.update(messages)
+      .set({
+        blocks: JSON.stringify(blocks),
+        streamOffset: newOffset,
+      })
+      .where(eq(messages.id, messageId));
+  }
+
+  /**
+   * Mark streaming message as complete
+   */
+  async markComplete(messageId: string): Promise<void> {
+    const db = getDatabase();
+    await db.update(messages)
+      .set({ status: 'complete' })
+      .where(eq(messages.id, messageId));
+  }
+
   private toEntity(row: MessageRow): Message {
     const blocks: Block[] = row.blocks ? JSON.parse(row.blocks) : [];
     const toolInput = row.toolInput ? JSON.parse(row.toolInput) : null;
@@ -153,7 +210,9 @@ export class SqliteMessageRepository implements IMessageRepository {
       row.toolName ?? null,
       toolInput,
       row.toolResult ?? null,
-      row.approvalId ?? null
+      row.approvalId ?? null,
+      (row.status as 'streaming' | 'complete') ?? 'complete',
+      row.streamOffset ?? 0
     );
   }
 
@@ -169,6 +228,8 @@ export class SqliteMessageRepository implements IMessageRepository {
       toolInput: message.toolInput ? JSON.stringify(message.toolInput) : null,
       toolResult: message.toolResult,
       approvalId: message.approvalId,
+      status: message.status,
+      streamOffset: message.streamOffset,
     };
   }
 }

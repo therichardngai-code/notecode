@@ -1,17 +1,28 @@
+/**
+ * Floating Settings Panel
+ * Modal dialog with sidebar navigation (Notion-style)
+ * Connected to real Settings API
+ */
+
 import { useState, useRef, useEffect } from 'react';
 import {
   X,
   User,
   SlidersHorizontal,
-  Bell,
-  Link2,
+  Key,
   Settings,
-  Shield,
   Sparkles,
-  CreditCard,
+  Shield,
+  Maximize2,
   ChevronDown,
+  Loader2,
+  FolderOpen,
+  Plus,
+  Info,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
+import { useSettings, useUpdateSettings, useSetApiKey } from '@/shared/hooks/use-settings';
+import { useProjects } from '@/shared/hooks/use-projects-query';
 
 interface FloatingSettingsPanelProps {
   isOpen: boolean;
@@ -19,88 +30,26 @@ interface FloatingSettingsPanelProps {
   onOpenFullSettings?: () => void;
 }
 
-// Account section items
+// Sidebar items
 const accountItems = [
-  { id: 'account', label: 'User Profile', icon: User, isUser: true },
+  { id: 'profile', label: 'User Profile', icon: User, isUser: true },
   { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'connections', label: 'Connections', icon: Link2 },
 ];
 
-// Workspace section items
 const workspaceItems = [
   { id: 'general', label: 'General', icon: Settings },
-  { id: 'security', label: 'Security', icon: Shield },
   { id: 'ai-settings', label: 'AI Settings', icon: Sparkles },
-  { id: 'billing', label: 'Billing', icon: CreditCard },
+  { id: 'api-keys', label: 'API Keys', icon: Key },
+  { id: 'advanced', label: 'Advanced', icon: Shield },
 ];
 
-// Settings content for each section
-const settingsContent: Record<
-  string,
-  {
-    title: string;
-    settings: {
-      id: string;
-      label: string;
-      description?: string;
-      type: 'select' | 'toggle';
-      value: string | boolean;
-      options?: string[];
-    }[];
-  }
-> = {
-  preferences: {
-    title: 'Preferences',
-    settings: [
-      { id: 'theme', label: 'Appearance', description: 'Customize how the app looks', type: 'select', value: 'Dark', options: ['Light', 'Dark', 'System'] },
-      { id: 'language', label: 'Language', description: 'Change the interface language', type: 'select', value: 'English', options: ['English', 'Spanish', 'French'] },
-      { id: 'start-week', label: 'Start week on Monday', type: 'toggle', value: true },
-    ],
-  },
-  notifications: {
-    title: 'Notifications',
-    settings: [
-      { id: 'email-updates', label: 'Email notifications', description: 'Receive email about activity', type: 'toggle', value: true },
-      { id: 'push-enabled', label: 'Push notifications', description: 'Receive push notifications', type: 'toggle', value: true },
-    ],
-  },
-  'ai-settings': {
-    title: 'AI Settings',
-    settings: [
-      { id: 'default-model', label: 'Default Model', description: 'Default AI model for new sessions', type: 'select', value: 'Claude Sonnet', options: ['Claude Sonnet', 'Claude Opus', 'Gemini Pro'] },
-      { id: 'auto-approve', label: 'Auto-approve (YOLO mode)', description: 'Automatically approve AI actions', type: 'toggle', value: false },
-    ],
-  },
-  general: {
-    title: 'General',
-    settings: [
-      { id: 'workspace-name', label: 'Workspace name', type: 'select', value: 'AI Workspace', options: ['AI Workspace'] },
-    ],
-  },
-};
-
-function SettingToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      onClick={() => onChange(!value)}
-      className={cn('w-9 h-5 rounded-full transition-colors relative shrink-0', value ? 'bg-primary' : 'bg-muted')}
-    >
-      <span className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform', value ? 'translate-x-4' : 'translate-x-0.5')} />
-    </button>
-  );
-}
-
-function SettingSelect({ value }: { value: string; options: string[] }) {
-  return (
-    <button className="flex items-center gap-1 text-sm text-foreground hover:text-primary transition-colors shrink-0">
-      <span>{value}</span>
-      <ChevronDown className="w-4 h-4" />
-    </button>
-  );
-}
-
-function SidebarItem({ icon: Icon, label, isActive, isUser, onClick }: { icon: React.ElementType; label: string; isActive?: boolean; isUser?: boolean; onClick?: () => void }) {
+function SidebarItem({ icon: Icon, label, isActive, isUser, onClick }: {
+  icon: React.ElementType;
+  label: string;
+  isActive?: boolean;
+  isUser?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -121,9 +70,428 @@ function SidebarItem({ icon: Icon, label, isActive, isUser, onClick }: { icon: R
   );
 }
 
+function SettingRow({ label, description, children }: {
+  label: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        {description && <div className="text-sm text-muted-foreground mt-0.5">{description}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function Toggle({ value, onChange, disabled }: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={() => !disabled && onChange(!value)}
+      disabled={disabled}
+      className={cn(
+        'w-10 h-6 rounded-full transition-colors relative shrink-0',
+        value ? 'bg-primary' : 'bg-muted-foreground/30',
+        disabled && 'opacity-50 cursor-not-allowed'
+      )}
+    >
+      <span className={cn(
+        'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+        value ? 'translate-x-5' : 'translate-x-1'
+      )} />
+    </button>
+  );
+}
+
+function Select({ value, options, onChange, disabled }: {
+  value: string;
+  options: { id: string; label: string }[];
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const selected = options.find(o => o.id === value);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
+        className={cn(
+          'flex items-center gap-1 text-sm text-foreground hover:text-primary transition-colors',
+          disabled && 'opacity-50 cursor-not-allowed'
+        )}
+      >
+        <span>{selected?.label || value || 'Select...'}</span>
+        <ChevronDown className="w-4 h-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-40 glass border border-border rounded-lg shadow-lg py-1 z-20">
+          {options.map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => { onChange(opt.id); setOpen(false); }}
+              className={cn(
+                'w-full px-3 py-1.5 text-sm text-left hover:bg-muted transition-colors',
+                value === opt.id && 'bg-muted text-primary'
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Save button component
+function SaveButton({ onClick, isPending, hasChanges }: { onClick: () => void; isPending: boolean; hasChanges: boolean }) {
+  return (
+    <div className="flex items-center gap-3 pt-4 mt-4 border-t border-border">
+      <button
+        onClick={onClick}
+        disabled={!hasChanges || isPending}
+        className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 text-sm"
+      >
+        {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+      </button>
+      {!hasChanges && <span className="text-sm text-muted-foreground">No changes</span>}
+    </div>
+  );
+}
+
+// Content sections
+function ProfileContent({ settings, updateSettings, isPending }: ContentProps) {
+  const [userName, setUserName] = useState(settings?.userName || '');
+  const hasChanges = userName !== (settings?.userName || '');
+
+  useEffect(() => {
+    setUserName(settings?.userName || '');
+  }, [settings?.userName]);
+
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-foreground mb-4">User Profile</h2>
+      <SettingRow label="Display Name" description="Your name shown in the app">
+        <input
+          type="text"
+          value={userName}
+          onChange={(e) => setUserName(e.target.value)}
+          disabled={isPending}
+          className="w-40 px-2 py-1 text-sm border border-border rounded bg-background text-foreground"
+          placeholder="Enter name"
+        />
+      </SettingRow>
+      <SaveButton onClick={() => updateSettings({ userName })} isPending={isPending} hasChanges={hasChanges} />
+    </div>
+  );
+}
+
+function PreferencesContent({ settings, updateSettings, isPending }: ContentProps) {
+  const [theme, setTheme] = useState(settings?.theme || 'system');
+  const hasChanges = theme !== (settings?.theme || 'system');
+
+  useEffect(() => {
+    setTheme(settings?.theme || 'system');
+  }, [settings?.theme]);
+
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-foreground mb-4">Preferences</h2>
+      <SettingRow label="Appearance" description="Customize how the app looks">
+        <Select
+          value={theme}
+          options={[
+            { id: 'light', label: 'Light' },
+            { id: 'dark', label: 'Dark' },
+            { id: 'system', label: 'System' },
+          ]}
+          onChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
+          disabled={isPending}
+        />
+      </SettingRow>
+      <SaveButton onClick={() => updateSettings({ theme: theme as 'light' | 'dark' | 'system' })} isPending={isPending} hasChanges={hasChanges} />
+    </div>
+  );
+}
+
+function GeneralContent({ settings, updateSettings, isPending }: ContentProps) {
+  const { data: projects = [] } = useProjects();
+  const [activeProjectId, setActiveProjectId] = useState(settings?.currentActiveProjectId || '');
+  const hasChanges = activeProjectId !== (settings?.currentActiveProjectId || '');
+
+  useEffect(() => {
+    setActiveProjectId(settings?.currentActiveProjectId || '');
+  }, [settings?.currentActiveProjectId]);
+
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-foreground mb-4">General</h2>
+      <SettingRow label="Active Project" description="Default project for new tasks">
+        <div className="flex items-center gap-2 text-sm">
+          <FolderOpen className="w-4 h-4 text-muted-foreground" />
+          <Select
+            value={activeProjectId}
+            options={projects.map(p => ({ id: p.id, label: p.name }))}
+            onChange={(v) => setActiveProjectId(v)}
+            disabled={isPending}
+          />
+        </div>
+      </SettingRow>
+      <SaveButton onClick={() => updateSettings({ currentActiveProjectId: activeProjectId || null })} isPending={isPending} hasChanges={hasChanges} />
+    </div>
+  );
+}
+
+function AISettingsContent({ settings, updateSettings, isPending }: ContentProps) {
+  const [provider, setProvider] = useState(settings?.defaultProvider || '');
+  const [model, setModel] = useState(settings?.defaultModel || '');
+  const [yoloMode, setYoloMode] = useState(settings?.yoloMode || false);
+
+  const hasChanges = provider !== (settings?.defaultProvider || '') ||
+    model !== (settings?.defaultModel || '') ||
+    yoloMode !== (settings?.yoloMode || false);
+
+  useEffect(() => {
+    setProvider(settings?.defaultProvider || '');
+    setModel(settings?.defaultModel || '');
+    setYoloMode(settings?.yoloMode || false);
+  }, [settings?.defaultProvider, settings?.defaultModel, settings?.yoloMode]);
+
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-foreground mb-4">AI Settings</h2>
+      <SettingRow label="Default Provider" description="Provider for new sessions">
+        <Select
+          value={provider}
+          options={[
+            { id: 'anthropic', label: 'Anthropic' },
+            { id: 'google', label: 'Google' },
+            { id: 'openai', label: 'OpenAI' },
+          ]}
+          onChange={(v) => setProvider(v)}
+          disabled={isPending}
+        />
+      </SettingRow>
+      <SettingRow label="Default Model" description="Model for new sessions">
+        <input
+          type="text"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          disabled={isPending}
+          className="w-40 px-2 py-1 text-sm border border-border rounded bg-background text-foreground"
+          placeholder="e.g. claude-sonnet-4"
+        />
+      </SettingRow>
+      <SettingRow label="YOLO Mode" description="Auto-approve AI actions without confirmation">
+        <Toggle value={yoloMode} onChange={(v) => setYoloMode(v)} disabled={isPending} />
+      </SettingRow>
+      <SaveButton
+        onClick={() => updateSettings({
+          defaultProvider: provider as 'anthropic' | 'google' | 'openai' | undefined,
+          defaultModel: model,
+          yoloMode,
+        })}
+        isPending={isPending}
+        hasChanges={hasChanges}
+      />
+    </div>
+  );
+}
+
+function ApiKeysContent({ settings }: ContentProps) {
+  const setApiKey = useSetApiKey();
+  const [editingProvider, setEditingProvider] = useState<string | null>(null);
+  const [keyValue, setKeyValue] = useState('');
+
+  const handleSave = async (provider: 'anthropic' | 'google' | 'openai') => {
+    if (keyValue.trim()) {
+      await setApiKey.mutateAsync({ provider, apiKey: keyValue });
+      setKeyValue('');
+      setEditingProvider(null);
+    }
+  };
+
+  const providers = [
+    { id: 'anthropic', label: 'Anthropic', configured: settings?.apiKeys?.anthropic },
+    { id: 'google', label: 'Google', configured: settings?.apiKeys?.google },
+    { id: 'openai', label: 'OpenAI', configured: settings?.apiKeys?.openai },
+  ];
+
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-foreground mb-4">API Keys</h2>
+      {providers.map(provider => (
+        <SettingRow key={provider.id} label={provider.label} description={provider.configured ? 'Configured' : 'Not configured'}>
+          {editingProvider === provider.id ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={keyValue}
+                onChange={(e) => setKeyValue(e.target.value)}
+                className="w-32 px-2 py-1 text-sm border border-border rounded bg-background"
+                placeholder="API Key"
+              />
+              <button
+                onClick={() => handleSave(provider.id as 'anthropic' | 'google' | 'openai')}
+                disabled={setApiKey.isPending}
+                className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded"
+              >
+                {setApiKey.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+              </button>
+              <button onClick={() => setEditingProvider(null)} className="px-2 py-1 text-xs text-muted-foreground">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setEditingProvider(provider.id)}
+              className={cn(
+                'text-sm',
+                provider.configured ? 'text-green-500' : 'text-primary hover:underline'
+              )}
+            >
+              {provider.configured ? '✓ Set' : 'Add key'}
+            </button>
+          )}
+        </SettingRow>
+      ))}
+    </div>
+  );
+}
+
+interface ApprovalRule {
+  pattern: string;
+  action: 'approve' | 'deny' | 'ask';
+}
+
+function AdvancedContent({ settings, updateSettings, isPending }: ContentProps) {
+  const [autoExtract, setAutoExtract] = useState(settings?.autoExtractSummary || false);
+  const [approvalEnabled, setApprovalEnabled] = useState(settings?.approvalGate?.enabled || false);
+  const [approvalRules, setApprovalRules] = useState<ApprovalRule[]>(settings?.approvalGate?.rules || []);
+
+  const hasChanges = autoExtract !== (settings?.autoExtractSummary || false) ||
+    approvalEnabled !== (settings?.approvalGate?.enabled || false) ||
+    JSON.stringify(approvalRules) !== JSON.stringify(settings?.approvalGate?.rules || []);
+
+  useEffect(() => {
+    setAutoExtract(settings?.autoExtractSummary || false);
+    setApprovalEnabled(settings?.approvalGate?.enabled || false);
+    setApprovalRules(settings?.approvalGate?.rules || []);
+  }, [settings?.autoExtractSummary, settings?.approvalGate]);
+
+  const addRule = () => {
+    setApprovalRules([...approvalRules, { pattern: '', action: 'ask' }]);
+  };
+
+  const updateRule = (index: number, field: keyof ApprovalRule, value: string) => {
+    const updated = [...approvalRules];
+    updated[index] = { ...updated[index], [field]: value };
+    setApprovalRules(updated);
+  };
+
+  const removeRule = (index: number) => {
+    setApprovalRules(approvalRules.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    updateSettings({
+      autoExtractSummary: autoExtract,
+      approvalGate: approvalEnabled ? { enabled: true, rules: approvalRules } : null,
+    });
+  };
+
+  return (
+    <div>
+      <h2 className="text-lg font-medium text-foreground mb-4">Advanced</h2>
+
+      <SettingRow label="Auto-extract Summary" description="Automatically extract task summaries">
+        <Toggle value={autoExtract} onChange={(v) => setAutoExtract(v)} disabled={isPending} />
+      </SettingRow>
+
+      {/* Global Approval Gate */}
+      <div className="border-t border-border mt-4 pt-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Shield className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">Global Approval Gate</span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">Define rules for AI actions. Project settings override global.</p>
+
+        <SettingRow label="Enable" description="">
+          <Toggle value={approvalEnabled} onChange={(v) => setApprovalEnabled(v)} disabled={isPending} />
+        </SettingRow>
+
+        {approvalEnabled && (
+          <div className="space-y-2 mt-3">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Info className="w-3 h-3" />
+              <span>Pattern matching for commands</span>
+            </div>
+            {approvalRules.map((rule, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={rule.pattern}
+                  onChange={(e) => updateRule(index, 'pattern', e.target.value)}
+                  placeholder="Pattern"
+                  className="flex-1 px-2 py-1 text-sm border border-border rounded bg-background"
+                />
+                <select
+                  value={rule.action}
+                  onChange={(e) => updateRule(index, 'action', e.target.value as ApprovalRule['action'])}
+                  className="px-2 py-1 text-sm border border-border rounded bg-background"
+                >
+                  <option value="ask">Ask</option>
+                  <option value="approve">Approve</option>
+                  <option value="deny">Deny</option>
+                </select>
+                <button onClick={() => removeRule(index)} className="p-1 text-muted-foreground hover:text-destructive">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            <button onClick={addRule} className="flex items-center gap-1 text-xs text-primary hover:text-primary/80">
+              <Plus className="w-3 h-3" />
+              Add Rule
+            </button>
+          </div>
+        )}
+      </div>
+
+      <SaveButton onClick={handleSave} isPending={isPending} hasChanges={hasChanges} />
+    </div>
+  );
+}
+
+interface ContentProps {
+  settings: ReturnType<typeof useSettings>['data'];
+  updateSettings: (updates: Parameters<ReturnType<typeof useUpdateSettings>['mutate']>[0]) => void;
+  isPending: boolean;
+}
+
 export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: FloatingSettingsPanelProps) {
   const [activeSection, setActiveSection] = useState('preferences');
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const { data: settings, isLoading } = useSettings();
+  const updateSettingsMutation = useUpdateSettings();
+
+  const updateSettings = (updates: Parameters<typeof updateSettingsMutation.mutate>[0]) => {
+    updateSettingsMutation.mutate(updates);
+  };
 
   // Close on click outside
   useEffect(() => {
@@ -146,19 +514,39 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
   // Close on Escape
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-    }
+    if (isOpen) document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  const currentContent = settingsContent[activeSection] || settingsContent.preferences;
-
   if (!isOpen) return null;
+
+  const contentProps: ContentProps = {
+    settings,
+    updateSettings,
+    isPending: updateSettingsMutation.isPending,
+  };
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+
+    switch (activeSection) {
+      case 'profile': return <ProfileContent {...contentProps} />;
+      case 'preferences': return <PreferencesContent {...contentProps} />;
+      case 'general': return <GeneralContent {...contentProps} />;
+      case 'ai-settings': return <AISettingsContent {...contentProps} />;
+      case 'api-keys': return <ApiKeysContent {...contentProps} />;
+      case 'advanced': return <AdvancedContent {...contentProps} />;
+      default: return <PreferencesContent {...contentProps} />;
+    }
+  };
 
   return (
     <>
@@ -170,14 +558,14 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
         ref={panelRef}
         className={cn(
           'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50',
-          'w-[800px] max-w-[90vw] h-[500px] max-h-[85vh]',
+          'w-[800px] max-w-[90vw] h-[550px] max-h-[85vh]',
           'glass-strong rounded-lg',
           'flex overflow-hidden'
         )}
       >
         {/* Sidebar */}
-        <div className="w-52 border-r border-border flex flex-col">
-          <div className="flex-1 overflow-y-auto py-2">
+        <div className="w-52 border-r border-border flex flex-col bg-muted/30">
+          <div className="flex-1 overflow-y-auto py-3">
             {/* Account Section */}
             <div className="px-3 mb-1">
               <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Account</span>
@@ -201,7 +589,13 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
             </div>
             <div className="px-2 space-y-0.5">
               {workspaceItems.map((item) => (
-                <SidebarItem key={item.id} icon={item.icon} label={item.label} isActive={activeSection === item.id} onClick={() => setActiveSection(item.id)} />
+                <SidebarItem
+                  key={item.id}
+                  icon={item.icon}
+                  label={item.label}
+                  isActive={activeSection === item.id}
+                  onClick={() => setActiveSection(item.id)}
+                />
               ))}
             </div>
           </div>
@@ -212,7 +606,7 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
               onClick={onOpenFullSettings}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-primary/10 hover:bg-primary/20 text-sm text-primary transition-colors"
             >
-              <Settings className="w-4 h-4" />
+              <Maximize2 className="w-4 h-4" />
               <span>Full Settings</span>
             </button>
           </div>
@@ -220,7 +614,7 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
 
         {/* Content */}
         <div className="flex-1 flex flex-col">
-          {/* Header with close button */}
+          {/* Close button */}
           <div className="absolute top-3 right-3 z-10">
             <button onClick={onClose} className="p-1.5 rounded-md hover:bg-muted transition-colors" title="Close">
               <X className="w-4 h-4 text-muted-foreground" />
@@ -229,23 +623,7 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
 
           {/* Settings Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-medium text-foreground mb-6">{currentContent.title}</h2>
-
-            <div className="space-y-4">
-              {currentContent.settings.map((setting) => (
-                <div key={setting.id} className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-foreground">{setting.label}</div>
-                    {setting.description && <div className="text-sm text-muted-foreground mt-0.5">{setting.description}</div>}
-                  </div>
-                  {setting.type === 'toggle' ? (
-                    <SettingToggle value={setting.value as boolean} onChange={() => {}} />
-                  ) : (
-                    <SettingSelect value={setting.value as string} options={setting.options || []} />
-                  )}
-                </div>
-              ))}
-            </div>
+            {renderContent()}
           </div>
         </div>
       </div>

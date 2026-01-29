@@ -3,15 +3,15 @@
  * Dialog for creating a new project when opening a folder that doesn't exist in DB
  */
 
-import { useState } from 'react';
-import { FolderOpen, X, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { FolderOpen, X, Loader2, Star } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 export interface CreateProjectDialogProps {
   isOpen: boolean;
   folderPath: string;
   suggestedName: string;
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string, setAsActive: boolean) => void;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -25,13 +25,21 @@ export function CreateProjectDialog({
   isLoading = false,
 }: CreateProjectDialogProps) {
   const [projectName, setProjectName] = useState(suggestedName);
+  const [setAsActive, setSetAsActive] = useState(true); // Default to true
+
+  // Reset state when dialog opens with new suggested name
+  useEffect(() => {
+    if (isOpen) {
+      setProjectName(suggestedName);
+    }
+  }, [isOpen, suggestedName]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (projectName.trim()) {
-      onConfirm(projectName.trim());
+      onConfirm(projectName.trim(), setAsActive);
     }
   };
 
@@ -94,6 +102,32 @@ export function CreateProjectDialog({
               disabled={isLoading}
             />
           </div>
+
+          {/* Set as Active Project Toggle */}
+          <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/30 border border-border">
+            <div className="flex items-center gap-2">
+              <Star className={cn("w-4 h-4", setAsActive ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground")} />
+              <span className="text-sm font-medium text-foreground">Set as Active Project</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSetAsActive(!setAsActive)}
+              className={cn(
+                "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                setAsActive ? "bg-primary" : "bg-muted"
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                  setAsActive ? "translate-x-5" : "translate-x-1"
+                )}
+              />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2 ml-1">
+            New tasks will use this project by default
+          </p>
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-2">

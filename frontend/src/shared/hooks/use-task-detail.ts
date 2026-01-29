@@ -7,12 +7,13 @@
 import { useCallback, useState, useEffect } from 'react';
 import { useTask, useUpdateTask } from './use-tasks-query';
 import { useProject } from './use-projects-query';
-import type { Task, UpdateTaskRequest, TaskStatus, TaskPriority, AgentRole, ProviderType } from '@/adapters/api';
+import type { Task, UpdateTaskRequest, TaskStatus, TaskPriority, AgentRole, ProviderType, ToolConfig, PermissionMode } from '@/adapters/api';
+import { getProviderForModel } from '@/shared/config/property-config';
 
 // UI property format (matches PropertyItem component but includes 'status')
 export interface TaskDetailProperty {
   id: string;
-  type: 'project' | 'agent' | 'provider' | 'model' | 'priority' | 'skills' | 'tools' | 'context' | 'status';
+  type: 'project' | 'agent' | 'provider' | 'model' | 'priority' | 'skills' | 'tools' | 'context' | 'status' | 'subagentDelegates' | 'autoBranch' | 'autoCommit' | 'permissionMode';
   value: string[];
 }
 
@@ -99,6 +100,42 @@ function taskToProperties(task: Task): TaskDetailProperty[] {
     });
   }
 
+  // Subagent Delegates - only show if explicitly enabled
+  if (task.subagentDelegates === true) {
+    properties.push({
+      id: 'subagentDelegates',
+      type: 'subagentDelegates',
+      value: ['true'],
+    });
+  }
+
+  // Auto Branch - only show if explicitly enabled
+  if (task.autoBranch === true) {
+    properties.push({
+      id: 'autoBranch',
+      type: 'autoBranch',
+      value: ['true'],
+    });
+  }
+
+  // Auto Commit - only show if explicitly enabled
+  if (task.autoCommit === true) {
+    properties.push({
+      id: 'autoCommit',
+      type: 'autoCommit',
+      value: ['true'],
+    });
+  }
+
+  // Permission Mode - only show if not default
+  if (task.permissionMode && task.permissionMode !== 'default') {
+    properties.push({
+      id: 'permissionMode',
+      type: 'permissionMode',
+      value: [task.permissionMode],
+    });
+  }
+
   return properties;
 }
 
@@ -109,8 +146,6 @@ function propertiesToUpdateRequest(properties: TaskDetailProperty[]): Partial<Up
 
   for (const prop of properties) {
     const value = prop.value[0];
-    // Note: multi-value properties (skills, tools, context) would use prop.value array
-    // but UpdateTaskRequest doesn't support them yet
 
     switch (prop.type) {
       // Status excluded - backend validates transitions, use updateStatus() instead
@@ -124,10 +159,38 @@ function propertiesToUpdateRequest(properties: TaskDetailProperty[]): Partial<Up
         request.provider = value as ProviderType;
         break;
       case 'model':
-        request.model = value;
+        request.model = value || null;
+        // Auto-set provider based on model
+        if (value) {
+          const provider = getProviderForModel(value);
+          if (provider) request.provider = provider as ProviderType;
+        }
         break;
-      // Note: skills, tools, contextFiles are not in UpdateTaskRequest
-      // They would need API extension to support updating
+      case 'skills':
+        request.skills = prop.value;
+        break;
+      case 'tools':
+        // Convert tools array to ToolConfig (always allowlist mode from UI)
+        request.tools = prop.value.length > 0
+          ? { mode: 'allowlist', tools: prop.value }
+          : null;
+        break;
+      case 'context':
+        request.contextFiles = prop.value;
+        break;
+      case 'subagentDelegates':
+        request.subagentDelegates = prop.value.includes('true');
+        break;
+      case 'autoBranch':
+        request.autoBranch = prop.value.includes('true');
+        break;
+      case 'autoCommit':
+        request.autoCommit = prop.value.includes('true');
+        break;
+      case 'permissionMode':
+        request.permissionMode = value as PermissionMode;
+        break;
+      // project excluded - cannot change project after creation
     }
   }
 
@@ -191,18 +254,7 @@ export function useTaskDetail({ taskId }: UseTaskDetailOptions) {
         ...propsUpdate,
       };
 
-      // Debug logging - remove in production
-      console.log('[useTaskDetail] Saving task:', {
-        taskId,
-        editTitle,
-        editDescription,
-        editProperties,
-        propsUpdate,
-        updateData,
-      });
-
       const result = await updateTaskMutation.mutateAsync({ id: taskId, data: updateData });
-      console.log('[useTaskDetail] Save successful:', result);
       setIsEditing(false);
       return { success: true };
     } catch (err) {

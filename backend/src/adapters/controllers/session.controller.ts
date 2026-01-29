@@ -33,6 +33,10 @@ const startSessionSchema = z.object({
   permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions']).optional(),
   maxBudgetUsd: z.number().positive().optional(),
   mode: z.enum(['renew', 'retry', 'fork']).optional(),  // renew=fresh, retry=resume, fork=new+context
+  // Session-level overrides
+  model: z.string().optional(),  // Override task model
+  files: z.array(z.string()).optional(),  // Files to add to context
+  disableWebTools: z.boolean().optional(),  // Disable WebSearch/WebFetch
 });
 
 // Dependencies container for use cases

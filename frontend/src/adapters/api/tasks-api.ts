@@ -16,10 +16,14 @@ export interface ToolConfig {
   tools: string[];
 }
 
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
+
 export interface Task {
   id: string;
   projectId: string;
   agentId: string | null;
+  parentId: string | null; // Parent task for subtask hierarchy
+  dependencies: string[]; // Task IDs that must complete first
   title: string;
   description: string;
   status: TaskStatus;
@@ -33,6 +37,7 @@ export interface Task {
   tools: ToolConfig | null;
   contextFiles: string[];
   subagentDelegates?: boolean;  // Enable subagent delegation (Task tool)
+  permissionMode?: PermissionMode | null; // Agent permission level
   workflowStage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -52,10 +57,10 @@ export interface Task {
   branchCreatedAt?: string | null; // When branch was created
 }
 
-export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
-
 export interface CreateTaskRequest {
-  projectId: string;
+  projectId?: string; // Optional when currentActiveProjectId is set
+  parentId?: string; // Parent task for subtask hierarchy
+  dependencies?: string[]; // Task IDs that must complete first
   title: string;
   description?: string;
   priority?: TaskPriority;
@@ -86,6 +91,9 @@ export interface UpdateTaskRequest {
   tools?: ToolConfig | null;
   contextFiles?: string[];
   subagentDelegates?: boolean;
+  permissionMode?: PermissionMode | null;
+  parentId?: string | null; // Parent task for subtask hierarchy
+  dependencies?: string[]; // Task IDs that must complete first
   // Git integration
   autoBranch?: boolean;
   autoCommit?: boolean;
@@ -123,16 +131,17 @@ interface TaskStatsResponse {
  */
 export const tasksApi = {
   /**
-   * List tasks by project with optional filters
+   * List tasks with optional filters (projectId now optional)
    */
-  list: (projectId: string, params?: {
+  list: (params?: {
+    projectId?: string;
     status?: TaskStatus[];
     priority?: TaskPriority[];
     search?: string;
     agentId?: string;
   }) =>
     apiClient.get<TasksResponse>('/api/tasks', {
-      projectId,
+      projectId: params?.projectId,
       status: params?.status?.join(','),
       priority: params?.priority?.join(','),
       search: params?.search,

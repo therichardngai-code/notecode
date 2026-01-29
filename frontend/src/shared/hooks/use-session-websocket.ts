@@ -34,7 +34,8 @@ export interface OutputMessage {
   data: {
     // Backend sends: 'message' (assistant text), 'tool_use', 'tool_result', 'thinking', 'result', 'system'
     // Also handle: 'text' (legacy), 'tool_blocked', 'usage', 'stream_event' (real-time streaming)
-    type: 'text' | 'message' | 'tool_use' | 'tool_result' | 'thinking' | 'usage' | 'tool_blocked' | 'result' | 'system' | 'stream_event';
+    // New: 'delta' (streaming chunk), 'streaming_buffer' (reconnect catch-up)
+    type: 'text' | 'message' | 'tool_use' | 'tool_result' | 'thinking' | 'usage' | 'tool_blocked' | 'result' | 'system' | 'stream_event' | 'delta' | 'streaming_buffer' | 'user_message_saved';
     content?: string | Record<string, unknown>;
     tool?: { name: string; input: Record<string, unknown> };
     result?: string;
@@ -43,6 +44,12 @@ export interface OutputMessage {
     toolName?: string;
     reason?: string;
     severity?: 'danger' | 'warning';
+    // For delta streaming (new)
+    messageId?: string;
+    text?: string;
+    offset?: number;
+    // For message with status (new)
+    status?: 'streaming' | 'complete';
   };
 }
 
@@ -108,6 +115,11 @@ export interface UseSessionWebSocketOptions {
   onError?: (message: string) => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
+  // New: Delta streaming handlers
+  onDelta?: (messageId: string, text: string, offset: number) => void;
+  onStreamingBuffer?: (messageId: string, content: string, offset: number) => void;
+  // New: User message saved confirmation (Option B - no optimistic)
+  onUserMessageSaved?: (messageId: string, content: string) => void;
 }
 
 // Hook return type
@@ -162,7 +174,14 @@ function extractTextFromContent(content: unknown): string {
   }
 
   const parsed = parseCliContent(content);
-  if (!parsed) return typeof content === 'string' ? content : '';
+  // If content is a string that looks like JSON but failed to parse, don't return it raw
+  // This prevents displaying truncated/partial JSON during streaming
+  if (!parsed) {
+    if (typeof content === 'string' && (content.startsWith('{') || content.startsWith('['))) {
+      return ''; // Return empty for unparseable JSON-like content
+    }
+    return typeof content === 'string' ? content : '';
+  }
 
   // Handle full API response format: { model: '...', role: 'assistant', content: [...] }
   if (parsed.model && parsed.role && Array.isArray(parsed.content)) {
@@ -242,6 +261,9 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
     onError,
     onConnected,
     onDisconnected,
+    onDelta,
+    onStreamingBuffer,
+    onUserMessageSaved,
   } = options;
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -260,6 +282,9 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
     onError,
     onConnected,
     onDisconnected,
+    onDelta,
+    onStreamingBuffer,
+    onUserMessageSaved,
   });
 
   // Update refs when callbacks change (no effect trigger)
@@ -275,6 +300,9 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
       onError,
       onConnected,
       onDisconnected,
+      onDelta,
+      onStreamingBuffer,
+      onUserMessageSaved,
     };
   });
 
@@ -324,6 +352,24 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
 
         switch (message.type) {
           case 'output':
+            // Handle delta streaming (new backend format)
+            if (message.data.type === 'delta' && message.data.messageId && message.data.text !== undefined) {
+              cbs.onDelta?.(message.data.messageId, message.data.text, message.data.offset ?? 0);
+              cbs.onOutput?.(message.data);
+              return;
+            }
+            // Handle streaming_buffer for reconnect catch-up (new backend format)
+            if (message.data.type === 'streaming_buffer' && message.data.messageId && typeof message.data.content === 'string') {
+              cbs.onStreamingBuffer?.(message.data.messageId, message.data.content, message.data.offset ?? 0);
+              cbs.onOutput?.(message.data);
+              return;
+            }
+            // Handle user_message_saved (Option B - no optimistic, wait for confirmation)
+            if (message.data.type === 'user_message_saved' && message.data.messageId && typeof message.data.content === 'string') {
+              cbs.onUserMessageSaved?.(message.data.messageId, message.data.content);
+              cbs.onOutput?.(message.data);
+              return;
+            }
             // Handle tool_blocked specially
             if (message.data.type === 'tool_blocked' && message.data.toolName && message.data.reason) {
               cbs.onToolBlocked?.({
@@ -390,7 +436,21 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
             }
             // Handle text messages for streaming (legacy/direct text)
             if (message.data.type === 'text' && typeof message.data.content === 'string') {
-              cbs.onMessage?.(message.data.content, false);
+              const content = message.data.content;
+              // Check if content is JSON (Claude API response) - extract text instead of showing raw
+              if (content.startsWith('{') && content.includes('"type":"message"')) {
+                const text = extractTextFromContent(content);
+                if (text) {
+                  cbs.onMessage?.(text, false);
+                }
+                // Also extract tool_use blocks from JSON response
+                const toolBlocks = extractToolUseBlocks(content);
+                for (const tool of toolBlocks) {
+                  cbs.onToolUse?.(tool);
+                }
+              } else {
+                cbs.onMessage?.(content, false);
+              }
             }
             // Handle direct tool_use events
             if (message.data.type === 'tool_use' && message.data.tool) {

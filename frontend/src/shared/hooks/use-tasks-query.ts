@@ -17,31 +17,32 @@ import {
 export const taskKeys = {
   all: ['tasks'] as const,
   lists: () => [...taskKeys.all, 'list'] as const,
-  list: (projectId: string, filters?: {
+  list: (filters?: {
+    projectId?: string;
     status?: TaskStatus[];
     priority?: TaskPriority[];
     search?: string;
     agentId?: string;
-  }) => [...taskKeys.lists(), projectId, filters] as const,
+  }) => [...taskKeys.lists(), filters] as const,
   stats: (projectId: string) => [...taskKeys.all, 'stats', projectId] as const,
   details: () => [...taskKeys.all, 'detail'] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
 };
 
 /**
- * Fetch tasks by project
+ * Fetch all tasks (optionally filtered by project)
  */
-export function useTasks(projectId: string, params?: {
+export function useTasks(params?: {
+  projectId?: string;
   status?: TaskStatus[];
   priority?: TaskPriority[];
   search?: string;
   agentId?: string;
 }) {
   return useQuery({
-    queryKey: taskKeys.list(projectId, params),
-    queryFn: () => tasksApi.list(projectId, params),
+    queryKey: taskKeys.list(params),
+    queryFn: () => tasksApi.list(params),
     select: (data) => data.tasks,
-    enabled: !!projectId,
   });
 }
 

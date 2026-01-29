@@ -36,6 +36,10 @@ export interface StartSessionRequest {
    * - 'fork': New session but keeps context (--resume --fork-session)
    */
   mode?: 'renew' | 'retry' | 'fork';
+  // Session-level overrides
+  model?: string;  // Override task model for this session
+  files?: string[];  // Files to add to context
+  disableWebTools?: boolean;  // Disable WebSearch/WebFetch
 }
 
 export interface StartSessionResponse {
@@ -128,7 +132,8 @@ export class StartSessionUseCase {
       return { success: false, error: 'Settings missing required defaultProvider or defaultModel' };
     }
     const provider = task.provider ?? (settings.defaultProvider as ProviderType);
-    const model = task.model ?? settings.defaultModel;
+    // Model priority: request override > task config > settings default
+    const model = request.model ?? task.model ?? settings.defaultModel;
     // Don't use fallback if same as main model
     const fallbackModel = settings.fallbackModel !== model ? settings.fallbackModel : undefined;
     const sessionId = randomUUID();
@@ -250,6 +255,9 @@ export class StartSessionUseCase {
       permissionMode: request.permissionMode ?? task.permissionMode ?? 'default',
       maxBudgetUsd: request.maxBudgetUsd,
       fallbackModel: fallbackModel,
+      // Session-level options
+      files: request.files,
+      disableWebTools: request.disableWebTools,
     };
 
     // 12. Spawn CLI process

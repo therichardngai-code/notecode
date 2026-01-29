@@ -5,7 +5,7 @@
 
 import { eq, like, desc, and } from 'drizzle-orm';
 import { IProjectRepository, ProjectFilters } from '../../domain/ports/repositories/project.repository.port.js';
-import { Project } from '../../domain/entities/project.entity.js';
+import { Project, ApprovalGateConfig } from '../../domain/entities/project.entity.js';
 import { projects, ProjectRow } from '../../infrastructure/database/schema.js';
 import { getDatabase } from '../../infrastructure/database/connection.js';
 
@@ -73,6 +73,7 @@ export class SqliteProjectRepository implements IProjectRepository {
         name: data.name,
         path: data.path,
         systemPrompt: data.systemPrompt,
+        approvalGate: data.approvalGate,
         isFavorite: data.isFavorite,
         lastAccessedAt: data.lastAccessedAt,
       },
@@ -102,6 +103,7 @@ export class SqliteProjectRepository implements IProjectRepository {
       row.name,
       row.path,
       row.systemPrompt ?? null,
+      row.approvalGate ? JSON.parse(row.approvalGate) as ApprovalGateConfig : null,
       row.isFavorite ?? false,
       row.lastAccessedAt ? new Date(row.lastAccessedAt) : null,
       new Date(row.createdAt!)
@@ -114,6 +116,7 @@ export class SqliteProjectRepository implements IProjectRepository {
       name: project.name,
       path: project.path,
       systemPrompt: project.systemPrompt,
+      approvalGate: project.approvalGate ? JSON.stringify(project.approvalGate) : null,
       isFavorite: project.isFavorite,
       lastAccessedAt: project.lastAccessedAt?.toISOString() ?? null,
       createdAt: project.createdAt.toISOString(),

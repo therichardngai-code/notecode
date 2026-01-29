@@ -18,6 +18,7 @@ import {
 import { IGitApprovalRepository } from '../repositories/sqlite-git-approval.repository.js';
 import { GitService } from '../../domain/services/git.service.js';
 import { IEventBus } from '../../domain/events/event-bus.js';
+import { ISettingsRepository } from '../repositories/sqlite-settings.repository.js';
 import {
   createTaskBranch,
   createGitCommitApproval,
@@ -25,7 +26,7 @@ import {
 } from './git.controller.js';
 
 const createTaskSchema = z.object({
-  projectId: z.string().uuid(),
+  projectId: z.string().uuid().optional(),  // Optional - uses active project if not provided
   parentId: z.string().uuid().optional(), // For subtasks
   dependencies: z.array(z.string().uuid()).optional().default([]), // Task IDs that must complete first
   title: z.string().min(1),
@@ -60,6 +61,14 @@ const updateTaskSchema = z.object({
   agentRole: z.enum(['researcher', 'planner', 'coder', 'reviewer', 'tester']).nullable().optional(),
   provider: z.enum(['anthropic', 'google', 'openai']).nullable().optional(),
   model: z.string().nullable().optional(),
+  // Skills, tools, context
+  skills: z.array(z.string()).optional(),
+  tools: z.object({
+    mode: z.enum(['allowlist', 'blocklist']),
+    tools: z.array(z.string()),
+  }).nullable().optional(),
+  contextFiles: z.array(z.string()).optional(),
+  subagentDelegates: z.boolean().optional(),
   // Git config
   autoBranch: z.boolean().optional(),
   autoCommit: z.boolean().optional(),
@@ -72,13 +81,14 @@ const moveTaskSchema = z.object({
   position: z.number().int().min(0).optional(),
 });
 
-/** Dependencies for git integration in task controller */
+/** Dependencies for task controller */
 export interface TaskControllerDeps {
   taskRepo: ITaskRepository;
   projectRepo: IProjectRepository;
   gitApprovalRepo: IGitApprovalRepository;
   gitService: GitService;
   eventBus: IEventBus;
+  settingsRepo: ISettingsRepository;
 }
 
 export function registerTaskController(
@@ -86,22 +96,22 @@ export function registerTaskController(
   taskRepo: ITaskRepository,
   deps?: Partial<TaskControllerDeps>
 ): void {
-  // Git dependencies (optional - if not provided, git hooks are skipped)
-  const { projectRepo, gitApprovalRepo, gitService, eventBus } = deps ?? {};
-  // GET /api/tasks - List tasks by project
+  // Dependencies (optional - if not provided, some features are skipped)
+  const { projectRepo, gitApprovalRepo, gitService, eventBus, settingsRepo } = deps ?? {};
+  // GET /api/tasks - List tasks (optionally by project)
   app.get('/api/tasks', async (request, reply) => {
     const { projectId, status, priority, search, agentId } = request.query as Record<string, string>;
 
-    if (!projectId) {
-      return reply.status(400).send({ error: 'projectId required' });
-    }
-
-    const tasks = await taskRepo.findByProjectId(projectId, {
+    const filters = {
       status: status?.split(',') as TaskStatus[],
       priority: priority?.split(',') as TaskPriority[],
       search,
       agentId,
-    });
+    };
+
+    const tasks = projectId
+      ? await taskRepo.findByProjectId(projectId, filters)
+      : await taskRepo.findAll(filters);
 
     return reply.send({ tasks });
   });
@@ -135,9 +145,19 @@ export function registerTaskController(
     const body = createTaskSchema.parse(request.body);
     const now = new Date();
 
+    // Resolve projectId: use provided or fall back to active project
+    let projectId = body.projectId;
+    if (!projectId && settingsRepo) {
+      const settings = await settingsRepo.getGlobal();
+      projectId = settings.currentActiveProjectId ?? undefined;
+    }
+    if (!projectId) {
+      return reply.status(400).send({ error: 'projectId required (no active project set)' });
+    }
+
     const task = new Task(
       randomUUID(),
-      body.projectId,
+      projectId,
       body.agentId ?? null,
       body.parentId ?? null,
       body.dependencies ?? [],
@@ -194,6 +214,15 @@ export function registerTaskController(
     if (body.priority) {
       task.updatePriority(body.priority as TaskPriority);
     }
+    // Parent and dependencies
+    if (body.parentId !== undefined) {
+      task.parentId = body.parentId;
+      task.updatedAt = new Date();
+    }
+    if (body.dependencies !== undefined) {
+      task.dependencies = body.dependencies;
+      task.updatedAt = new Date();
+    }
     if (body.agentId !== undefined) {
       task.assignAgent(body.agentId);
     }
@@ -203,6 +232,20 @@ export function registerTaskController(
         body.provider !== undefined ? body.provider as ProviderType | null : task.provider,
         body.model !== undefined ? body.model : task.model
       );
+    }
+    // Skills, tools, context files
+    if (body.skills !== undefined) {
+      task.setSkills(body.skills);
+    }
+    if (body.tools !== undefined) {
+      task.setTools(body.tools);
+    }
+    if (body.contextFiles !== undefined) {
+      task.setContextFiles(body.contextFiles);
+    }
+    if (body.subagentDelegates !== undefined) {
+      task.subagentDelegates = body.subagentDelegates;
+      task.updatedAt = new Date();
     }
     // Git config (only if not already has branch)
     if ((body.autoBranch !== undefined || body.autoCommit !== undefined) && !task.hasBranch()) {

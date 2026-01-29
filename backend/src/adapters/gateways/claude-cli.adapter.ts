@@ -77,8 +77,9 @@ export class ClaudeCliAdapter implements ICliExecutor {
       console.error('[ClaudeCliAdapter] stderr:', data.toString().trim());
     });
 
-    // Wait for session_id in output
-    const cliProcess = await this.waitForSessionId(processId);
+    // Wait for session_id in output (pass isResume flag to disable fallback for resumes)
+    const isResume = !!config.resumeSessionId;
+    const cliProcess = await this.waitForSessionId(processId, isResume);
 
     // When resuming, use the original session ID (Claude updates original file but may return different ID)
     const sessionId = config.resumeSessionId ?? cliProcess.sessionId;
@@ -133,11 +134,25 @@ export class ClaudeCliAdapter implements ICliExecutor {
     if (config.allowedTools?.length) {
       args.push('--allowedTools', `"${config.allowedTools.join(' ')}"`);
     }
-    if (config.disallowedTools?.length) {
-      args.push('--disallowedTools', `"${config.disallowedTools.join(' ')}"`);
+    // Build disallowed tools list
+    const disallowedTools = config.disallowedTools ? [...config.disallowedTools] : [];
+    if (config.disableWebTools) {
+      // Add web tools to blocklist
+      if (!disallowedTools.includes('WebSearch')) disallowedTools.push('WebSearch');
+      if (!disallowedTools.includes('WebFetch')) disallowedTools.push('WebFetch');
+    }
+    if (disallowedTools.length) {
+      args.push('--disallowedTools', `"${disallowedTools.join(' ')}"`);
     }
     if (config.permissionMode) {
       args.push('--permission-mode', config.permissionMode);
+    }
+
+    // Context files
+    if (config.files?.length) {
+      for (const file of config.files) {
+        args.push('--add-dir', file);  // Claude CLI uses --add-dir for context files
+      }
     }
 
     // Budget
@@ -199,7 +214,7 @@ export class ClaudeCliAdapter implements ICliExecutor {
     });
   }
 
-  private waitForSessionId(processId: number): Promise<CliProcess> {
+  private waitForSessionId(processId: number, isResume: boolean = false): Promise<CliProcess> {
     return new Promise((resolve, reject) => {
       let resolved = false;
 
@@ -215,25 +230,36 @@ export class ClaudeCliAdapter implements ICliExecutor {
       };
       this.exitCallbacks.get(processId)?.add(exitHandler);
 
-      // Fallback: if no session_id after 5s, generate one
+      // Fallback: if no session_id after 60s
+      // - For NEW sessions: generate a fallback ID (allows session to continue)
+      // - For RESUME: reject (fake ID won't work for --resume anyway)
       const fallbackTimeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
           clearTimeout(timeout);
           this.exitCallbacks.get(processId)?.delete(exitHandler);
-          const generatedSessionId = `cli-${processId}-${Date.now()}`;
-          resolve({ processId, sessionId: generatedSessionId });
+
+          if (isResume) {
+            // Resume failed - don't generate fake ID, just fail
+            console.error(`[ClaudeCliAdapter] Resume failed: Claude CLI did not emit session_id within 60s`);
+            reject(new Error('Resume failed: Claude CLI did not respond with session ID'));
+          } else {
+            // New session - generate fallback ID
+            const generatedSessionId = `cli-${processId}-${Date.now()}`;
+            console.warn(`[ClaudeCliAdapter] Using fallback session ID: ${generatedSessionId} (Claude CLI did not emit session_id within 60s)`);
+            resolve({ processId, sessionId: generatedSessionId });
+          }
         }
-      }, 5000);
+      }, 60000);
 
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
           clearTimeout(fallbackTimeout);
           this.exitCallbacks.get(processId)?.delete(exitHandler);
-          reject(new Error('Timeout waiting for session ID'));
+          reject(new Error('Timeout waiting for session ID (90s)'));
         }
-      }, 30000);
+      }, 90000);
 
       const handler = (output: CliOutput) => {
         // Look for session_id in various places

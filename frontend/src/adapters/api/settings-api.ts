@@ -5,6 +5,17 @@
 
 import { apiClient } from './api-client';
 
+// Approval gate rule (shared with projects)
+export interface ApprovalGateRule {
+  pattern: string;
+  action: 'approve' | 'deny' | 'ask';
+}
+
+export interface ApprovalGateConfig {
+  enabled: boolean;
+  rules?: ApprovalGateRule[];
+}
+
 // Types
 export interface GlobalSettings {
   id: string;
@@ -22,6 +33,10 @@ export interface GlobalSettings {
   yoloMode: boolean;
   autoExtractSummary: boolean;
   encryptionConfigured: boolean;
+  currentActiveProjectId?: string | null; // Default project for task creation
+  dataRetentionEnabled?: boolean; // Enable auto-delete old tasks
+  dataRetentionDays?: number; // Days before delete (default: 90)
+  approvalGate?: ApprovalGateConfig | null; // Global approval gate
 }
 
 export interface EncryptionStatus {

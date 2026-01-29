@@ -34,6 +34,11 @@ interface UIState {
   openTaskAsTab: (taskId: string, title: string) => void;
   clearPendingTaskTab: () => void;
 
+  // File Preview Tab - opens file content as a tab
+  pendingFileTab: { path: string; content: string } | null;
+  openFileAsTab: (path: string, content: string) => void;
+  clearPendingFileTab: () => void;
+
   // Modals
   activeModal: string | null;
   openModal: (modalId: string) => void;
@@ -78,6 +83,11 @@ export const useUIStore = create<UIState>((set) => ({
   pendingTaskTab: null,
   openTaskAsTab: (taskId, title) => set({ pendingTaskTab: { taskId, title }, isTaskDetailPanelOpen: false }),
   clearPendingTaskTab: () => set({ pendingTaskTab: null }),
+
+  // File Preview Tab
+  pendingFileTab: null,
+  openFileAsTab: (path, content) => set({ pendingFileTab: { path, content } }),
+  clearPendingFileTab: () => set({ pendingFileTab: null }),
 
   activeModal: null,
   openModal: (modalId) => set({ activeModal: modalId }),

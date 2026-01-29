@@ -24,6 +24,31 @@ export class SqliteTaskRepository implements ITaskRepository {
     return row ? this.toEntity(row) : null;
   }
 
+  async findAll(filters?: TaskFilters): Promise<Task[]> {
+    const db = getDatabase();
+    const conditions = [];
+
+    if (filters?.status?.length) {
+      conditions.push(inArray(tasks.status, filters.status));
+    }
+    if (filters?.priority?.length) {
+      conditions.push(inArray(tasks.priority, filters.priority));
+    }
+    if (filters?.search) {
+      conditions.push(like(tasks.title, `%${filters.search}%`));
+    }
+    if (filters?.agentId) {
+      conditions.push(eq(tasks.agentId, filters.agentId));
+    }
+
+    const rows = await db.query.tasks.findMany({
+      where: conditions.length > 0 ? and(...conditions) : undefined,
+      orderBy: [desc(tasks.updatedAt)],
+    });
+
+    return rows.map(row => this.toEntity(row));
+  }
+
   async findByProjectId(projectId: string, filters?: TaskFilters): Promise<Task[]> {
     const db = getDatabase();
     const conditions = [eq(tasks.projectId, projectId)];

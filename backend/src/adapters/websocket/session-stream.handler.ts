@@ -60,6 +60,8 @@ export class SessionStreamHandler {
   private sessionProcessMap = new Map<string, number>();
   private approvalInterceptor: ApprovalInterceptorService | null = null;
   private toolInterceptor: CliToolInterceptorService | null = null;
+  // Track active streaming message ID per session (memory cache for quick lookup)
+  private streamingMessageIds = new Map<string, string>();
 
   constructor(
     private wss: WebSocketServer,
@@ -194,6 +196,17 @@ export class SessionStreamHandler {
               msg.content
             );
             await this.messageRepo.save(userMessage);
+
+            // Broadcast saved message with ID for frontend dedup
+            this.broadcast(sessionId, {
+              type: 'output',
+              data: {
+                type: 'user_message_saved',
+                messageId: userMessage.id,
+                content: msg.content,
+                timestamp: userMessage.timestamp,
+              },
+            });
           } catch (error) {
             this.broadcast(sessionId, {
               type: 'error',
@@ -305,28 +318,49 @@ export class SessionStreamHandler {
         }
       }
 
-      // Broadcast to all clients watching this session
+      // Handle streaming events - save to DB and send delta only
+      if (output.type === 'stream_event') {
+        const delta = this.extractStreamDelta(output);
+        if (delta) {
+          await this.handleStreamDelta(sessionId, delta);
+        }
+        return; // Don't broadcast raw stream_event, we send delta instead
+      }
+
+      // For non-streaming outputs, broadcast as usual
       this.broadcast(sessionId, {
         type: 'output',
         data: output,
       });
 
-      // Save assistant messages to database
+      // Handle final assistant message - mark streaming complete
       if (output.type === 'message') {
-        const content = typeof output.content === 'string'
-          ? output.content
-          : JSON.stringify(output.content);
+        const streamingMsgId = this.streamingMessageIds.get(sessionId);
+        if (streamingMsgId) {
+          // Mark streaming message as complete (don't create new one)
+          try {
+            await this.messageRepo.markComplete(streamingMsgId);
+          } catch (error) {
+            console.error('Failed to mark message complete:', error);
+          }
+          this.streamingMessageIds.delete(sessionId);
+        } else {
+          // No streaming message exists (edge case) - create one as before
+          const content = typeof output.content === 'string'
+            ? output.content
+            : JSON.stringify(output.content);
 
-        const assistantMessage = Message.createAssistantMessage(
-          randomUUID(),
-          sessionId,
-          [{ type: 'text', content }]
-        );
+          const assistantMessage = Message.createAssistantMessage(
+            randomUUID(),
+            sessionId,
+            [{ type: 'text', content }]
+          );
 
-        try {
-          await this.messageRepo.save(assistantMessage);
-        } catch (error) {
-          console.error('Failed to save message:', error);
+          try {
+            await this.messageRepo.save(assistantMessage);
+          } catch (error) {
+            console.error('Failed to save message:', error);
+          }
         }
       }
 
@@ -426,6 +460,7 @@ export class SessionStreamHandler {
   /**
    * Send catch-up messages for late-connecting clients
    * Called on EVERY WS connect to ensure client has all past messages
+   * Includes streaming buffer if there's an active streaming message
    */
   private async sendCatchUpMessages(ws: WebSocket, sessionId: string): Promise<void> {
     const messages = await this.messageRepo.findBySessionId(sessionId);
@@ -434,14 +469,30 @@ export class SessionStreamHandler {
         ? message.blocks.map(b => ('content' in b ? b.content : '')).join('')
         : '';
 
-      this.sendToClient(ws, {
-        type: 'output',
-        data: {
-          type: 'message',
-          content: { role: message.role, content },
-          timestamp: message.timestamp,
-        },
-      });
+      // For streaming messages, send as streaming_buffer type
+      if (message.isStreaming()) {
+        this.sendToClient(ws, {
+          type: 'output',
+          data: {
+            type: 'streaming_buffer',
+            messageId: message.id,
+            content,
+            offset: message.streamOffset,
+            status: 'streaming',
+          },
+        });
+      } else {
+        this.sendToClient(ws, {
+          type: 'output',
+          data: {
+            type: 'message',
+            messageId: message.id,
+            content: { role: message.role, content },
+            timestamp: message.timestamp,
+            status: 'complete',
+          },
+        });
+      }
     }
   }
 
@@ -601,6 +652,76 @@ export class SessionStreamHandler {
     this.broadcast(session.id, {
       type: 'status',
       status: SessionStatus.RUNNING,
+    });
+  }
+
+  // === Streaming Support Methods ===
+
+  /**
+   * Extract delta text from stream_event output
+   * Claude stream_event format: { event: { type: 'content_block_delta', delta: { text: '...' } } }
+   */
+  private extractStreamDelta(output: CliOutput): string | null {
+    const content = output.content as Record<string, unknown>;
+    const event = content.event as Record<string, unknown> | undefined;
+
+    if (!event) return null;
+
+    // Handle content_block_delta event type
+    if (event.type === 'content_block_delta') {
+      const delta = event.delta as Record<string, unknown> | undefined;
+      if (delta?.text && typeof delta.text === 'string') {
+        return delta.text;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Handle streaming delta - create or append to streaming message
+   */
+  private async handleStreamDelta(sessionId: string, delta: string): Promise<void> {
+    let messageId = this.streamingMessageIds.get(sessionId);
+
+    if (!messageId) {
+      // First delta - create streaming message
+      const streamingMsg = Message.createStreamingMessage(
+        randomUUID(),
+        sessionId,
+        delta
+      );
+      try {
+        await this.messageRepo.save(streamingMsg);
+        messageId = streamingMsg.id;
+        this.streamingMessageIds.set(sessionId, messageId);
+      } catch (error) {
+        console.error('Failed to create streaming message:', error);
+        return;
+      }
+    } else {
+      // Subsequent delta - append to existing message
+      try {
+        await this.messageRepo.appendContent(messageId, delta);
+      } catch (error) {
+        console.error('Failed to append delta:', error);
+        return;
+      }
+    }
+
+    // Get current offset for frontend sync
+    const streamingMsg = await this.messageRepo.findById(messageId);
+    const offset = streamingMsg?.streamOffset ?? 0;
+
+    // Broadcast delta to clients (not full content)
+    this.broadcast(sessionId, {
+      type: 'output',
+      data: {
+        type: 'delta',
+        messageId,
+        offset,
+        text: delta,
+      },
     });
   }
 }

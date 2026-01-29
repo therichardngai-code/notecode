@@ -220,6 +220,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     gitApprovalRepo,
     gitService,
     eventBus,
+    settingsRepo,
   });
   registerSessionController(app, {
     sessionRepo,
@@ -233,6 +234,11 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     diffRepo,
     resolveApprovalUseCase,
     eventBus,
+    // For dynamic config endpoint
+    sessionRepo,
+    taskRepo,
+    projectRepo,
+    settingsRepo,
   });
   registerMemoryController(
     app,

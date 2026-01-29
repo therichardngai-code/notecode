@@ -56,6 +56,8 @@ export function useSession(id: string) {
 
 /**
  * Fetch session messages
+ * Uses placeholderData to keep previous messages during session transitions (Resume flow)
+ * This prevents flash of empty state when switching between sessions with same providerSessionId
  */
 export function useSessionMessages(id: string, limit = 50) {
   return useQuery({
@@ -63,6 +65,7 @@ export function useSessionMessages(id: string, limit = 50) {
     queryFn: () => sessionsApi.getMessages(id, limit),
     select: (data) => data.messages,
     enabled: !!id,
+    placeholderData: (previousData) => previousData, // Keep previous during refetch
   });
 }
 

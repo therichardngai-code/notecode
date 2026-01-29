@@ -12,28 +12,78 @@ interface MarkdownMessageProps {
   className?: string;
 }
 
+/**
+ * Fix nested code fences by converting inner backtick fences to tilde fences.
+ * CommonMark: bare ``` inside a ```lang block prematurely closes the outer fence.
+ * Solution: Convert inner ``` to ~~~ so they don't interfere with outer fences.
+ */
+function fixNestedCodeFences(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let inOuterFence = false;
+  let inInnerFence = false;
+
+  for (const line of lines) {
+    if (!inOuterFence) {
+      // Outside any fence - check for opener with language
+      if (/^`{3}\w+/.test(line)) {
+        inOuterFence = true;
+      }
+      result.push(line);
+    } else if (!inInnerFence) {
+      // Inside outer fence, not in inner
+      if (/^`{3}\w+/.test(line)) {
+        // Nested fence opener - convert to ~~~
+        inInnerFence = true;
+        result.push(line.replace(/^`{3}/, '~~~'));
+      } else if (/^`{3}\s*$/.test(line)) {
+        // Outer fence closer
+        inOuterFence = false;
+        result.push(line);
+      } else {
+        result.push(line);
+      }
+    } else {
+      // Inside inner fence (within outer fence)
+      if (/^`{3}\s*$/.test(line)) {
+        // Inner fence closer - convert to ~~~
+        inInnerFence = false;
+        result.push('~~~');
+      } else {
+        result.push(line);
+      }
+    }
+  }
+
+  return result.join('\n');
+}
+
 export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
+  // Pre-process to fix nested code fence issues
+  const processedContent = fixNestedCodeFences(content);
+
   return (
-    <div className={cn('prose prose-sm dark:prose-invert max-w-none', className)}>
+    <div className={cn('max-w-none', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-        // Code blocks
-        code({ className, children, ...props }) {
-          const isInline = !className;
-          return isInline ? (
-            <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+        // Code - both inline and block use same gray background for consistency
+        // Detection: block code has language className OR multiline content
+        code({ className: langClass, children, ...props }) {
+          const text = String(children).replace(/\n$/, '');
+          const isBlock = !!langClass || text.includes('\n');
+          return isBlock ? (
+            <code className={cn('block p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap', langClass)} {...props}>
               {children}
             </code>
           ) : (
-            <code className={cn('block bg-muted/50 p-3 rounded-lg text-xs font-mono overflow-x-auto', className)} {...props}>
+            <code className="bg-neutral-300 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
               {children}
             </code>
           );
         },
-        // Pre blocks (code block wrapper)
         pre({ children }) {
-          return <pre className="bg-muted/50 rounded-lg overflow-hidden my-2">{children}</pre>;
+          return <pre className="bg-neutral-300 dark:bg-zinc-700 rounded-lg overflow-hidden my-2">{children}</pre>;
         },
         // Paragraphs
         p({ children }) {
@@ -81,9 +131,24 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
         td({ children }) {
           return <td className="border border-border px-2 py-1">{children}</td>;
         },
-        // Horizontal rule
+        // Horizontal rule - visible line separator
         hr() {
-          return <hr className="border-border my-3" />;
+          return <hr className="border-t border-border my-4" />;
+        },
+        // Task list checkbox inputs (GFM)
+        input({ type, checked, ...props }) {
+          if (type === 'checkbox') {
+            return (
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled
+                className="mr-2 h-4 w-4 rounded border-gray-300 text-primary accent-primary"
+                {...props}
+              />
+            );
+          }
+          return <input type={type} {...props} />;
         },
         // Strong/Bold
         strong({ children }) {
@@ -95,7 +160,7 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
         },
       }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );

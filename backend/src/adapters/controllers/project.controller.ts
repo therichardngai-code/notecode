@@ -15,9 +15,19 @@ const createProjectSchema = z.object({
   isFavorite: z.boolean().optional().default(false),
 });
 
+const approvalGateSchema = z.object({
+  enabled: z.boolean(),
+  rules: z.array(z.object({
+    pattern: z.string(),
+    action: z.enum(['approve', 'deny', 'ask']),
+  })).optional(),
+});
+
 const updateProjectSchema = z.object({
   name: z.string().min(1).optional(),
   isFavorite: z.boolean().optional(),
+  systemPrompt: z.string().nullable().optional(),
+  approvalGate: approvalGateSchema.nullable().optional(),
 });
 
 export function registerProjectController(
@@ -96,6 +106,7 @@ export function registerProjectController(
       body.name,
       body.path,
       null, // systemPrompt - can be set later via update
+      null, // approvalGate - can be set later via update
       body.isFavorite,
       now,
       now
@@ -124,6 +135,12 @@ export function registerProjectController(
       } else {
         project.unmarkAsFavorite();
       }
+    }
+    if (body.systemPrompt !== undefined) {
+      project.updateSystemPrompt(body.systemPrompt);
+    }
+    if (body.approvalGate !== undefined) {
+      project.updateApprovalGate(body.approvalGate);
     }
 
     await projectRepo.save(project);

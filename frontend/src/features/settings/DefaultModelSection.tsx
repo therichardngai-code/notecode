@@ -1,85 +1,86 @@
+/**
+ * Default Model Section
+ * Settings for default AI provider and model - synced with backend API
+ */
+
 import { useState, useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
+import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
+import { modelsByProvider, modelOptions } from '@/shared/config/property-config';
 import type { ProviderType } from '../../domain/entities';
 
-interface ModelOption {
-  value: string;
-  label: string;
-}
-
-const modelsByProvider: Record<ProviderType, ModelOption[]> = {
-  anthropic: [
-    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-    { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
-    { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku' },
-  ],
-  google: [
-    { value: 'gemini-2.0-flash-exp', label: 'Gemini 2.0 Flash (Experimental)' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
-    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-  ],
-  openai: [
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-    { value: 'gpt-4', label: 'GPT-4' },
-    { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
-  ],
-};
-
 export function DefaultModelSection() {
-  const [provider, setProvider] = useState<ProviderType>('anthropic');
-  const [model, setModel] = useState('claude-3-5-sonnet-20241022');
-  const [saved, setSaved] = useState(false);
+  const { data: settings, isLoading } = useSettings();
+  const updateSettings = useUpdateSettings();
 
+  const [provider, setProvider] = useState<ProviderType>('anthropic');
+  const [model, setModel] = useState('sonnet');
+  const [fallbackModel, setFallbackModel] = useState('');
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Sync with API data
   useEffect(() => {
-    const storedProvider = localStorage.getItem('defaultProvider') as ProviderType;
-    const storedModel = localStorage.getItem('defaultModel');
-    if (storedProvider) setProvider(storedProvider);
-    if (storedModel) setModel(storedModel);
-  }, []);
+    if (settings) {
+      setProvider(settings.defaultProvider || 'anthropic');
+      setModel(settings.defaultModel || 'sonnet');
+      setFallbackModel(settings.fallbackModel || '');
+    }
+  }, [settings]);
 
   const handleProviderChange = (newProvider: ProviderType) => {
     setProvider(newProvider);
-    const defaultModel = modelsByProvider[newProvider][0].value;
+    const defaultModel = modelsByProvider[newProvider]?.[0]?.id || 'sonnet';
     setModel(defaultModel);
-    setSaved(false);
+    setHasChanges(true);
   };
 
   const handleSave = () => {
-    localStorage.setItem('defaultProvider', provider);
-    localStorage.setItem('defaultModel', model);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    updateSettings.mutate({
+      defaultProvider: provider,
+      defaultModel: model,
+      fallbackModel: fallbackModel || undefined,
+    });
+    setHasChanges(false);
   };
 
-  const currentModels = modelsByProvider[provider];
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const currentModels = modelsByProvider[provider] || [];
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Default Model</h2>
-        <p className="text-sm text-gray-600 mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-2">Default Model</h2>
+        <p className="text-sm text-muted-foreground mb-4">
           Choose the default AI provider and model for new tasks.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="provider" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="provider" className="block text-sm font-medium text-foreground mb-1">
             Provider
           </label>
           <select
             id="provider"
             value={provider}
             onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           >
-            <option value="anthropic">Anthropic</option>
-            <option value="google">Google</option>
-            <option value="openai">OpenAI</option>
+            <option value="anthropic">Claude (Anthropic)</option>
+            <option value="google">Gemini (Google)</option>
+            <option value="openai">Codex (OpenAI)</option>
           </select>
         </div>
 
         <div>
-          <label htmlFor="model" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="model" className="block text-sm font-medium text-foreground mb-1">
             Model
           </label>
           <select
@@ -87,12 +88,12 @@ export function DefaultModelSection() {
             value={model}
             onChange={(e) => {
               setModel(e.target.value);
-              setSaved(false);
+              setHasChanges(true);
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           >
             {currentModels.map((option) => (
-              <option key={option.value} value={option.value}>
+              <option key={option.id} value={option.id}>
                 {option.label}
               </option>
             ))}
@@ -100,14 +101,46 @@ export function DefaultModelSection() {
         </div>
       </div>
 
+      <div>
+        <label htmlFor="fallbackModel" className="block text-sm font-medium text-foreground mb-1">
+          Fallback Model (optional)
+        </label>
+        <select
+          id="fallbackModel"
+          value={fallbackModel}
+          onChange={(e) => {
+            setFallbackModel(e.target.value);
+            setHasChanges(true);
+          }}
+          className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="">None</option>
+          {modelOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground mt-1">
+          Used when the primary model fails or is unavailable.
+        </p>
+      </div>
+
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          disabled={!hasChanges || updateSettings.isPending}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
-          Save Changes
+          {updateSettings.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            'Save Changes'
+          )}
         </button>
-        {saved && <span className="text-green-600 text-sm">✓ Saved successfully</span>}
+        {updateSettings.isSuccess && !hasChanges && (
+          <span className="text-green-600 text-sm">✓ Saved</span>
+        )}
       </div>
     </div>
   );

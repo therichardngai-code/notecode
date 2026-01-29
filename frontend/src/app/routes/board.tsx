@@ -1,7 +1,7 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router';
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Kanban, Plus, MoreHorizontal, Tag, Calendar, User, ExternalLink, Archive, Trash2 } from 'lucide-react';
+import { Kanban, Plus, MoreHorizontal, Tag, Calendar, User, ExternalLink, Archive, Trash2, FolderOpen, Clock, CalendarClock } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { columnDefs, priorityConfig } from '@/shared/config/task-config';
 import { useTaskStore, type Task } from '@/shared/stores/task-store';
@@ -32,15 +32,43 @@ function PriorityBadge({ priority }: { priority?: Task['priority'] }) {
   );
 }
 
+// Format duration between two dates (e.g., "2h 15m")
+function formatDuration(startedAt?: string, updatedAt?: string): string | null {
+  if (!startedAt || !updatedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = new Date(updatedAt).getTime();
+  const diffMs = end - start;
+  if (diffMs < 0) return null;
+  const hours = Math.floor(diffMs / 3600000);
+  const minutes = Math.floor((diffMs % 3600000) / 60000);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+// Format relative time (e.g., "5m ago", "2h ago")
+function formatRelativeTime(dateStr?: string): string | null {
+  if (!dateStr) return null;
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  if (diffMs < 0) return null;
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 interface TaskCardProps {
   task: Task;
+  isRunning?: boolean;
   onClick?: () => void;
   onOpenInNewTab?: () => void;
   onMoveToArchived?: () => void;
   onDelete?: () => void;
 }
 
-function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }: TaskCardProps) {
+function TaskCard({ task, isRunning, onClick, onOpenInNewTab, onMoveToArchived, onDelete }: TaskCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
@@ -67,7 +95,17 @@ function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }:
   }, [showMenu]);
 
   return (
-    <div onClick={onClick} className="p-3 rounded-xl glass hover:shadow-md transition-all cursor-pointer group">
+    <div onClick={onClick} className={cn(
+      "p-3 rounded-xl glass hover:shadow-md transition-all cursor-pointer group relative",
+      isRunning && "ring-2 ring-primary/50 animate-pulse"
+    )}>
+      {/* Running indicator */}
+      {isRunning && (
+        <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary animate-ping" />
+      )}
+      {isRunning && (
+        <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary" />
+      )}
       <div className="flex items-start justify-between gap-2 mb-2">
         <span className="text-sm font-medium text-foreground leading-tight">{task.title}</span>
         <div className="relative shrink-0">
@@ -126,7 +164,30 @@ function TaskCard({ task, onClick, onOpenInNewTab, onMoveToArchived, onDelete }:
           )}
         </div>
       </div>
-      {task.description && <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{task.description}</p>}
+      {task.description && <p className="text-xs text-muted-foreground mb-2 line-clamp-2">{task.description}</p>}
+
+      {/* Task metadata row: project, time run, last active */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2 flex-wrap">
+        {task.project && (
+          <span className="flex items-center gap-1" title="Project">
+            <FolderOpen className="w-3 h-3" />
+            <span className="truncate max-w-[80px]">{task.project}</span>
+          </span>
+        )}
+        {task.startedAt && task.updatedAt && (
+          <span className="flex items-center gap-1" title="Time run">
+            <Clock className="w-3 h-3" />
+            {formatDuration(task.startedAt, task.updatedAt)}
+          </span>
+        )}
+        {task.updatedAt && (
+          <span className="flex items-center gap-1" title="Last active">
+            <CalendarClock className="w-3 h-3" />
+            {formatRelativeTime(task.updatedAt)}
+          </span>
+        )}
+      </div>
+
       <div className="flex items-center justify-between">
         <PriorityBadge priority={task.priority} />
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -155,7 +216,11 @@ interface Column {
   tasks: Task[];
 }
 
-function BoardColumn({ column, onTaskClick, onOpenInNewTab, onMoveToArchived, onDelete }: { column: Column; onTaskClick?: (id: string) => void; onOpenInNewTab?: (id: string) => void; onMoveToArchived?: (id: string) => void; onDelete?: (id: string) => void }) {
+function BoardColumn({ column, sessions, onTaskClick, onOpenInNewTab, onMoveToArchived, onDelete }: { column: Column; sessions?: SessionRef[]; onTaskClick?: (id: string) => void; onOpenInNewTab?: (id: string) => void; onMoveToArchived?: (id: string) => void; onDelete?: (id: string) => void }) {
+  // Check if task has a running session
+  const isTaskRunning = (taskId: string) =>
+    sessions?.some(s => s.taskId === taskId && s.status === 'in-progress') ?? false;
+
   return (
     <div className="flex-shrink-0 w-72">
       <div className="flex items-center gap-2 mb-3">
@@ -165,7 +230,7 @@ function BoardColumn({ column, onTaskClick, onOpenInNewTab, onMoveToArchived, on
       </div>
       <div className="space-y-2">
         {column.tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onClick={() => onTaskClick?.(task.id)} onOpenInNewTab={() => onOpenInNewTab?.(task.id)} onMoveToArchived={() => onMoveToArchived?.(task.id)} onDelete={() => onDelete?.(task.id)} />
+          <TaskCard key={task.id} task={task} isRunning={isTaskRunning(task.id)} onClick={() => onTaskClick?.(task.id)} onOpenInNewTab={() => onOpenInNewTab?.(task.id)} onMoveToArchived={() => onMoveToArchived?.(task.id)} onDelete={() => onDelete?.(task.id)} />
         ))}
       </div>
     </div>
@@ -182,7 +247,7 @@ interface SessionRef {
 // Helper to filter tasks based on TaskFilters (global filters)
 function filterTasks(tasks: Task[], filters: TaskFilters, sessions: SessionRef[] = []): Task[] {
   return tasks.filter((task) => {
-    if (filters.project?.length && !filters.project.includes(task.project || '')) return false;
+    if (filters.project?.length && !filters.project.includes(task.projectId || '')) return false;
     if (filters.agent?.length && !filters.agent.includes(task.agent || '')) return false;
     if (filters.provider?.length && !filters.provider.includes(task.provider || '')) return false;
     if (filters.model?.length && !filters.model.includes(task.model || '')) return false;
@@ -275,6 +340,7 @@ export function BoardView({ hideHeader, filters = {}, searchQuery = '', tasks: p
             <BoardColumn
               key={column.id}
               column={column}
+              sessions={sessions}
               onTaskClick={(taskId) => onTaskClick?.(taskId)}
               onOpenInNewTab={(taskId) => onOpenInNewTab?.(taskId)}
               onMoveToArchived={(taskId) => onMoveToArchived?.(taskId)}

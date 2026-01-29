@@ -6,12 +6,25 @@
 import { apiClient } from './api-client';
 import type { Session } from './sessions-api';
 
+// Project-level approval gate configuration
+export interface ApprovalGateRule {
+  pattern: string;
+  action: 'approve' | 'deny' | 'ask';
+}
+
+export interface ApprovalGateConfig {
+  enabled: boolean;
+  rules?: ApprovalGateRule[];
+}
+
 // Types matching backend entities
 export interface Project {
   id: string;
   name: string;
   path: string;
   isFavorite: boolean;
+  systemPrompt?: string | null; // Project-level system prompt
+  approvalGate?: ApprovalGateConfig | null; // Project-level approval gate
   lastAccessedAt: string | null;
   createdAt: string;
 }
@@ -25,6 +38,8 @@ export interface CreateProjectRequest {
 export interface UpdateProjectRequest {
   name?: string;
   isFavorite?: boolean;
+  systemPrompt?: string | null;
+  approvalGate?: ApprovalGateConfig | null;
 }
 
 // Chat Mode types

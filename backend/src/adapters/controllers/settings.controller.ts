@@ -8,6 +8,14 @@ import { z } from 'zod';
 import { ISettingsRepository } from '../repositories/sqlite-settings.repository.js';
 import { isEncryptionConfigured } from '../../infrastructure/crypto/index.js';
 
+const approvalGateSchema = z.object({
+  enabled: z.boolean(),
+  rules: z.array(z.object({
+    pattern: z.string(),
+    action: z.enum(['approve', 'deny', 'ask']),
+  })).optional(),
+});
+
 const updateSettingsSchema = z.object({
   userName: z.string().optional(),
   theme: z.enum(['light', 'dark', 'system']).optional(),
@@ -17,6 +25,10 @@ const updateSettingsSchema = z.object({
   systemPrompt: z.string().optional(),
   yoloMode: z.boolean().optional(),
   autoExtractSummary: z.boolean().optional(),
+  currentActiveProjectId: z.string().uuid().nullable().optional(),
+  dataRetentionEnabled: z.boolean().optional(),
+  dataRetentionDays: z.number().int().min(1).max(365).optional(),
+  approvalGate: approvalGateSchema.nullable().optional(),
 });
 
 const updateApiKeySchema = z.object({

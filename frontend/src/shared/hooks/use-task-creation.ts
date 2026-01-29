@@ -6,6 +6,7 @@
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useCreateTask, useUpdateTask } from './use-tasks-query';
+import { useStartSession } from './use-sessions-query';
 import type { CreateTaskRequest } from '@/adapters/api';
 import { getProviderForModel } from '@/shared/config/property-config';
 
@@ -69,6 +70,7 @@ export function useTaskCreation() {
   const navigate = useNavigate();
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
+  const startSessionMutation = useStartSession();
 
   const createTask = useCallback(
     async (data: TaskFormData, options?: { navigateTo?: string; autoStart?: boolean }) => {
@@ -83,17 +85,33 @@ export function useTaskCreation() {
       try {
         const result = await createTaskMutation.mutateAsync(request);
 
-        // Auto start: update status to in-progress (backend will handle triggering)
+        // Auto start: create task, set in-progress, then start session
         if (options?.autoStart && result.task) {
-          await updateTaskMutation.mutateAsync({
-            id: result.task.id,
-            data: { status: 'in-progress' },
-          });
+          try {
+            // Backend requires task to be in-progress before starting session
+            await updateTaskMutation.mutateAsync({
+              id: result.task.id,
+              data: { status: 'in-progress' },
+            });
+            await startSessionMutation.mutateAsync({
+              taskId: result.task.id,
+              model: request.model,
+              provider: request.provider || undefined,
+              tools: request.tools,
+              skills: request.skills,
+              contextFiles: request.contextFiles,
+              subagentDelegates: request.subagentDelegates,
+              autoBranch: request.autoBranch,
+              autoCommit: request.autoCommit,
+            });
+          } catch {
+            // Session start failed - task still created, user can retry from task detail
+          }
+          navigate({ to: `/tasks/${result.task.id}` });
+        } else {
+          const destination = options?.navigateTo ?? '/tasks';
+          navigate({ to: destination });
         }
-
-        // Navigate after success
-        const destination = options?.navigateTo ?? '/tasks';
-        navigate({ to: destination });
 
         return { success: true, task: result.task };
       } catch (error) {
@@ -102,11 +120,11 @@ export function useTaskCreation() {
         return { success: false, error };
       }
     },
-    [navigate, createTaskMutation, updateTaskMutation]
+    [navigate, createTaskMutation, updateTaskMutation, startSessionMutation]
   );
 
   return {
     createTask,
-    isPending: createTaskMutation.isPending || updateTaskMutation.isPending,
+    isPending: createTaskMutation.isPending || updateTaskMutation.isPending || startSessionMutation.isPending,
   };
 }

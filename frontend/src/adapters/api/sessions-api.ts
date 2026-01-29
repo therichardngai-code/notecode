@@ -93,6 +93,16 @@ export interface StartSessionRequest {
   initialPrompt?: string;
   permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
   maxBudgetUsd?: number;
+  model?: string;  // e.g., 'claude-3-5-sonnet-latest'
+  provider?: string;  // e.g., 'anthropic', 'google', 'openai'
+  files?: string[];  // attached file paths
+  disableWebTools?: boolean;  // true = disable web search
+  tools?: { mode: 'allowlist' | 'blocklist'; tools: string[] };
+  skills?: string[];
+  contextFiles?: string[];
+  subagentDelegates?: boolean;
+  autoBranch?: boolean;
+  autoCommit?: boolean;
 }
 
 // API Response types

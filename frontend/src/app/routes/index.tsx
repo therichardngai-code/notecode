@@ -7,6 +7,7 @@ import {
 import { useRecentProjects, useFavoriteProjects } from '@/shared/hooks/use-projects-query';
 import { useRunningSessions, useSessions } from '@/shared/hooks/use-sessions-query';
 import { useFloatingPanels, useFolderPicker } from '@/shared/hooks';
+import { useUpdateSettings } from '@/shared/hooks/use-settings';
 import { tasksApi, projectsApi, systemApi } from '@/adapters/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/shared/lib/utils';
@@ -120,6 +121,7 @@ function HomePage() {
   const { data: runningSessions } = useRunningSessions();
   const { data: recentSessions } = useSessions({ limit: 10 });
   const { openNewTaskPanel, openChatPanel } = useFloatingPanels();
+  const updateSettings = useUpdateSettings();
 
   // State for Create Project dialog
   const [showCreateProjectDialog, setShowCreateProjectDialog] = useState(false);
@@ -174,13 +176,18 @@ function HomePage() {
   }, [navigate, queryClient, recentProjects, selectFolder]);
 
   // Handle project creation
-  const handleCreateProject = useCallback(async (name: string) => {
+  const handleCreateProject = useCallback(async (name: string, setAsActive: boolean) => {
     setIsCreatingProject(true);
     try {
       const result = await projectsApi.create({
         name,
         path: pendingFolderPath,
       });
+
+      // Set as active project if toggle is enabled
+      if (setAsActive) {
+        updateSettings.mutate({ currentActiveProjectId: result.project.id });
+      }
 
       // Invalidate queries to refresh project lists
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -198,7 +205,7 @@ function HomePage() {
     } finally {
       setIsCreatingProject(false);
     }
-  }, [pendingFolderPath, navigate, queryClient]);
+  }, [pendingFolderPath, navigate, queryClient, updateSettings]);
 
   // Handle dialog cancel
   const handleCancelCreateProject = useCallback(() => {

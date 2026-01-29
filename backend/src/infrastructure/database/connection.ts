@@ -255,6 +255,7 @@ function runSchemaMigrations(): void {
 
   // Projects table migrations
   addColumnIfNotExists('projects', 'system_prompt', 'TEXT');
+  addColumnIfNotExists('projects', 'approval_gate', 'TEXT');
 
   // Tasks table migrations
   addColumnIfNotExists('tasks', 'parent_id', 'TEXT');
@@ -275,9 +276,14 @@ function runSchemaMigrations(): void {
   // Settings table migrations
   addColumnIfNotExists('settings', 'fallback_model', 'TEXT');
   addColumnIfNotExists('settings', 'system_prompt', 'TEXT');
+  addColumnIfNotExists('settings', 'current_active_project_id', 'TEXT');
+  addColumnIfNotExists('settings', 'data_retention_enabled', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('settings', 'data_retention_days', 'INTEGER DEFAULT 90');
 
   // Messages table migrations
   addColumnIfNotExists('messages', 'approval_id', 'TEXT');
+  addColumnIfNotExists('messages', 'status', "TEXT DEFAULT 'complete'");
+  addColumnIfNotExists('messages', 'stream_offset', 'INTEGER DEFAULT 0');
 }
 
 export async function closeDatabase(): Promise<void> {

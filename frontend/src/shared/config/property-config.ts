@@ -158,12 +158,15 @@ export const skillsOptions = [
 // Tools options (multi-select)
 export const toolsOptions = [
   { id: 'All', label: 'All Tools', icon: Zap },
-  { id: 'Bash', label: 'Bash', icon: Terminal },
-  { id: 'Grep', label: 'Grep', icon: Search },
   { id: 'Read', label: 'Read', icon: FileText },
   { id: 'Write', label: 'Write', icon: FileCode },
+  { id: 'Edit', label: 'Edit', icon: FileCode },
+  { id: 'Bash', label: 'Bash', icon: Terminal },
   { id: 'Glob', label: 'Glob', icon: FolderOpen },
-  { id: 'Git', label: 'Git', icon: GitBranch },
+  { id: 'Grep', label: 'Grep', icon: Search },
+  { id: 'WebFetch', label: 'WebFetch', icon: Search },
+  { id: 'WebSearch', label: 'WebSearch', icon: Search },
+  { id: 'TodoWrite', label: 'TodoWrite', icon: FileText },
 ];
 
 // Mock file system for context search

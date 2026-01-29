@@ -8,12 +8,17 @@ export interface Task {
   description?: string;
   columnId: string;
   priority?: 'low' | 'medium' | 'high';
-  project?: string;
+  projectId?: string; // Project UUID for filtering
+  project?: string; // Project name for display
   agent?: string;
   provider?: string;
   model?: string;
   assignee?: string;
   dueDate?: string;
+  // Time tracking fields from API
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
 }
 
 // Session interface for SessionsView (matches sessions.tsx)
@@ -54,24 +59,11 @@ interface TaskState {
   getSessionsArray: () => Session[];
 }
 
-// Initial mock data
-const initialTasks: Record<string, Task> = {
-  '1': { id: '1', title: 'Implement authentication flow', description: 'Build JWT-based auth with refresh tokens', columnId: 'not-started', priority: 'high', project: 'notecode', agent: 'coder', provider: 'anthropic', model: 'claude-sonnet' },
-  '2': { id: '2', title: 'Design database schema', description: 'Create ERD and migration scripts', columnId: 'in-progress', priority: 'high', project: 'notecode', agent: 'planner', provider: 'anthropic', model: 'claude-opus', assignee: 'planner' },
-  '3': { id: '3', title: 'Write unit tests for API', description: 'Add test coverage for all endpoints', columnId: 'review', priority: 'medium', project: 'gemkit-cli', agent: 'tester', provider: 'google', model: 'gemini-2.5-pro' },
-  '4': { id: '4', title: 'Update documentation', columnId: 'done', priority: 'low', project: 'notecode', agent: 'researcher', provider: 'anthropic', model: 'claude-sonnet', dueDate: 'Jan 28' },
-  '5': { id: '5', title: 'Research best practices', description: 'Research and document API design patterns', columnId: 'not-started', priority: 'medium', project: 'ai-dashboard', agent: 'researcher', provider: 'google', model: 'gemini-3-pro' },
-  '6': { id: '6', title: 'Deprecated feature removal', description: 'Remove old v1 API endpoints', columnId: 'cancelled', priority: 'low', project: 'gemkit-cli', agent: 'coder', provider: 'openai', model: 'gpt-5.2-codex' },
-  '7': { id: '7', title: 'Old migration scripts', description: 'Archived database migrations', columnId: 'archived', priority: 'low', project: 'notecode', agent: 'planner', provider: 'anthropic', model: 'claude-sonnet' },
-};
+// Initial mock data (fallback when API unavailable)
+const initialTasks: Record<string, Task> = {};
 
-const initialSessions: Record<string, Session> = {
-  's1': { id: 's1', name: 'Implement authentication flow', workspace: 'notecode', status: 'in-progress', duration: '2h 15m', lastActive: 'Just now', taskId: '1', project: 'notecode', agent: 'coder', provider: 'anthropic', model: 'claude-sonnet' },
-  's2': { id: 's2', name: 'Design database schema', workspace: 'gemkit-cli', status: 'review', duration: '45m', lastActive: '10 min ago', taskId: '2', project: 'notecode', agent: 'planner', provider: 'anthropic', model: 'claude-opus' },
-  's3': { id: 's3', name: 'API testing session', workspace: 'ai-dashboard', status: 'done', duration: '1h 30m', lastActive: '2 hours ago', taskId: '3', project: 'gemkit-cli', agent: 'tester', provider: 'google', model: 'gemini-2.5-pro' },
-  's4': { id: 's4', name: 'Documentation update', workspace: 'notecode', status: 'archived', duration: '30m', lastActive: 'Yesterday', taskId: '4', project: 'notecode', agent: 'researcher', provider: 'anthropic', model: 'claude-sonnet' },
-  's5': { id: 's5', name: 'Research best practices', workspace: 'ai-dashboard', status: 'not-started', duration: '0m', lastActive: '3 days ago', taskId: '5', project: 'ai-dashboard', agent: 'researcher', provider: 'google', model: 'gemini-3-pro' },
-};
+// Initial mock data (fallback when API unavailable)
+const initialSessions: Record<string, Session> = {};
 
 export const useTaskStore = create<TaskState>()(
   persist(
