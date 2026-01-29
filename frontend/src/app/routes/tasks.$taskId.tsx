@@ -3,21 +3,28 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
-  Calendar, User, Folder, Bot, Sparkles, Zap, Play, Clock, Plus, Pencil, Check,
-  AtSign, Paperclip, Globe, X, Pause, CheckCircle, Archive, MessageSquare,
-  FileCode, GitBranch, Terminal, ThumbsUp, ThumbsDown, ExternalLink, Loader2, Wrench,
-  ChevronDown, ChevronRight, AlertTriangle, ShieldAlert, RotateCcw, RefreshCw, Copy, Maximize2,
+  Calendar, User, Folder, Bot, Sparkles, Zap, Play, Pause, Clock, Plus, Pencil, Check,
+  AtSign, Paperclip, Globe, X, MessageSquare, FileCode, GitBranch, Terminal, CheckCircle,
+  ThumbsUp, ThumbsDown, ExternalLink, Loader2, Wrench, ChevronDown, ChevronRight, Maximize2,
+  RotateCcw, RefreshCw, Copy, ShieldAlert,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
-import { statusConfig, priorityConfig, type StatusId } from '@/shared/config/task-config';
+import { type StatusId } from '@/shared/config/task-config';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
-import type { Message, Diff, ApprovalRequest, Session, SessionResumeMode } from '@/adapters/api/sessions-api';
+import type { ApprovalRequest, SessionResumeMode } from '@/adapters/api/sessions-api';
 import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
 import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
+// Shared types and utilities
+import type { ChatMessage, UIDiff } from '@/shared/types';
+import { messageToChat, diffToUI } from '@/shared/utils';
+// Shared task-detail components
+import {
+  StatusBadge, PriorityBadge, PropertyRow, ApprovalCard, AttemptStats,
+} from '@/shared/components/task-detail';
 
 export const Route = createFileRoute('/tasks/$taskId')({
   component: TaskDetailPage,
@@ -25,351 +32,6 @@ export const Route = createFileRoute('/tasks/$taskId')({
 
 // Combined property types for Task Detail (includes status)
 const taskDetailPropertyTypes = [statusPropertyType, ...propertyTypes];
-
-// Status badge component
-function StatusBadge({ status }: { status: StatusId }) {
-  const config = statusConfig[status];
-  const iconMap: Record<StatusId, React.ElementType> = {
-    'not-started': Clock, 'in-progress': Play, 'review': Pause, 'done': CheckCircle, 'cancelled': Clock, 'archived': Archive,
-  };
-  const Icon = iconMap[status];
-  return (
-    <div className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium" style={{ backgroundColor: config.bgColor, color: config.color }}>
-      <Icon className="w-3 h-3" />{config.label}
-    </div>
-  );
-}
-
-// Priority badge
-function PriorityBadge({ priority }: { priority?: 'low' | 'medium' | 'high' }) {
-  if (!priority) return null;
-  const config = priorityConfig[priority];
-  return <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: config.bgColor, color: config.color }}>{config.label}</span>;
-}
-
-// Property row (read-only display)
-function PropertyRow({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string }) {
-  if (!value) return null;
-  return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-sidebar/50 hover:bg-sidebar transition-colors">
-      <div className="flex items-center gap-2 w-24 text-sm text-muted-foreground shrink-0"><Icon className="w-4 h-4" /><span>{label}</span></div>
-      <span className="text-sm text-foreground truncate">{value}</span>
-    </div>
-  );
-}
-
-// Chat message types for UI
-interface ToolCommand {
-  cmd: string;
-  status: 'success' | 'running' | 'pending';
-  input?: Record<string, unknown>;
-}
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  files?: { name: string; additions?: number; deletions?: number }[];
-  commands?: ToolCommand[];
-}
-
-// UI Diff type
-interface UIDiff {
-  id: string;
-  filename: string;
-  additions: number;
-  deletions: number;
-  chunks: { header: string; lines: { type: string; lineNum: number; content: string }[] }[];
-}
-
-// Convert API Message to ChatMessage UI format
-function messageToChat(msg: Message): ChatMessage {
-  let content = '';
-  const commands: ToolCommand[] = [];
-  const blocks = msg.blocks as Array<{ type: string; content?: string; text?: string; name?: string; input?: Record<string, unknown>; id?: string }>;
-
-  for (const block of blocks) {
-    // Handle direct tool_use blocks
-    if (block.type === 'tool_use' && block.name) {
-      commands.push({
-        cmd: block.name,
-        status: 'success',
-        input: block.input,
-      });
-      continue;
-    }
-
-    // Handle text blocks
-    if (block.type === 'text') {
-      const blockContent = block.content || block.text || '';
-
-      // Try to parse JSON content (nested Claude message format)
-      if (msg.role === 'assistant' && blockContent.startsWith('{')) {
-        try {
-          const parsed = JSON.parse(blockContent);
-          // Skip API response metadata objects (have model, id, usage fields)
-          if (parsed.model && parsed.id && (parsed.usage || parsed.stop_reason !== undefined)) {
-            // This is raw API response metadata - extract text if present, skip metadata
-            if (parsed.content && Array.isArray(parsed.content)) {
-              for (const item of parsed.content) {
-                if (item.type === 'text' && item.text) {
-                  content += item.text;
-                } else if (item.type === 'tool_use' && item.name) {
-                  commands.push({
-                    cmd: item.name,
-                    status: 'success',
-                    input: item.input as Record<string, unknown>,
-                  });
-                }
-              }
-            }
-            // Don't append raw metadata JSON
-          } else if (parsed.content && Array.isArray(parsed.content)) {
-            for (const item of parsed.content) {
-              if (item.type === 'text' && item.text) {
-                content += item.text;
-              } else if (item.type === 'tool_use' && item.name) {
-                commands.push({
-                  cmd: item.name,
-                  status: 'success',
-                  input: item.input as Record<string, unknown>,
-                });
-              }
-            }
-          } else {
-            content += blockContent;
-          }
-        } catch {
-          content += blockContent;
-        }
-      } else {
-        content += blockContent;
-      }
-    }
-  }
-
-  if (msg.toolName && !commands.find(c => c.cmd === msg.toolName)) {
-    commands.push({ cmd: msg.toolName, status: 'success', input: msg.toolInput as Record<string, unknown> });
-  }
-
-  return {
-    id: msg.id,
-    role: msg.role === 'system' ? 'assistant' : msg.role,
-    content: content || msg.toolResult || '',
-    commands: commands.length > 0 ? commands : undefined,
-  };
-}
-
-// Convert API Diff to UI format
-function diffToUI(diff: Diff): UIDiff {
-  const hunks = diff.hunks || [];
-  let additions = 0, deletions = 0;
-  hunks.forEach(h => h.lines.forEach(l => {
-    if (l.type === 'add') additions++;
-    if (l.type === 'remove') deletions++;
-  }));
-  return {
-    id: diff.id,
-    filename: diff.filePath,
-    additions,
-    deletions,
-    chunks: hunks.map(h => ({
-      header: h.header,
-      lines: h.lines.map(l => ({ type: l.type, lineNum: l.lineNum, content: l.content })),
-    })),
-  };
-}
-
-// Approval Card component - shows pending tool approval with countdown
-function ApprovalCard({
-  approval,
-  onApprove,
-  onReject,
-  isProcessing,
-}: {
-  approval: ApprovalRequest;
-  onApprove: () => void;
-  onReject: () => void;
-  isProcessing: boolean;
-}) {
-  const [timeLeft, setTimeLeft] = useState(0);
-  const isDangerous = approval.toolCategory === 'dangerous';
-  const { toolName, toolInput } = approval.payload;
-
-  useEffect(() => {
-    const updateTimer = () => {
-      const remaining = Math.max(0, new Date(approval.timeoutAt).getTime() - Date.now());
-      setTimeLeft(Math.floor(remaining / 1000));
-    };
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [approval.timeoutAt]);
-
-  return (
-    <div className={cn(
-      "border rounded-lg p-3 mb-4",
-      isDangerous ? "border-red-500/50 bg-red-500/5" : "border-yellow-500/50 bg-yellow-500/5"
-    )}>
-      <div className="flex items-center gap-2 mb-2">
-        {isDangerous ? <ShieldAlert className="w-4 h-4 text-red-500" /> : <AlertTriangle className="w-4 h-4 text-yellow-500" />}
-        <span className={cn("text-sm font-medium", isDangerous ? "text-red-500" : "text-yellow-600")}>
-          {isDangerous ? 'Dangerous Operation' : 'Approval Required'}
-        </span>
-        <span className="ml-auto text-xs text-muted-foreground flex items-center gap-1">
-          <Clock className="w-3 h-3" />{timeLeft}s
-        </span>
-      </div>
-      <div className="text-sm text-foreground mb-2">
-        <span className="font-medium">{toolName}</span>
-        {toolInput.file_path && (
-          <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-            <FileCode className="w-3 h-3" /><span className="truncate">{toolInput.file_path}</span>
-          </div>
-        )}
-        {toolInput.command && (
-          <div className="flex items-center gap-1 mt-1 text-xs font-mono bg-muted/50 px-2 py-1 rounded">
-            <Terminal className="w-3 h-3 text-muted-foreground" /><span className="truncate">{toolInput.command}</span>
-          </div>
-        )}
-        {toolInput.content && (
-          <pre className="mt-2 p-2 bg-muted/50 rounded text-[10px] max-h-[80px] overflow-auto whitespace-pre-wrap text-foreground/80">
-            {toolInput.content.slice(0, 500)}{toolInput.content.length > 500 ? '...' : ''}
-          </pre>
-        )}
-      </div>
-      {isDangerous && <p className="text-xs text-red-500/80 mb-2">This operation may affect sensitive files or perform destructive actions.</p>}
-      <div className="flex items-center gap-2">
-        <button onClick={onReject} disabled={isProcessing || timeLeft === 0} className="flex-1 px-3 py-1.5 text-xs font-medium rounded border border-border bg-muted hover:bg-muted/80 transition-colors disabled:opacity-50">Reject</button>
-        <button onClick={onApprove} disabled={isProcessing || timeLeft === 0} className={cn("flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors disabled:opacity-50", isDangerous ? "bg-red-500 text-white hover:bg-red-600" : "bg-primary text-primary-foreground hover:bg-primary/90")}>
-          {isDangerous ? 'Approve Anyway' : 'Approve'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Session controls - shown on failed/completed sessions for retry/renew/fork actions
-function SessionControls({
-  session,
-  onStartSession,
-  isLoading,
-}: {
-  session: Session;
-  onStartSession: (mode: SessionResumeMode) => void;
-  isLoading: boolean;
-}) {
-  const showControls = session.status === 'failed' || session.status === 'completed' || session.status === 'cancelled';
-  if (!showControls) return null;
-
-  const statusLabel = session.status === 'failed' ? 'Session Failed' : session.status === 'completed' ? 'Session Completed' : 'Session Cancelled';
-  const statusColor = session.status === 'failed' ? 'text-red-500' : session.status === 'completed' ? 'text-green-500' : 'text-muted-foreground';
-
-  return (
-    <div className="border rounded-lg p-3 mb-4 bg-muted/30">
-      <div className="flex items-center gap-2 mb-3">
-        <span className={cn("text-sm font-medium", statusColor)}>{statusLabel}</span>
-        {(session.attemptNumber ?? 1) > 1 && (
-          <span className="text-xs text-muted-foreground">Attempt #{session.attemptNumber}</span>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => onStartSession('retry')}
-          disabled={isLoading}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors disabled:opacity-50"
-          title="Resume session with context"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />Retry
-        </button>
-        <button
-          onClick={() => onStartSession('renew')}
-          disabled={isLoading}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors disabled:opacity-50"
-          title="Fresh start, no history"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />Renew
-        </button>
-        <button
-          onClick={() => onStartSession('fork')}
-          disabled={isLoading}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-border bg-background hover:bg-muted transition-colors disabled:opacity-50"
-          title="New session with conversation context"
-        >
-          <Copy className="w-3.5 h-3.5" />Fork
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Attempt stats - shows task-level attempt tracking
-function AttemptStats({
-  totalAttempts,
-  renewCount,
-  retryCount,
-  forkCount,
-}: {
-  totalAttempts: number;
-  renewCount: number;
-  retryCount: number;
-  forkCount: number;
-}) {
-  if (totalAttempts === 0) return null;
-
-  const parts: string[] = [];
-  if (renewCount > 0) parts.push(`${renewCount} renew`);
-  if (retryCount > 0) parts.push(`${retryCount} ${retryCount === 1 ? 'retry' : 'retries'}`);
-  if (forkCount > 0) parts.push(`${forkCount} ${forkCount === 1 ? 'fork' : 'forks'}`);
-
-  return (
-    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-      <RotateCcw className="w-3 h-3" />
-      {totalAttempts} {totalAttempts === 1 ? 'attempt' : 'attempts'}
-      {parts.length > 0 && <span className="text-muted-foreground/70">({parts.join(', ')})</span>}
-    </span>
-  );
-}
-
-// Session history - shows session lineage with resume modes
-function SessionHistory({ sessions }: { sessions: Session[] }) {
-  if (sessions.length === 0) return null;
-
-  const sortedSessions = [...sessions].sort((a, b) =>
-    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-
-  const getModeLabel = (mode: SessionResumeMode | null, idx: number): string => {
-    if (idx === 0 || !mode) return 'initial';
-    return mode;
-  };
-
-  const getStatusIcon = (status: string) => {
-    if (status === 'completed') return <CheckCircle className="w-3 h-3 text-green-500" />;
-    if (status === 'failed') return <X className="w-3 h-3 text-red-500" />;
-    if (status === 'running') return <Play className="w-3 h-3 text-blue-500" />;
-    return <Clock className="w-3 h-3 text-muted-foreground" />;
-  };
-
-  return (
-    <div className="text-xs space-y-1 mb-3">
-      <span className="text-muted-foreground font-medium">Session History:</span>
-      <div className="pl-2 border-l border-border/50 space-y-1">
-        {sortedSessions.map((s, idx) => (
-          <div key={s.id} className="flex items-center gap-2 text-muted-foreground">
-            <span className="w-4">{idx === sortedSessions.length - 1 ? '└' : '├'}</span>
-            {getStatusIcon(s.status)}
-            <span className="text-foreground">#{s.attemptNumber ?? idx + 1}</span>
-            <span className="text-muted-foreground/70">({getModeLabel(s.resumeMode ?? null, idx)})</span>
-            <span className="capitalize">{s.status}</span>
-            {idx === sortedSessions.length - 1 && s.status === 'running' && (
-              <span className="text-blue-500 font-medium">← current</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function TaskDetailPage() {
   const { taskId } = Route.useParams();
@@ -1540,7 +1202,7 @@ function TaskDetailPage() {
                               {chunk.lines.map((line, lineIdx) => (
                                 <div key={lineIdx} className={cn("px-3 py-0.5 flex items-start gap-3", line.type === 'add' && "bg-green-500/10", line.type === 'remove' && "bg-red-500/10")}>
                                   <span className="w-12 text-right text-muted-foreground/60 select-none shrink-0">{line.lineNum}</span>
-                                  <span className={cn("w-4 shrink-0", line.type === 'add' && "text-green-500", line.type === 'remove' && "text-red-500")}>{line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}</span>
+                                  <span className={cn("w-4 shrink-0", line.type === 'add' && "text-green-500", line.type === 'remove' && "text-red-500", line.type === 'context' && "text-muted-foreground/40")}>{line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}</span>
                                   <span className={cn("flex-1", line.type === 'add' && "text-green-400", line.type === 'remove' && "text-red-400", line.type === 'context' && "text-foreground/80")}>{line.content}</span>
                                 </div>
                               ))}
@@ -1919,7 +1581,7 @@ function TaskDetailPage() {
 
       {/* File Details Panel - shown on the right when a diff file is selected or sub-panel is open */}
       {(selectedDiffFile || isSubPanelOpen) && (
-        <div className="w-1/2 border-l border-border flex flex-col bg-sidebar">
+        <div className="w-1/2 border-l border-border flex flex-col glass-strong">
           {/* File Details Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <span className="text-sm font-medium text-foreground">File Details</span>
@@ -1956,7 +1618,7 @@ function TaskDetailPage() {
                       </div>
                     ) : (
                       <div key={message.id} className="mb-6">
-                        <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap mb-2">{message.content}</div>
+                        <MarkdownMessage content={message.content} className="text-sm text-foreground" />
                       </div>
                     )
                   ))}
@@ -1971,8 +1633,8 @@ function TaskDetailPage() {
                       <div className="flex items-center gap-3 mb-4 pb-3 border-b border-border flex-wrap">
                         <FileCode className="w-5 h-5 text-muted-foreground" />
                         <span className="text-base font-medium text-foreground">{diff.filename}</span>
-                        {diffApprovals[diff.id] === 'approved' && <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-600 font-medium">Approved</span>}
-                        {diffApprovals[diff.id] === 'rejected' && <span className="text-xs px-2.5 py-1 rounded-full bg-red-500/20 text-red-600 font-medium">Rejected</span>}
+                        {diffApprovals[diff.id] === 'approved' && <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-600 font-medium">✓ Approved</span>}
+                        {diffApprovals[diff.id] === 'rejected' && <span className="text-xs px-2.5 py-1 rounded-full bg-red-500/20 text-red-600 font-medium">✗ Rejected</span>}
                         <span className="text-sm text-green-500 ml-auto">+{diff.additions}</span>
                         {diff.deletions > 0 && <span className="text-sm text-red-500">-{diff.deletions}</span>}
                         <div className="flex items-center gap-2 ml-2">
@@ -1992,10 +1654,10 @@ function TaskDetailPage() {
                             <div className="px-3 py-2 bg-muted/30 text-muted-foreground border-b border-border/50 sticky top-0">{chunk.header}</div>
                             <div className="bg-background">
                               {chunk.lines.map((line, lineIdx) => (
-                                <div key={lineIdx} className={cn("px-3 py-1 flex items-start gap-3", line.type === 'add' && "bg-green-500/10")}>
+                                <div key={lineIdx} className={cn("px-3 py-1 flex items-start gap-3", line.type === 'add' && "bg-green-500/10", line.type === 'remove' && "bg-red-500/10")}>
                                   <span className="w-12 text-right text-muted-foreground/60 select-none shrink-0">{line.lineNum}</span>
-                                  <span className={cn("w-4 shrink-0", line.type === 'add' && "text-green-500")}>+</span>
-                                  <span className={cn("flex-1 break-all", line.type === 'add' && "text-green-400")}>{line.content}</span>
+                                  <span className={cn("w-4 shrink-0", line.type === 'add' && "text-green-500", line.type === 'remove' && "text-red-500", line.type === 'context' && "text-muted-foreground/40")}>{line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}</span>
+                                  <span className={cn("flex-1 break-all", line.type === 'add' && "text-green-400", line.type === 'remove' && "text-red-400", line.type === 'context' && "text-foreground/80")}>{line.content}</span>
                                 </div>
                               ))}
                             </div>

@@ -77,13 +77,13 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
               {children}
             </code>
           ) : (
-            <code className="bg-neutral-300 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
+            <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono" {...props}>
               {children}
             </code>
           );
         },
         pre({ children }) {
-          return <pre className="bg-neutral-300 dark:bg-zinc-700 rounded-lg overflow-hidden my-2">{children}</pre>;
+          return <pre className="bg-muted rounded-lg overflow-hidden my-2">{children}</pre>;
         },
         // Paragraphs
         p({ children }) {
