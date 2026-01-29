@@ -268,8 +268,19 @@ export class SessionStreamHandler {
     if (this.sessionProcessMap.has(sessionId)) return;
     this.sessionProcessMap.set(sessionId, processId);
 
+    // Track if we've captured CLI's session_id (for --resume to work)
+    let cliSessionIdCaptured = false;
+
     // Subscribe to output
     this.cliExecutor.onOutput(processId, async (output: CliOutput) => {
+      // Capture CLI's session_id on first occurrence and update session.providerSessionId
+      if (!cliSessionIdCaptured) {
+        const cliSessionId = this.extractCliSessionId(output);
+        if (cliSessionId) {
+          cliSessionIdCaptured = true;
+          await this.updateProviderSessionId(sessionId, cliSessionId);
+        }
+      }
       // Intercept tool_use - can be separate event OR embedded in assistant message
       const toolUseBlocks = this.extractToolUseBlocks(output);
 
@@ -633,9 +644,12 @@ export class SessionStreamHandler {
     // Spawn new CLI process
     const cliProcess = await this.cliExecutor.spawn(cliConfig);
 
-    // Update session with new process info and context tracking
-    session.resume();
-    session.start(cliProcess.sessionId, cliProcess.processId);
+    // Update session with new process info directly
+    // (don't use entity methods - they have status preconditions that don't apply to CLI resume)
+    session.status = SessionStatus.RUNNING;
+    session.providerSessionId = cliProcess.sessionId;
+    session.processId = cliProcess.processId;
+    session.startedAt = session.startedAt ?? new Date(); // Keep original start if exists
 
     // Update included context to match current task (for next delta)
     session.includedContextFiles = [...currentContextFiles, ...explicitFiles];
@@ -653,6 +667,36 @@ export class SessionStreamHandler {
       type: 'status',
       status: SessionStatus.RUNNING,
     });
+  }
+
+  // === CLI Session ID Capture ===
+
+  /**
+   * Extract CLI's session_id from output (needed for --resume to work)
+   */
+  private extractCliSessionId(output: CliOutput): string | null {
+    const content = output.content as Record<string, unknown> | undefined;
+    return (content?.session_id as string)
+      ?? (content?.session as string)
+      ?? ((content as { message?: { session_id?: string } })?.message?.session_id)
+      ?? null;
+  }
+
+  /**
+   * Update session's providerSessionId with CLI's actual session ID
+   */
+  private async updateProviderSessionId(sessionId: string, cliSessionId: string): Promise<void> {
+    try {
+      const session = await this.sessionRepo.findById(sessionId);
+      if (session && session.providerSessionId !== cliSessionId) {
+        session.providerSessionId = cliSessionId;
+        session.updatedAt = new Date();
+        await this.sessionRepo.save(session);
+        console.log(`[SessionStream] Updated providerSessionId: ${cliSessionId.slice(0, 8)} for session ${sessionId.slice(0, 8)}`);
+      }
+    } catch (error) {
+      console.error('[SessionStream] Failed to update providerSessionId:', error);
+    }
   }
 
   // === Streaming Support Methods ===

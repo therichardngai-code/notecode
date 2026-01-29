@@ -15,6 +15,10 @@ export class ClaudeCliAdapter implements ICliExecutor {
   private processes = new Map<number, ChildProcess>();
   private outputCallbacks = new Map<number, Set<(output: CliOutput) => void>>();
   private exitCallbacks = new Map<number, Set<(code: number) => void>>();
+  // Map internal sessionId → CLI's providerSessionId (captured async)
+  private cliSessionIds = new Map<string, string>();
+  // Callbacks for when CLI session ID is captured
+  private sessionIdCallbacks = new Map<string, (cliSessionId: string) => void>();
 
   // Backend URL for hook communication (from env or default)
   private backendUrl: string = process.env.NOTECODE_BACKEND_URL
@@ -77,12 +81,12 @@ export class ClaudeCliAdapter implements ICliExecutor {
       console.error('[ClaudeCliAdapter] stderr:', data.toString().trim());
     });
 
-    // Wait for session_id in output (pass isResume flag to disable fallback for resumes)
-    const isResume = !!config.resumeSessionId;
-    const cliProcess = await this.waitForSessionId(processId, isResume);
+    // For resumes, use the provided session ID directly (no need to wait)
+    // For new sessions, use our internal session ID and update providerSessionId async
+    const sessionId = config.resumeSessionId ?? config.sessionId ?? `cli-${processId}-${Date.now()}`;
 
-    // When resuming, use the original session ID (Claude updates original file but may return different ID)
-    const sessionId = config.resumeSessionId ?? cliProcess.sessionId;
+    // Set up async listener to capture CLI's session_id for future resume
+    this.setupSessionIdCapture(processId, sessionId);
 
     // Send initial prompt via stdin if provided
     if (config.initialPrompt) {
@@ -214,74 +218,6 @@ export class ClaudeCliAdapter implements ICliExecutor {
     });
   }
 
-  private waitForSessionId(processId: number, isResume: boolean = false): Promise<CliProcess> {
-    return new Promise((resolve, reject) => {
-      let resolved = false;
-
-      // Listen for early exit (CLI crash/error before session ID)
-      const exitHandler = (code: number) => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          clearTimeout(fallbackTimeout);
-          console.error(`[ClaudeCliAdapter] CLI exited early with code ${code}`);
-          reject(new Error(`CLI exited with code ${code} before session started`));
-        }
-      };
-      this.exitCallbacks.get(processId)?.add(exitHandler);
-
-      // Fallback: if no session_id after 60s
-      // - For NEW sessions: generate a fallback ID (allows session to continue)
-      // - For RESUME: reject (fake ID won't work for --resume anyway)
-      const fallbackTimeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          this.exitCallbacks.get(processId)?.delete(exitHandler);
-
-          if (isResume) {
-            // Resume failed - don't generate fake ID, just fail
-            console.error(`[ClaudeCliAdapter] Resume failed: Claude CLI did not emit session_id within 60s`);
-            reject(new Error('Resume failed: Claude CLI did not respond with session ID'));
-          } else {
-            // New session - generate fallback ID
-            const generatedSessionId = `cli-${processId}-${Date.now()}`;
-            console.warn(`[ClaudeCliAdapter] Using fallback session ID: ${generatedSessionId} (Claude CLI did not emit session_id within 60s)`);
-            resolve({ processId, sessionId: generatedSessionId });
-          }
-        }
-      }, 60000);
-
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(fallbackTimeout);
-          this.exitCallbacks.get(processId)?.delete(exitHandler);
-          reject(new Error('Timeout waiting for session ID (90s)'));
-        }
-      }, 90000);
-
-      const handler = (output: CliOutput) => {
-        // Look for session_id in various places
-        const content = output.content as Record<string, unknown> | undefined;
-        const sessionId = content?.session_id as string
-          ?? content?.session as string
-          ?? (content as { message?: { session_id?: string } })?.message?.session_id;
-
-        if (sessionId && !resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          clearTimeout(fallbackTimeout);
-          this.exitCallbacks.get(processId)?.delete(exitHandler);
-          this.outputCallbacks.get(processId)?.delete(handler);
-          resolve({ processId, sessionId });
-        }
-      };
-
-      this.outputCallbacks.get(processId)?.add(handler);
-    });
-  }
-
   async sendMessage(processId: number, message: string): Promise<void> {
     // debugLog('[ClaudeCliAdapter] sendMessage called for PID:', processId);
     const proc = this.processes.get(processId);
@@ -349,6 +285,60 @@ export class ClaudeCliAdapter implements ICliExecutor {
     this.processes.delete(processId);
     this.outputCallbacks.delete(processId);
     this.exitCallbacks.delete(processId);
+  }
+
+  /**
+   * Set up async listener to capture CLI's session_id when it arrives
+   * This allows API to return immediately without waiting for CLI startup
+   */
+  private setupSessionIdCapture(processId: number, internalSessionId: string): void {
+    let captured = false;
+    const handler = (output: CliOutput) => {
+      if (captured) return;
+
+      const content = output.content as Record<string, unknown> | undefined;
+      const cliSessionId = content?.session_id as string
+        ?? content?.session as string
+        ?? (content as { message?: { session_id?: string } })?.message?.session_id;
+
+      if (cliSessionId) {
+        captured = true;
+        this.cliSessionIds.set(internalSessionId, cliSessionId);
+        console.log(`[ClaudeCliAdapter] Captured CLI session ID: ${cliSessionId} for internal: ${internalSessionId.slice(0, 8)}`);
+
+        // Notify callback if registered
+        const callback = this.sessionIdCallbacks.get(internalSessionId);
+        if (callback) {
+          callback(cliSessionId);
+          this.sessionIdCallbacks.delete(internalSessionId);
+        }
+
+        // Remove this handler after capturing
+        this.outputCallbacks.get(processId)?.delete(handler);
+      }
+    };
+
+    this.outputCallbacks.get(processId)?.add(handler);
+  }
+
+  /**
+   * Get CLI's session ID for an internal session (for resume)
+   */
+  getCliSessionId(internalSessionId: string): string | undefined {
+    return this.cliSessionIds.get(internalSessionId);
+  }
+
+  /**
+   * Register callback for when CLI session ID is captured
+   */
+  onCliSessionIdCaptured(internalSessionId: string, callback: (cliSessionId: string) => void): void {
+    // Check if already captured
+    const existing = this.cliSessionIds.get(internalSessionId);
+    if (existing) {
+      callback(existing);
+      return;
+    }
+    this.sessionIdCallbacks.set(internalSessionId, callback);
   }
 
   private normalizeOutput(parsed: unknown): CliOutput {

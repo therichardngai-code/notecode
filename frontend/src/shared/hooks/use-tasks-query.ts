@@ -78,7 +78,8 @@ export function useCreateTask() {
   return useMutation({
     mutationFn: (data: CreateTaskRequest) => tasksApi.create(data),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: taskKeys.list(variables.projectId) });
+      // Invalidate ALL task lists (Board view uses no filter, others use projectId filter)
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       queryClient.invalidateQueries({ queryKey: taskKeys.stats(variables.projectId) });
     },
   });
@@ -94,7 +95,8 @@ export function useUpdateTask() {
       tasksApi.update(id, data),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(result.task.id) });
-      queryClient.invalidateQueries({ queryKey: taskKeys.list(result.task.projectId) });
+      // Invalidate ALL task lists (Board view uses no filter)
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       queryClient.invalidateQueries({ queryKey: taskKeys.stats(result.task.projectId) });
     },
   });
@@ -109,7 +111,8 @@ export function useMoveTask() {
     mutationFn: ({ id, data }: { id: string; data: MoveTaskRequest }) =>
       tasksApi.move(id, data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: taskKeys.list(result.task.projectId) });
+      // Invalidate ALL task lists (Board view uses no filter)
+      queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
       queryClient.invalidateQueries({ queryKey: taskKeys.stats(result.task.projectId) });
     },
   });
