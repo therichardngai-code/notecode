@@ -22,7 +22,9 @@ import {
   registerSettingsController,
   registerVersionController,
   registerBackupController,
+  registerCliProviderHooksController,
 } from '../../adapters/controllers/index.js';
+import { CliProviderHooksService } from '../../adapters/services/cli-provider-hooks.service.js';
 import { registerNotificationSSE } from '../../adapters/sse/notification-sse.handler.js';
 import { SessionStreamHandler } from '../../adapters/websocket/session-stream.handler.js';
 import { SqliteProjectRepository } from '../../adapters/repositories/sqlite-project.repository.js';
@@ -221,6 +223,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     gitService,
     eventBus,
     settingsRepo,
+    messageRepo,
   });
   registerSessionController(app, {
     sessionRepo,
@@ -270,6 +273,10 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
   // Register hook controller
   registerHookController(app, hookRepo, hookExecutor);
+
+  // Register CLI provider hooks controller (Claude, Gemini, Codex hooks management)
+  const cliProviderHooksService = new CliProviderHooksService();
+  registerCliProviderHooksController(app, cliProviderHooksService);
 
   // Register system controller (folder picker, path validation)
   registerSystemController(app);

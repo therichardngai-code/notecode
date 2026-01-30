@@ -106,7 +106,7 @@ export interface UseSessionWebSocketOptions {
   sessionId: string | null;
   enabled?: boolean;
   onOutput?: (data: OutputMessage['data']) => void;
-  onMessage?: (text: string, isFinal: boolean) => void;
+  onMessage?: (text: string, isFinal: boolean, messageId?: string) => void;
   onToolUse?: (tool: ToolUseBlock) => void;
   onStatus?: (status: StatusMessage['status']) => void;
   onApprovalRequired?: (data: ApprovalRequiredMessage['data']) => void;
@@ -425,7 +425,7 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
               }
 
               if (text) {
-                cbs.onMessage?.(text, true);
+                cbs.onMessage?.(text, true, data.messageId as string | undefined);
               }
 
               // Extract tool_use blocks for all formats
@@ -437,11 +437,12 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
             // Handle text messages for streaming (legacy/direct text)
             if (message.data.type === 'text' && typeof message.data.content === 'string') {
               const content = message.data.content;
+              const msgId = message.data.messageId as string | undefined;
               // Check if content is JSON (Claude API response) - extract text instead of showing raw
               if (content.startsWith('{') && content.includes('"type":"message"')) {
                 const text = extractTextFromContent(content);
                 if (text) {
-                  cbs.onMessage?.(text, false);
+                  cbs.onMessage?.(text, false, msgId);
                 }
                 // Also extract tool_use blocks from JSON response
                 const toolBlocks = extractToolUseBlocks(content);
@@ -449,7 +450,7 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
                   cbs.onToolUse?.(tool);
                 }
               } else {
-                cbs.onMessage?.(content, false);
+                cbs.onMessage?.(content, false, msgId);
               }
             }
             // Handle direct tool_use events
@@ -464,11 +465,12 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
             if (message.data.type === 'stream_event') {
               const content = message.data.content as Record<string, unknown> | undefined;
               const event = content?.event as Record<string, unknown> | undefined;
+              const msgId = message.data.messageId as string | undefined;
               // Extract text delta from content_block_delta events
               if (event?.type === 'content_block_delta') {
                 const delta = event.delta as Record<string, unknown> | undefined;
                 if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-                  cbs.onMessage?.(delta.text, false);
+                  cbs.onMessage?.(delta.text, false, msgId);
                 }
               }
             }

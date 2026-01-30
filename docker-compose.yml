@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  notecode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notecode-app
+    ports:
+      - "${HOST_PORT:-8080}:80"
+      - "${BACKEND_PORT:-3001}:3001"
+    volumes:
+      # Persistent data storage
+      - notecode-data:/data
+
+      # Development mode: mount source for live reload (optional)
+      # Uncomment these lines for development
+      # - ./backend/src:/app/backend/src:ro
+      # - ./frontend/src:/app/frontend/src:ro
+
+    environment:
+      # Application environment
+      - NODE_ENV=${NODE_ENV:-production}
+
+      # Database configuration
+      - DATABASE_PATH=/data/app.db
+
+      # Backend configuration
+      - PORT=3001
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # CORS configuration (for development)
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:8080}
+
+      # Optional: API keys (use secrets in production)
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    networks:
+      - notecode-network
+
+    # Resource limits (optional, adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  notecode-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}
+
+networks:
+  notecode-network:
+    name: notecode-network
+    driver: bridge

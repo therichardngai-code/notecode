@@ -81,12 +81,12 @@ export class ClaudeCliAdapter implements ICliExecutor {
       console.error('[ClaudeCliAdapter] stderr:', data.toString().trim());
     });
 
-    // For resumes, use the provided session ID directly (no need to wait)
-    // For new sessions, use our internal session ID and update providerSessionId async
-    const sessionId = config.resumeSessionId ?? config.sessionId ?? `cli-${processId}-${Date.now()}`;
+    // Always use internal session ID (DB session ID) for tracking
+    // resumeSessionId is ONLY for the CLI's --resume flag (used in buildArgs)
+    const internalSessionId = config.sessionId ?? `cli-${processId}-${Date.now()}`;
 
     // Set up async listener to capture CLI's session_id for future resume
-    this.setupSessionIdCapture(processId, sessionId);
+    this.setupSessionIdCapture(processId, internalSessionId);
 
     // Send initial prompt via stdin if provided
     if (config.initialPrompt) {
@@ -94,7 +94,7 @@ export class ClaudeCliAdapter implements ICliExecutor {
     }
 
     spawnComplete = true;
-    return { processId, sessionId };
+    return { processId, sessionId: internalSessionId };
   }
 
   private buildArgs(config: CliSpawnConfig): string[] {

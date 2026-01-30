@@ -1,0 +1,24 @@
+{
+  "name": "notecode-electron",
+  "version": "1.0.0",
+  "description": "NoteCode Desktop Application",
+  "main": "dist/main.js",
+  "author": "NoteCode Team",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron .",
+    "package": "electron-builder",
+    "package:win": "electron-builder --win",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {}
+}

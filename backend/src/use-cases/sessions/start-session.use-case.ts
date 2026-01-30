@@ -110,7 +110,7 @@ export class StartSessionUseCase {
     // Determine resume mode for this session
     const resumeMode = existingSessions.length === 0 ? null : (request.mode ?? 'renew');
 
-    // Find source session for resumedFromSessionId
+    // Find source session for resumedFromSessionId (for parentSessionId tracking)
     let resumedFromSessionId: string | null = null;
     if (resumeFromSessionId && (request.mode === 'retry' || request.mode === 'fork')) {
       const sourceSession = existingSessions.find(s => s.providerSessionId === resumeFromSessionId);
@@ -137,19 +137,23 @@ export class StartSessionUseCase {
     // Don't use fallback if same as main model
     const fallbackModel = settings.fallbackModel !== model ? settings.fallbackModel : undefined;
     const sessionId = randomUUID();
-    // 8. Set parentSessionId when forking or resuming
-    const parentSessionId = (request.forkSession || resumeFromSessionId)
-      ? resumeFromSessionId ?? null
+    // 8. Set parentSessionId when forking or resuming (use database session ID, not providerSessionId)
+    const parentSessionId = (request.forkSession || resumedFromSessionId)
+      ? resumedFromSessionId
       : null;
 
     // 8. Create session entity with context tracking for delta injection
     // Note: initialPrompt (storedPrompt) will be set after prompt resolution below
+    // Only retry mode inherits providerSessionId (continue conversation)
+    // Fork and renew get new providerSessionId from CLI (new conversation branch)
+    const inheritProviderSessionId = request.mode === 'retry';
+
     const session = new Session(
       sessionId,
       task.id,
       request.agentId ?? task.agentId,
       parentSessionId,
-      null, // providerSessionId - set after spawn
+      inheritProviderSessionId ? task.lastProviderSessionId : null,
       resumeMode,
       attemptNumber,
       resumedFromSessionId,
@@ -268,7 +272,13 @@ export class StartSessionUseCase {
       session.start(cliProcess.sessionId, cliProcess.processId);
       await this.sessionRepo.save(session);
 
-      // 14. Save initial prompt as user message (user-friendly, not XML)
+      // 14. Update task's lastProviderSessionId for next resume (if session got new ID)
+      if (session.providerSessionId && session.providerSessionId !== task.lastProviderSessionId) {
+        task.updateLastProviderSessionId(session.providerSessionId);
+        await this.taskRepo.save(task);
+      }
+
+      // 15. Save initial prompt as user message (user-friendly, not XML)
       const userMessage = Message.createUserMessage(
         randomUUID(),
         session.id,
@@ -276,7 +286,7 @@ export class StartSessionUseCase {
       );
       await this.messageRepo.save(userMessage);
 
-      // 15. Publish event
+      // 16. Publish event
       this.eventBus.publish([
         new SessionStartedEvent(session.id, task.id, session.provider)
       ]);

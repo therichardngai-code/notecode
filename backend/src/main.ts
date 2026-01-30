@@ -1,18 +1,40 @@
 /**
  * NoteCode Backend - Main Entry Point
- * Initializes database and starts HTTP server
+ * Supports both standalone web server and embedded Electron mode
  */
 
 import { createServer } from './infrastructure/server/fastify.server.js';
 import { initializeDatabase, closeDatabase } from './infrastructure/database/connection.js';
 import { SqliteSettingsRepository } from './adapters/repositories/sqlite-settings.repository.js';
 import { DataRetentionService } from './domain/services/data-retention.service.js';
+import type { FastifyInstance } from 'fastify';
 
-async function main(): Promise<void> {
-  const PORT = parseInt(process.env.PORT ?? '3001', 10);
-  const HOST = process.env.HOST ?? '0.0.0.0';
+// Detect Electron environment
+const isElectron = process.versions?.electron !== undefined;
 
-  console.log('Starting NoteCode backend...');
+/**
+ * Start NoteCode backend server
+ * @param options - Server options
+ * @returns Fastify instance
+ */
+export async function startServer(options?: {
+  port?: number;
+  host?: string;
+  silent?: boolean;
+}): Promise<FastifyInstance> {
+  const PORT = options?.port
+    ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined)
+    ?? (isElectron ? 0 : 3001);  // Random port in Electron, 3001 for web
+
+  const HOST = options?.host ?? process.env.HOST ?? '0.0.0.0';
+  const silent = options?.silent ?? false;
+
+  if (!silent) {
+    console.log('Starting NoteCode backend...');
+    if (isElectron) {
+      console.log('[Electron Mode] Using dynamic port allocation');
+    }
+  }
 
   // Initialize database
   await initializeDatabase();
@@ -26,29 +48,54 @@ async function main(): Promise<void> {
   const server = await createServer();
   await server.listen({ port: PORT, host: HOST });
 
-  console.log(`NoteCode backend running at http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+  // Get actual port (important for Electron PORT=0 case)
+  const address = server.server.address();
+  const actualPort = typeof address === 'object' && address !== null ? address.port : PORT;
 
-  // Graceful shutdown
-  const shutdown = async (signal: string): Promise<void> => {
-    console.log(`\nReceived ${signal}, shutting down gracefully...`);
+  // CRITICAL: Electron reads this log to detect backend URL
+  if (!silent) {
+    console.log(`NoteCode backend running at http://localhost:${actualPort}`);
+    console.log(`Health check: http://localhost:${actualPort}/health`);
+  }
 
-    try {
-      await server.close();
-      await closeDatabase();
-      console.log('Shutdown complete');
-      process.exit(0);
-    } catch (error) {
-      console.error('Error during shutdown:', error);
-      process.exit(1);
-    }
-  };
-
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  return server;
 }
 
-main().catch((error) => {
-  console.error('Failed to start server:', error);
-  process.exit(1);
-});
+/**
+ * Graceful shutdown handler
+ */
+async function shutdown(server: FastifyInstance, signal: string): Promise<void> {
+  console.log(`\nReceived ${signal}, shutting down gracefully...`);
+
+  try {
+    await server.close();
+    await closeDatabase();
+    console.log('Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+}
+
+/**
+ * Main entry point (only when run directly, not imported by Electron)
+ */
+async function main(): Promise<void> {
+  try {
+    const server = await startServer();
+
+    // Register shutdown handlers
+    process.on('SIGINT', () => shutdown(server, 'SIGINT'));
+    process.on('SIGTERM', () => shutdown(server, 'SIGTERM'));
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+// Only run main() when executed directly (not imported)
+// In ES modules, check if this file is the entry point
+if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || !isElectron) {
+  main();
+}

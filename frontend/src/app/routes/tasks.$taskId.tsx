@@ -6,10 +6,10 @@ import {
   Calendar, User, Folder, Bot, Sparkles, Zap, Play, Pause, Clock, Plus, Pencil, Check,
   AtSign, Paperclip, Globe, X, MessageSquare, FileCode, GitBranch, Terminal, CheckCircle,
   ThumbsUp, ThumbsDown, ExternalLink, Loader2, Wrench, ChevronDown, ChevronRight, Maximize2,
-  RotateCcw, RefreshCw, Copy, ShieldAlert,
+  RotateCcw, RefreshCw, Copy, ShieldAlert, Eye,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useSessionMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
 import { type StatusId } from '@/shared/config/task-config';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
@@ -25,6 +25,7 @@ import { messageToChat, diffToUI } from '@/shared/utils';
 import {
   StatusBadge, PriorityBadge, PropertyRow, ApprovalCard, AttemptStats,
 } from '@/shared/components/task-detail';
+import { useUIStore } from '@/shared/stores';
 
 export const Route = createFileRoute('/tasks/$taskId')({
   component: TaskDetailPage,
@@ -36,6 +37,7 @@ const taskDetailPropertyTypes = [statusPropertyType, ...propertyTypes];
 function TaskDetailPage() {
   const { taskId } = Route.useParams();
   const queryClient = useQueryClient();
+  const openFileAsTab = useUIStore((s) => s.openFileAsTab);
 
   // Shared hook - single source of truth (API only)
   const {
@@ -83,8 +85,8 @@ function TaskDetailPage() {
   const activeSession = justStartedSession || latestSession;
   const activeSessionId = activeSession?.id || '';
 
-  // Fetch messages and diffs from active session
-  const { data: apiMessages = [] } = useSessionMessages(activeSessionId);
+  // Fetch all messages for task (across all sessions) and diffs from active session
+  const { data: apiMessages = [] } = useTaskMessages(taskId);
   const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
 
   // Convert API data to UI format
@@ -160,25 +162,24 @@ function TaskDetailPage() {
     const newPrompt = chatInput.trim() || undefined;
     // Prevent height collapse: lock container height before clearing state
     const container = aiSessionContainerRef.current;
-    const scrollTop = container?.scrollTop ?? 0;
     if (container) {
       container.style.minHeight = `${container.offsetHeight}px`;
     }
+    // Reset scroll tracking - allow auto-scroll for new streaming content
+    userScrolledUpRef.current = false;
     // Clear chat state for new session
     setRealtimeMessages([]);
     setCurrentAssistantMessage('');
+    setMessageBuffers({}); // Clear delta streaming buffers
+    processedMessageIds.current.clear(); // Clear processed message IDs for new session
     setChatInput(''); // Clear after capturing
     setAttachedFiles([]); // Clear attached files
     setWsSessionStatus(null); // Reset WebSocket status for new session
     setJustStartedSession(null); // Clear previous
-    // Restore scroll position after state clears, then release height lock
-    requestAnimationFrame(() => {
-      if (container) {
-        container.scrollTop = scrollTop;
-        // Release height lock after new content starts loading
-        setTimeout(() => { container.style.minHeight = ''; }, 1000);
-      }
-    });
+    // Release height lock after a short delay
+    setTimeout(() => {
+      if (container) container.style.minHeight = '';
+    }, 500);
     // Add user message optimistically if there's a prompt (shows immediately in UI)
     if (newPrompt) {
       const userMessage: ChatMessage = {
@@ -249,12 +250,28 @@ function TaskDetailPage() {
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   // Track session status from WebSocket (more immediate than React Query)
   const [wsSessionStatus, setWsSessionStatus] = useState<string | null>(null);
+  // Message buffers for delta streaming (per-message incremental content)
+  const [, setMessageBuffers] = useState<Record<string, string>>({});
   // Ref for streaming buffer (avoids stale closure in finalization)
   const streamingBufferRef = useRef<string>('');
   // Ref for AI session container (prevents height collapse on Resume)
   const aiSessionContainerRef = useRef<HTMLDivElement>(null);
+  // Track if user has scrolled up (to prevent auto-scroll to bottom when reading history)
+  const userScrolledUpRef = useRef(false);
   // Ref for chatMessages to enable dedup in WebSocket callback (avoids stale closure)
   const chatMessagesRef = useRef<ChatMessage[]>([]);
+  // Track processed message IDs to prevent duplicates (messageId-based dedup)
+  const processedMessageIds = useRef<Set<string>>(new Set());
+
+  // Auto-scroll to bottom when streaming (only if user hasn't scrolled up)
+  useEffect(() => {
+    const container = aiSessionContainerRef.current;
+    if (!container || !currentAssistantMessage) return;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    if (isNearBottom || !userScrolledUpRef.current) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [currentAssistantMessage]);
 
   // Sample project files - in real implementation, fetch from API
   const projectFiles = [
@@ -278,18 +295,21 @@ function TaskDetailPage() {
   const { isConnected: isWsConnected, sendUserInput, sendCancel, sendApprovalResponse } = useSessionWebSocket({
     sessionId: activeSessionId,
     enabled: isSessionLive,
-    onMessage: (text, isFinal) => {
+    onMessage: (text, isFinal, messageId) => {
       if (isFinal) {
         // Use ref for authoritative buffer value (avoids stale closure)
         const finalContent = streamingBufferRef.current + (text || '');
-        if (finalContent) {
-          // Dedupe: check against BOTH realtimeMessages AND chatMessages (API)
-          const apiHasContent = chatMessagesRef.current.some(m => m.content === finalContent);
-          if (!apiHasContent) {
+        const msgId = messageId || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        if (finalContent && !processedMessageIds.current.has(msgId)) {
+          // Dedupe by messageId: check against BOTH realtimeMessages AND chatMessages (API)
+          const apiHasMessage = chatMessagesRef.current.some(m => m.id === msgId);
+          if (!apiHasMessage) {
             setRealtimeMessages(prev => {
-              if (prev.some(m => m.content === finalContent)) return prev;
-              return [...prev, { id: Date.now().toString(), role: 'assistant', content: finalContent }];
+              if (prev.some(m => m.id === msgId)) return prev;
+              return [...prev, { id: msgId, role: 'assistant', content: finalContent }];
             });
+            processedMessageIds.current.add(msgId);
           }
         }
         streamingBufferRef.current = '';
@@ -348,6 +368,29 @@ function TaskDetailPage() {
       }
       setCurrentToolUse(null);
       setIsWaitingForResponse(false);
+    },
+    // Delta streaming callbacks
+    onDelta: (messageId, text, offset) => {
+      // Append delta to message buffer for incremental streaming
+      setMessageBuffers(prev => ({
+        ...prev,
+        [messageId]: (prev[messageId] || '') + text,
+      }));
+      // Update current streaming display
+      setCurrentAssistantMessage((prev) => prev + text);
+    },
+    onStreamingBuffer: (messageId, content, offset) => {
+      // Reconnect catch-up: restore buffered content
+      setMessageBuffers(prev => ({
+        ...prev,
+        [messageId]: content,
+      }));
+      setCurrentAssistantMessage(content);
+    },
+    onUserMessageSaved: (messageId, _content) => {
+      // User message confirmed saved to backend
+      console.log('User message saved:', messageId);
+      // Optionally update message ID for user message if needed
     },
   });
 
@@ -504,6 +547,9 @@ function TaskDetailPage() {
   const [subPanelTab, setSubPanelTab] = useState<'chat-session' | 'diffs'>('diffs');
   const [isSubPanelOpen, setIsSubPanelOpen] = useState(false);
 
+  // Content modal state for Write tool preview
+  const [contentModalData, setContentModalData] = useState<{ filePath: string; content: string } | null>(null);
+
   // Chat handler - use WebSocket when connected
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
@@ -621,7 +667,7 @@ function TaskDetailPage() {
               {/* Editable Properties - using shared PropertyItem */}
               <div className="space-y-3 mb-4">
                 {editProperties
-                  .filter((p) => p.type !== 'status') // Status handled separately
+                  .filter((p) => p.type !== 'status' && p.type !== 'project' && p.type !== 'provider') // Status handled separately, Project/Provider not editable
                   .map((property) => (
                     <PropertyItem
                       key={property.id}
@@ -632,7 +678,7 @@ function TaskDetailPage() {
                   ))}
               </div>
 
-              {/* Add Property (exclude mandatory: project, autoBranch) */}
+              {/* Add Property (exclude: project, provider, autoBranch) */}
               <div className="relative mb-4" ref={addPropertyRef}>
                 <button
                   onClick={() => setShowAddProperty(!showAddProperty)}
@@ -645,7 +691,7 @@ function TaskDetailPage() {
                 {showAddProperty && (
                   <div className="absolute top-full left-0 mt-1 w-56 glass border border-border rounded-lg shadow-lg py-1 z-20">
                     {taskDetailPropertyTypes
-                      .filter((type) => !['project', 'autoBranch'].includes(type.id))
+                      .filter((type) => !['project', 'provider', 'autoBranch'].includes(type.id))
                       .map((type) => {
                         const exists = editProperties.find((p) => p.type === type.id);
                         return (
@@ -737,11 +783,11 @@ function TaskDetailPage() {
                 </button>
               </div>
 
-              {/* Properties (read-only) */}
+              {/* Properties (read-only) - 1 Project + 2 max Properties visible, scroll for rest */}
               <div className="mb-6">
                 <h3 className="text-sm font-medium text-foreground mb-3">Properties</h3>
                 <div className="border border-border rounded-lg overflow-hidden">
-                  <div className="max-h-[180px] overflow-y-auto divide-y divide-border">
+                  <div className="max-h-[108px] overflow-y-auto divide-y divide-border">
                     <PropertyRow icon={Folder} label="Project" value={projectName} />
                     {displayProperties
                       .filter((p) => p.type !== 'status' && p.type !== 'project')
@@ -984,7 +1030,15 @@ function TaskDetailPage() {
               const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
               return (
-              <div ref={aiSessionContainerRef} className="space-y-4 max-h-[400px] overflow-y-auto">
+              <div
+                ref={aiSessionContainerRef}
+                className="space-y-4 max-h-[400px] overflow-y-auto"
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  // Mark as scrolled up if not near bottom
+                  userScrolledUpRef.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
+                }}
+              >
                 {/* Session Starting Indicator */}
                 {isStartingSession && (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs">
@@ -1086,11 +1140,39 @@ function TaskDetailPage() {
                                         <span className="truncate text-[10px]">{String(cmd.input.url)}</span>
                                       </div>
                                     )}
-                                    {/* Content - Write, Edit */}
+                                    {/* Content - Write, Edit with action buttons */}
                                     {'content' in cmd.input && (
-                                      <pre className="mt-1 p-2 bg-muted/50 rounded text-[10px] max-h-[120px] overflow-auto whitespace-pre-wrap text-foreground/80">
-                                        {String(cmd.input.content).slice(0, 500)}{String(cmd.input.content).length > 500 ? '...' : ''}
-                                      </pre>
+                                      <div className="mt-1">
+                                        <div className="flex items-center justify-end gap-1 mb-1">
+                                          <button
+                                            onClick={() => navigator.clipboard.writeText(String(cmd.input.content))}
+                                            className="p-1 rounded hover:bg-muted transition-colors"
+                                            title="Copy content"
+                                          >
+                                            <Copy className="w-3 h-3 text-muted-foreground" />
+                                          </button>
+                                          <button
+                                            onClick={() => setContentModalData({ filePath: 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content', content: String(cmd.input.content) })}
+                                            className="p-1 rounded hover:bg-muted transition-colors"
+                                            title="View in modal"
+                                          >
+                                            <Eye className="w-3 h-3 text-muted-foreground" />
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const filePath = 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content';
+                                              openFileAsTab(filePath, String(cmd.input.content));
+                                            }}
+                                            className="p-1 rounded hover:bg-muted transition-colors"
+                                            title="Open in new tab"
+                                          >
+                                            <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                                          </button>
+                                        </div>
+                                        <pre className="p-2 bg-muted/50 rounded text-[10px] max-h-[120px] overflow-auto whitespace-pre-wrap text-foreground/80">
+                                          {String(cmd.input.content).slice(0, 500)}{String(cmd.input.content).length > 500 ? '...' : ''}
+                                        </pre>
+                                      </div>
                                     )}
                                     {/* Todos - TodoWrite */}
                                     {'todos' in cmd.input && Array.isArray(cmd.input.todos) && (
@@ -1670,6 +1752,28 @@ function TaskDetailPage() {
               )}
             </div>
           </ScrollArea>
+        </div>
+      )}
+
+      {/* Content Modal for Write tool preview */}
+      {contentModalData && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setContentModalData(null)}>
+          <div className="bg-background border border-border rounded-lg shadow-2xl w-[80vw] max-w-4xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <span className="text-sm font-medium text-foreground truncate">{contentModalData.filePath}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => navigator.clipboard.writeText(contentModalData.content)} className="p-1.5 rounded hover:bg-muted transition-colors" title="Copy">
+                  <Copy className="w-4 h-4 text-muted-foreground" />
+                </button>
+                <button onClick={() => setContentModalData(null)} className="p-1.5 rounded hover:bg-muted transition-colors" title="Close">
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <pre className="text-xs font-mono whitespace-pre-wrap text-foreground/90">{contentModalData.content}</pre>
+            </div>
+          </div>
         </div>
       )}
     </div>

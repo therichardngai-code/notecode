@@ -646,8 +646,9 @@ export class SessionStreamHandler {
 
     // Update session with new process info directly
     // (don't use entity methods - they have status preconditions that don't apply to CLI resume)
+    // NOTE: Don't update providerSessionId here - let async capture in subscribeToCliOutput
+    // update it when CLI emits the new session_id (the CLI generates a NEW session ID on resume)
     session.status = SessionStatus.RUNNING;
-    session.providerSessionId = cliProcess.sessionId;
     session.processId = cliProcess.processId;
     session.startedAt = session.startedAt ?? new Date(); // Keep original start if exists
 
@@ -684,15 +685,40 @@ export class SessionStreamHandler {
 
   /**
    * Update session's providerSessionId with CLI's actual session ID
+   * - First sessions: Get new ID from CLI
+   * - Retry sessions: Skip update (inherit parent's ID)
+   * - Fork/Renew sessions: Get NEW ID from CLI (new conversation branch)
+   * Also updates task.lastProviderSessionId for future resumes
    */
   private async updateProviderSessionId(sessionId: string, cliSessionId: string): Promise<void> {
     try {
       const session = await this.sessionRepo.findById(sessionId);
-      if (session && session.providerSessionId !== cliSessionId) {
+      if (!session) return;
+
+      // ONLY skip retry sessions - they inherit parent's providerSessionId
+      // Fork and renew sessions GET NEW provider session ID from CLI!
+      if (session.resumeMode === 'retry') {
+        console.log(`[SessionStream] Skipping providerSessionId update for retry session ${sessionId.slice(0, 8)} (inherits parent's ID)`);
+        return;
+      }
+
+      // Update for: first sessions, fork sessions, renew sessions
+      if (session.providerSessionId !== cliSessionId) {
         session.providerSessionId = cliSessionId;
         session.updatedAt = new Date();
         await this.sessionRepo.save(session);
-        console.log(`[SessionStream] Updated providerSessionId: ${cliSessionId.slice(0, 8)} for session ${sessionId.slice(0, 8)}`);
+
+        // Also update task's lastProviderSessionId for future resumes
+        if (this.taskRepo) {
+          const task = await this.taskRepo.findById(session.taskId);
+          if (task && task.lastProviderSessionId !== cliSessionId) {
+            task.updateLastProviderSessionId(cliSessionId);
+            await this.taskRepo.save(task);
+            console.log(`[SessionStream] Updated task & session providerSessionId: ${cliSessionId.slice(0, 8)} (mode: ${session.resumeMode ?? 'first'})`);
+          }
+        } else {
+          console.log(`[SessionStream] Updated session providerSessionId: ${cliSessionId.slice(0, 8)} (task not updated - no repo)`);
+        }
       }
     } catch (error) {
       console.error('[SessionStream] Failed to update providerSessionId:', error);

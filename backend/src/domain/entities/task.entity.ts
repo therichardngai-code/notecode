@@ -59,6 +59,8 @@ export class Task {
     public retryCount: number,
     public forkCount: number,
     public lastAttemptAt: Date | null,
+    // Conversation continuity - tracks last CLI session ID for resume
+    public lastProviderSessionId: string | null,
     public readonly createdAt: Date,
     public updatedAt: Date,
     public startedAt: Date | null,
@@ -249,5 +251,13 @@ export class Task {
       baseBranch: this.baseBranch,
       branchCreatedAt: this.branchCreatedAt,
     };
+  }
+
+  /**
+   * Update last provider session ID for conversation continuity
+   */
+  updateLastProviderSessionId(providerSessionId: string): void {
+    this.lastProviderSessionId = providerSessionId;
+    this.updatedAt = new Date();
   }
 }

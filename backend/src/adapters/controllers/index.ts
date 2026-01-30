@@ -16,3 +16,4 @@ export * from './system.controller.js';
 export * from './settings.controller.js';
 export * from './version.controller.js';
 export * from './backup.controller.js';
+export * from './cli-provider-hooks.controller.js';

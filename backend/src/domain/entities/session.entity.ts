@@ -133,7 +133,10 @@ export class Session {
       throw new Error('Session cannot be started');
     }
     this.status = SessionStatus.RUNNING;
-    this.providerSessionId = providerSessionId;
+    // Only set providerSessionId if not already inherited from parent session
+    if (!this.providerSessionId) {
+      this.providerSessionId = providerSessionId;
+    }
     this.processId = processId;
     this.startedAt = new Date();
     this.updatedAt = new Date();

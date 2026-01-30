@@ -83,6 +83,8 @@ export const tasks = sqliteTable('tasks', {
   retryCount: integer('retry_count').default(0),
   forkCount: integer('fork_count').default(0),
   lastAttemptAt: text('last_attempt_at'),
+  // Conversation continuity - tracks last CLI session ID for resume
+  lastProviderSessionId: text('last_provider_session_id'),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
   startedAt: text('started_at'),
@@ -240,6 +242,33 @@ export const gitCommitApprovals = sqliteTable('git_commit_approvals', {
   pushedAt: text('pushed_at'), // When commit was pushed (future)
 });
 
+// CLI Provider Hooks table (for Claude, Gemini, Codex, etc.)
+export const cliProviderHooks = sqliteTable('cli_provider_hooks', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(), // 'claude' | 'gemini' | 'codex' | etc.
+  name: text('name').notNull(), // Hook filename without extension (e.g., 'approval-gate')
+  hookType: text('hook_type').notNull(), // Provider-specific type (e.g., 'PreToolUse', 'PostToolUse')
+  script: text('script').notNull(), // The actual JS/CJS code
+  enabled: integer('enabled', { mode: 'boolean' }).default(true),
+  scope: text('scope').default('project'), // 'project' | 'global'
+  syncedAt: text('synced_at'), // When last written to filesystem
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// CLI Provider Settings table (settings.json per provider)
+export const cliProviderSettings = sqliteTable('cli_provider_settings', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(), // 'claude' | 'gemini' | 'codex' | etc.
+  settings: text('settings').notNull(), // JSON settings content
+  scope: text('scope').default('project'), // 'project' | 'global'
+  syncedAt: text('synced_at'), // When last written to filesystem
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Type exports for schema inference
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProjectRow = typeof projects.$inferInsert;
@@ -263,3 +292,7 @@ export type GitCommitApprovalRow = typeof gitCommitApprovals.$inferSelect;
 export type NewGitCommitApprovalRow = typeof gitCommitApprovals.$inferInsert;
 export type HookRow = typeof hooks.$inferSelect;
 export type NewHookRow = typeof hooks.$inferInsert;
+export type CliProviderHookRow = typeof cliProviderHooks.$inferSelect;
+export type NewCliProviderHookRow = typeof cliProviderHooks.$inferInsert;
+export type CliProviderSettingsRow = typeof cliProviderSettings.$inferSelect;
+export type NewCliProviderSettingsRow = typeof cliProviderSettings.$inferInsert;

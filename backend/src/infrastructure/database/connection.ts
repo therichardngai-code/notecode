@@ -203,6 +203,31 @@ async function runMigrations(): Promise<void> {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS cli_provider_hooks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      name TEXT NOT NULL,
+      hook_type TEXT NOT NULL,
+      script TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      scope TEXT DEFAULT 'project',
+      synced_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS cli_provider_settings (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      settings TEXT NOT NULL,
+      scope TEXT DEFAULT 'project',
+      synced_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Create indexes for better query performance
     CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -272,6 +297,7 @@ function runSchemaMigrations(): void {
   addColumnIfNotExists('tasks', 'retry_count', 'INTEGER DEFAULT 0');
   addColumnIfNotExists('tasks', 'fork_count', 'INTEGER DEFAULT 0');
   addColumnIfNotExists('tasks', 'last_attempt_at', 'TEXT');
+  addColumnIfNotExists('tasks', 'last_provider_session_id', 'TEXT');
 
   // Settings table migrations
   addColumnIfNotExists('settings', 'fallback_model', 'TEXT');

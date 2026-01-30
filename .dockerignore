@@ -1,0 +1,79 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist
+build
+.next
+out
+coverage
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+*.key
+*.pem
+
+# Documentation
+*.md
+!README.md
+docs
+plans
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Test files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/__tests__
+**/__mocks__
+
+# Cache
+.cache
+.temp
+.tmp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Electron (not needed in Docker image)
+electron
+release
+*.dmg
+*.exe
+*.AppImage
+
+# Misc
+.prettierrc
+.eslintrc
+.editorconfig
+tsconfig.tsbuildinfo

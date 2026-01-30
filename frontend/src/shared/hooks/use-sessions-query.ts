@@ -4,7 +4,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { sessionsApi, type StartSessionRequest } from '@/adapters/api';
+import { sessionsApi, type StartSessionRequest, tasksApi } from '@/adapters/api';
 import { taskKeys } from './use-tasks-query';
 
 // Query keys
@@ -82,6 +82,35 @@ export function useSessionDiffs(sessionId: string) {
 }
 
 /**
+ * Fetch all messages for a task (across all sessions)
+ * Replaces useSessionMessages for cumulative conversation view
+ */
+export function useTaskMessages(taskId: string | undefined | null, limit = 200) {
+  return useQuery({
+    queryKey: ['task-messages', taskId],
+    queryFn: () => tasksApi.getMessages(taskId!, limit),
+    select: (data) => {
+      // Convert task messages format to session messages format (Message interface)
+      return data.messages.map(msg => ({
+        id: msg.id,
+        sessionId: msg.sessionId,
+        role: msg.role as 'user' | 'assistant' | 'system',
+        blocks: msg.blocks || [],
+        timestamp: msg.timestamp,
+        tokenCount: null,
+        toolName: msg.toolName || null,
+        toolInput: null,
+        toolResult: null,
+      }));
+    },
+    enabled: !!taskId,
+    staleTime: 0, // Always consider data stale - force refetch
+    refetchOnMount: true, // Always refetch when component mounts
+    refetchOnWindowFocus: false, // Don't refetch on window focus (too aggressive)
+  });
+}
+
+/**
  * Start session mutation
  */
 export function useStartSession() {
@@ -92,6 +121,8 @@ export function useStartSession() {
       queryClient.invalidateQueries({ queryKey: sessionKeys.list(variables.taskId) });
       queryClient.invalidateQueries({ queryKey: sessionKeys.running() });
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(variables.taskId) });
+      // Invalidate task messages to refetch cumulative messages after Resume
+      queryClient.invalidateQueries({ queryKey: ['task-messages', variables.taskId] });
     },
   });
 }
@@ -118,6 +149,8 @@ export function useResumeSession() {
     mutationFn: (id: string) => sessionsApi.resume(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: sessionKeys.all });
+      // Invalidate all task messages to refetch cumulative messages after Resume
+      queryClient.invalidateQueries({ queryKey: ['task-messages'] });
     },
   });
 }

@@ -114,6 +114,7 @@ export function registerChatController(
       body.permissionMode ?? null,
       // Attempt tracking (init to 0)
       0, 0, 0, 0, null,
+      null, // lastProviderSessionId
       now,
       now,
       null,

@@ -1,0 +1,32 @@
+{
+  "name": "notecode",
+  "version": "1.0.0",
+  "description": "NoteCode - AI Task Management with Electron Desktop Support",
+  "main": "electron/dist/main.js",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "electron:install": "cd electron && npm install",
+    "electron:build": "cd electron && npm run build",
+    "electron:dev": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\" \"wait-on http://localhost:5173 && cd electron && npm run dev\"",
+    "electron:package": "npm run build && cd electron && npm run build && npm run package",
+    "electron:package:win": "npm run build && cd electron && npm run build && npm run package:win",
+    "electron:package:mac": "npm run build && cd electron && npm run build && npm run package:mac",
+    "electron:package:linux": "npm run build && cd electron && npm run build && npm run package:linux",
+    "dev": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
+  },
+  "workspaces": [
+    "backend",
+    "frontend",
+    "electron"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

@@ -108,6 +108,24 @@ export class SqliteMessageRepository implements IMessageRepository {
   }
 
   /**
+   * Find all messages for a task (across all sessions)
+   * Returns messages grouped by session in chronological order
+   */
+  async findByTaskId(taskId: string, limit: number = 200): Promise<Message[]> {
+    const db = getDatabase();
+    // Join messages with sessions to get all messages for a task
+    const rows = db.all<MessageRow>(sql`
+      SELECT m.* FROM messages m
+      JOIN sessions s ON m.session_id = s.id
+      WHERE s.task_id = ${taskId}
+      ORDER BY s.created_at ASC, m.timestamp ASC
+      LIMIT ${limit}
+    `);
+
+    return rows.map(row => this.toEntity(row));
+  }
+
+  /**
    * Get messages with pagination (for chat history)
    */
   async findPaginated(
@@ -196,23 +214,26 @@ export class SqliteMessageRepository implements IMessageRepository {
       .where(eq(messages.id, messageId));
   }
 
-  private toEntity(row: MessageRow): Message {
+  private toEntity(row: MessageRow | any): Message {
     const blocks: Block[] = row.blocks ? JSON.parse(row.blocks) : [];
     const toolInput = row.toolInput ? JSON.parse(row.toolInput) : null;
 
+    // Handle both camelCase (from ORM) and snake_case (from raw SQL)
+    const sessionId = row.sessionId || row.session_id;
+
     return new Message(
       row.id,
-      row.sessionId,
+      sessionId,
       row.role as MessageRole,
       blocks,
       new Date(row.timestamp!),
-      row.tokenCount ?? null,
-      row.toolName ?? null,
+      row.tokenCount ?? row.token_count ?? null,
+      row.toolName ?? row.tool_name ?? null,
       toolInput,
-      row.toolResult ?? null,
-      row.approvalId ?? null,
+      row.toolResult ?? row.tool_result ?? null,
+      row.approvalId ?? row.approval_id ?? null,
       (row.status as 'streaming' | 'complete') ?? 'complete',
-      row.streamOffset ?? 0
+      row.streamOffset ?? row.stream_offset ?? 0
     );
   }
 

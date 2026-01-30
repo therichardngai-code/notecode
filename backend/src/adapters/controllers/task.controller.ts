@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
+import { IMessageRepository } from '../../domain/ports/repositories/message.repository.port.js';
 import { Task } from '../../domain/entities/task.entity.js';
 import {
   TaskStatus,
@@ -89,6 +90,7 @@ export interface TaskControllerDeps {
   gitService: GitService;
   eventBus: IEventBus;
   settingsRepo: ISettingsRepository;
+  messageRepo: IMessageRepository;
 }
 
 export function registerTaskController(
@@ -97,7 +99,7 @@ export function registerTaskController(
   deps?: Partial<TaskControllerDeps>
 ): void {
   // Dependencies (optional - if not provided, some features are skipped)
-  const { projectRepo, gitApprovalRepo, gitService, eventBus, settingsRepo } = deps ?? {};
+  const { projectRepo, gitApprovalRepo, gitService, eventBus, settingsRepo, messageRepo } = deps ?? {};
   // GET /api/tasks - List tasks (optionally by project)
   app.get('/api/tasks', async (request, reply) => {
     const { projectId, status, priority, search, agentId } = request.query as Record<string, string>;
@@ -126,6 +128,40 @@ export function registerTaskController(
     }
 
     return reply.send({ task });
+  });
+
+  // GET /api/tasks/:id/messages - Get all messages for a task (across all sessions)
+  app.get('/api/tasks/:id/messages', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { limit } = request.query as { limit?: string };
+
+    if (!messageRepo) {
+      return reply.status(501).send({ error: 'Message repository not available' });
+    }
+
+    const task = await taskRepo.findById(id);
+    if (!task) {
+      return reply.status(404).send({ error: 'Task not found' });
+    }
+
+    const messages = await messageRepo.findByTaskId(id, limit ? parseInt(limit, 10) : 200);
+
+    // Format messages for frontend
+    const formattedMessages = messages.map(m => ({
+      id: m.id,
+      sessionId: m.sessionId,
+      role: m.role,
+      content: m.blocks.map(b => ('content' in b ? b.content : '')).join(''),
+      blocks: m.blocks,
+      timestamp: m.timestamp.toISOString(),
+      toolName: m.toolName,
+      status: m.status,
+    }));
+
+    return reply.send({
+      messages: formattedMessages,
+      total: formattedMessages.length,
+    });
   });
 
   // GET /api/tasks/stats - Get task counts by status
@@ -184,6 +220,7 @@ export function registerTaskController(
       body.permissionMode ?? null,
       // Attempt tracking (init to 0)
       0, 0, 0, 0, null,
+      null, // lastProviderSessionId
       now,
       now,
       null,

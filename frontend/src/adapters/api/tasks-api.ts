@@ -126,6 +126,20 @@ interface TaskStatsResponse {
   counts: TaskStatusCounts;
 }
 
+interface TaskMessagesResponse {
+  messages: Array<{
+    id: string;
+    sessionId: string;
+    role: 'user' | 'assistant';
+    content: string;
+    blocks?: unknown[];
+    timestamp: string;
+    toolName?: string | null;
+    status?: string;
+  }>;
+  total: number;
+}
+
 /**
  * Tasks API methods
  */
@@ -183,4 +197,10 @@ export const tasksApi = {
    */
   delete: (id: string) =>
     apiClient.delete<{ success: boolean }>(`/api/tasks/${id}`),
+
+  /**
+   * Get all messages for a task (across all sessions)
+   */
+  getMessages: (id: string, limit = 200) =>
+    apiClient.get<TaskMessagesResponse>(`/api/tasks/${id}/messages`, { limit }),
 };
