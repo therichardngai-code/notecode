@@ -14,6 +14,7 @@ import { ISettingsRepository } from '../repositories/sqlite-settings.repository.
 import { Message } from '../../domain/entities/message.entity.js';
 import { Session } from '../../domain/entities/session.entity.js';
 import { SessionStatus, ProviderType } from '../../domain/value-objects/task-status.vo.js';
+import { ContextWindowUsage, PROVIDER_CONTEXT_CONFIG } from '../../domain/value-objects/context-window.vo.js';
 import type { ApprovalInterceptorService } from '../gateways/approval-interceptor.service.js';
 import type { CliToolInterceptorService } from '../services/cli-tool-interceptor.service.js';
 
@@ -32,7 +33,7 @@ interface ClientMessage {
 
 // Server -> Client message types
 interface ServerMessage {
-  type: 'output' | 'status' | 'approval_required' | 'diff_preview' | 'error';
+  type: 'output' | 'status' | 'approval_required' | 'diff_preview' | 'error' | 'context:update';
   data?: unknown;
   status?: string;
   message?: string;
@@ -422,6 +423,36 @@ export class SessionStreamHandler {
           status: isSuccess ? 'completed' : 'failed',
         });
       }
+
+      // Parse context window data (if available in any output)
+      // CLI may send context_window in data, result, or status events
+      if (output.content && typeof output.content === 'object') {
+        const session = await this.sessionRepo.findById(sessionId);
+        if (session && session.provider) {
+          const contextWindow = this.parseContextWindow(output.content, session.provider);
+          if (contextWindow) {
+            session.updateContextWindow(contextWindow);
+            await this.sessionRepo.save(session);
+
+            console.log(`[SessionStream] Context: ${contextWindow.contextPercent}% (${contextWindow.totalContextTokens.toLocaleString()}/${contextWindow.contextSize.toLocaleString()} tokens)`);
+
+            // Broadcast to frontend via WebSocket
+            this.broadcast(sessionId, {
+              type: 'context:update',
+              data: {
+                sessionId,
+                contextWindow
+              }
+            });
+
+            // Log warning if critical
+            const config = PROVIDER_CONTEXT_CONFIG[session.provider];
+            if (contextWindow.contextPercent >= config.criticalThreshold) {
+              console.warn(`[SessionStream] ⚠️ Context window at ${contextWindow.contextPercent}% - consider Renew`);
+            }
+          }
+        }
+      }
     });
 
     // Subscribe to exit - persist status to DB as fallback
@@ -793,5 +824,48 @@ export class SessionStreamHandler {
         text: delta,
       },
     });
+  }
+
+  /**
+   * Parse context_window data from CLI JSON output
+   * CRITICAL FIX: Excludes cache_read tokens (don't count toward context)
+   * Only input_tokens + cache_creation_input_tokens consume context window
+   */
+  private parseContextWindow(
+    data: any,
+    provider: ProviderType
+  ): ContextWindowUsage | null {
+    const usage = data.context_window?.current_usage;
+    const contextSize = data.context_window?.context_window_size;
+
+    if (!usage || !contextSize) {
+      return null;
+    }
+
+    const config = PROVIDER_CONTEXT_CONFIG[provider];
+
+    // CRITICAL: Only input + cache_creation count toward context window
+    // cache_read does NOT consume context (cached content)
+    const totalContextTokens =
+      (usage.input_tokens ?? 0) +
+      (usage.cache_creation_input_tokens ?? 0);
+
+    // Add provider-specific buffer to estimate effective usage
+    // Buffer accounts for autocompact reserved space
+    const effectiveTokens = totalContextTokens + config.autocompactBuffer;
+    const contextPercent = Math.min(100,
+      Math.round((effectiveTokens / contextSize) * 100)
+    );
+
+    return {
+      inputTokens: usage.input_tokens ?? 0,
+      cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
+      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+      totalContextTokens,
+      contextSize,
+      contextPercent,
+      provider,
+      timestamp: new Date()
+    };
   }
 }

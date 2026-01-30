@@ -121,6 +121,8 @@ export const sessions = sqliteTable('sessions', {
   // Context tracking for delta injection on resume
   includedContextFiles: text('included_context_files'), // JSON array - files included at last message
   includedSkills: text('included_skills'), // JSON array - skills included at last message
+  // Context window tracking
+  contextWindowData: text('context_window_data'), // JSON object - CLI context_window data
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });

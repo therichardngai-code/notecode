@@ -11,6 +11,7 @@ import {
   createEmptyTokenUsage,
   createEmptyToolStats,
 } from '../value-objects/token-usage.vo.js';
+import { ContextWindowUsage } from '../value-objects/context-window.vo.js';
 
 export interface DomainEvent {
   readonly type: string;
@@ -61,6 +62,8 @@ export class Session {
     // Context tracking for delta injection on resume
     public includedContextFiles: string[],
     public includedSkills: string[],
+    // Context window tracking
+    public contextWindow: ContextWindowUsage | null,
     public readonly createdAt: Date,
     public updatedAt: Date
   ) {}
@@ -104,6 +107,7 @@ export class Session {
       createEmptyToolStats(),
       includedContextFiles,
       includedSkills,
+      null, // contextWindow - set later when CLI reports
       now,
       now
     );
@@ -196,6 +200,11 @@ export class Session {
 
   updateToolStats(stats: ToolStats): void {
     this.toolStats = stats;
+    this.updatedAt = new Date();
+  }
+
+  updateContextWindow(contextWindow: ContextWindowUsage): void {
+    this.contextWindow = contextWindow;
     this.updatedAt = new Date();
   }
 

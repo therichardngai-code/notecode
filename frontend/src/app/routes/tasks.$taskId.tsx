@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
   Calendar, User, Folder, Bot, Sparkles, Zap, Play, Pause, Clock, Plus, Pencil, Check,
@@ -174,8 +174,15 @@ function TaskDetailPage() {
     if (container) {
       container.style.minHeight = `${container.offsetHeight}px`;
     }
-    // Reset scroll tracking - allow auto-scroll for new streaming content
-    userScrolledUpRef.current = false;
+    // Only reset scroll tracking for 'renew' mode (fresh start)
+    // For 'retry', preserve user's scroll position to avoid uncomfortable jump
+    if (mode === 'renew') {
+      userScrolledUpRef.current = false;
+    }
+    // Save scroll position for Resume (to restore after messages refetch)
+    if (mode === 'retry' && container) {
+      savedScrollPosition.current = container.scrollTop;
+    }
     // Clear chat state for new session
     setRealtimeMessages([]);
     setCurrentAssistantMessage('');
@@ -271,9 +278,39 @@ function TaskDetailPage() {
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   // Track processed message IDs to prevent duplicates (messageId-based dedup)
   const processedMessageIds = useRef<Set<string>>(new Set());
+  // Save scroll position before Resume to restore after messages refetch
+  const savedScrollPosition = useRef<number | null>(null);
+  // Track if currently restoring scroll (prevent auto-scroll override)
+  const isRestoringScroll = useRef(false);
+
+  // Restore scroll position after Resume (when messages refetch)
+  // Use useLayoutEffect for synchronous execution before browser paint
+  useLayoutEffect(() => {
+    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
+      isRestoringScroll.current = true;
+      const scrollPos = savedScrollPosition.current;
+
+      // Wait for DOM to fully render before restoring
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (aiSessionContainerRef.current) {
+            aiSessionContainerRef.current.scrollTop = scrollPos;
+          }
+          savedScrollPosition.current = null;
+          // Keep restoration flag active briefly to prevent auto-scroll override
+          setTimeout(() => {
+            isRestoringScroll.current = false;
+          }, 100);
+        });
+      });
+    }
+  }, [chatMessages]);
 
   // Auto-scroll to bottom when streaming (only if user hasn't scrolled up)
   useEffect(() => {
+    // Don't auto-scroll if currently restoring scroll position
+    if (isRestoringScroll.current) return;
+
     const container = aiSessionContainerRef.current;
     if (!container || !currentAssistantMessage) return;
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -131,6 +131,10 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   // Track processed message IDs to prevent duplicates (messageId-based dedup)
   const processedMessageIds = useRef<Set<string>>(new Set());
+  // Save scroll position before Resume to restore after messages refetch
+  const savedScrollPosition = useRef<number | null>(null);
+  // Track if currently restoring scroll (prevent auto-scroll override)
+  const isRestoringScroll = useRef(false);
 
   // WebSocket connection for active running session
   // Check if session is running (use activeSession AND wsSessionStatus for immediate updates)
@@ -335,8 +339,15 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     if (container) {
       container.style.minHeight = `${container.offsetHeight}px`;
     }
-    // Reset scroll tracking - allow auto-scroll for new streaming content
-    userScrolledUpRef.current = false;
+    // Only reset scroll tracking for 'renew' mode (fresh start)
+    // For 'retry', preserve user's scroll position to avoid uncomfortable jump
+    if (mode === 'renew') {
+      userScrolledUpRef.current = false;
+    }
+    // Save scroll position for Resume (to restore after messages refetch)
+    if (mode === 'retry' && container) {
+      savedScrollPosition.current = container.scrollTop;
+    }
     // Clear chat state for new session
     setRealtimeMessages([]);
     setCurrentAssistantMessage('');
@@ -407,8 +418,34 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     chatMessagesRef.current = sessionMessages;
   }, [sessionMessages]);
 
+  // Restore scroll position after Resume (when messages refetch)
+  // Use useLayoutEffect for synchronous execution before browser paint
+  useLayoutEffect(() => {
+    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
+      isRestoringScroll.current = true;
+      const scrollPos = savedScrollPosition.current;
+
+      // Wait for DOM to fully render before restoring
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (aiSessionContainerRef.current) {
+            aiSessionContainerRef.current.scrollTop = scrollPos;
+          }
+          savedScrollPosition.current = null;
+          // Keep restoration flag active briefly to prevent auto-scroll override
+          setTimeout(() => {
+            isRestoringScroll.current = false;
+          }, 100);
+        });
+      });
+    }
+  }, [sessionMessages]);
+
   // Auto-scroll to bottom when streaming (only if user hasn't scrolled up)
   useEffect(() => {
+    // Don't auto-scroll if currently restoring scroll position
+    if (isRestoringScroll.current) return;
+
     const container = aiSessionContainerRef.current;
     if (!container || !currentAssistantMessage) return;
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;

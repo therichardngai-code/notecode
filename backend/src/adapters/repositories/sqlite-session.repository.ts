@@ -108,6 +108,11 @@ export class SqliteSessionRepository implements ISessionRepository {
       ? JSON.parse(row.includedSkills)
       : [];
 
+    // Parse context window data
+    const contextWindow = row.contextWindowData
+      ? JSON.parse(row.contextWindowData)
+      : null;
+
     return new Session(
       row.id,
       row.taskId,
@@ -131,6 +136,7 @@ export class SqliteSessionRepository implements ISessionRepository {
       toolStats,
       includedContextFiles,
       includedSkills,
+      contextWindow,
       new Date(row.createdAt!),
       new Date(row.updatedAt!)
     );
@@ -165,6 +171,7 @@ export class SqliteSessionRepository implements ISessionRepository {
       toolStats: JSON.stringify(session.toolStats),
       includedContextFiles: JSON.stringify(session.includedContextFiles),
       includedSkills: JSON.stringify(session.includedSkills),
+      contextWindowData: session.contextWindow ? JSON.stringify(session.contextWindow) : null,
       createdAt: session.createdAt.toISOString(),
       updatedAt: session.updatedAt.toISOString(),
     };

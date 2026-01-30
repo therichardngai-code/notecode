@@ -169,6 +169,7 @@ export class StartSessionUseCase {
       createEmptyToolStats(),
       [...task.contextFiles], // Track included context files for delta on resume
       [...task.skills],       // Track included skills for delta on resume
+      null, // contextWindow - set later when CLI reports
       new Date(),
       new Date()
     );

@@ -277,6 +277,7 @@ function runSchemaMigrations(): void {
   addColumnIfNotExists('sessions', 'initial_prompt', 'TEXT');
   addColumnIfNotExists('sessions', 'included_context_files', 'TEXT');
   addColumnIfNotExists('sessions', 'included_skills', 'TEXT');
+  addColumnIfNotExists('sessions', 'context_window_data', 'TEXT');
 
   // Projects table migrations
   addColumnIfNotExists('projects', 'system_prompt', 'TEXT');
