@@ -213,10 +213,12 @@ function TaskDetailPage() {
     if (mode === 'renew') {
       setRealtimeMessages([]);
       setCurrentAssistantMessage('');
+      setStreamingToolUses([]);
       setMessageBuffers({}); // Clear delta streaming buffers
       processedMessageIds.current.clear(); // Clear processed message IDs for new session
     } else {
       // Only clear streaming state, keep messages
+      setStreamingToolUses([]);
       setCurrentAssistantMessage('');
       setMessageBuffers({}); // Clear delta streaming buffers
     }
@@ -300,6 +302,7 @@ function TaskDetailPage() {
   const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState('');
   const [currentToolUse, setCurrentToolUse] = useState<ToolUseBlock | null>(null);
+  const [streamingToolUses, setStreamingToolUses] = useState<ToolCommand[]>([]);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   // Track session status from WebSocket (more immediate than React Query)
   const [wsSessionStatus, setWsSessionStatus] = useState<string | null>(null);
@@ -407,7 +410,12 @@ function TaskDetailPage() {
           if (!apiHasMessage) {
             setRealtimeMessages(prev => {
               if (prev.some(m => m.id === msgId)) return prev;
-              return [...prev, { id: msgId, role: 'assistant', content: finalContent }];
+              return [...prev, {
+                id: msgId,
+                role: 'assistant',
+                content: finalContent,
+                commands: streamingToolUses.length > 0 ? streamingToolUses : undefined,
+              }];
             });
             processedMessageIds.current.add(msgId);
           }
@@ -415,6 +423,7 @@ function TaskDetailPage() {
         streamingBufferRef.current = '';
         setCurrentAssistantMessage('');
         setCurrentToolUse(null);
+        setStreamingToolUses([]);
         setIsWaitingForResponse(false);
       } else {
         streamingBufferRef.current += text;
@@ -423,6 +432,11 @@ function TaskDetailPage() {
     },
     onToolUse: (tool) => {
       setCurrentToolUse(tool);
+      setStreamingToolUses(prev => [...prev, {
+        cmd: tool.name,
+        status: 'success',
+        input: tool.input,
+      }]);
     },
     onStatus: (status) => {
       // Update WebSocket session status immediately (before React Query refetch)
@@ -1126,7 +1140,11 @@ function TaskDetailPage() {
               // (realtime messages may duplicate API messages after backend saves)
               const apiContentSet = new Set(chatMessages.map(m => m.content));
               const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-              const allMessages = [...chatMessages, ...uniqueRealtimeMessages];
+              const allMessages = [...chatMessages, ...uniqueRealtimeMessages].sort((a, b) => {
+                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
+                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
+                return timeA - timeB; // Oldest first (chronological order)
+              });
               const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
               const scrollToBottom = () => {
@@ -1810,7 +1828,11 @@ function TaskDetailPage() {
                 // Combine API messages + realtime messages (same as main AI Session tab)
                 const apiContentSet = new Set(chatMessages.map(m => m.content));
                 const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-                const allMessages = [...chatMessages, ...uniqueRealtimeMessages];
+                const allMessages = [...chatMessages, ...uniqueRealtimeMessages].sort((a, b) => {
+                  const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
+                  const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
+                  return timeA - timeB; // Oldest first (chronological order)
+                });
                 const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
                 return (

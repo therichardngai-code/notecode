@@ -141,6 +141,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
   const [currentAssistantMessage, setCurrentAssistantMessage] = useState<string>('');
   const [currentToolUse, setCurrentToolUse] = useState<ToolUseBlock | null>(null);
+  const [streamingToolUses, setStreamingToolUses] = useState<ToolCommand[]>([]);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   // Track session status from WebSocket (more immediate than React Query)
   const [wsSessionStatus, setWsSessionStatus] = useState<string | null>(null);
@@ -190,7 +191,12 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
           if (!apiHasMessage) {
             setRealtimeMessages(prev => {
               if (prev.some(m => m.id === msgId)) return prev;
-              return [...prev, { id: msgId, role: 'assistant', content: finalContent }];
+              return [...prev, {
+                id: msgId,
+                role: 'assistant',
+                content: finalContent,
+                commands: streamingToolUses.length > 0 ? streamingToolUses : undefined,
+              }];
             });
             processedMessageIds.current.add(msgId);
           }
@@ -198,6 +204,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
         streamingBufferRef.current = '';
         setCurrentAssistantMessage('');
         setCurrentToolUse(null);
+        setStreamingToolUses([]);
         setIsWaitingForResponse(false);
       } else {
         streamingBufferRef.current += text;
@@ -206,6 +213,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     },
     onToolUse: (tool) => {
       setCurrentToolUse(tool);
+      setStreamingToolUses(prev => [...prev, {
+        cmd: tool.name,
+        status: 'success',
+        input: tool.input,
+      }]);
     },
     onStatus: (status) => {
       // Update WebSocket session status immediately (before React Query refetch)
@@ -386,12 +398,14 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
       console.log('[SCROLL DEBUG FloatingView] Renew mode - clearing all messages');
       setRealtimeMessages([]);
       setCurrentAssistantMessage('');
+      setStreamingToolUses([]);
       setMessageBuffers({}); // Clear delta streaming buffers
       processedMessageIds.current.clear(); // Clear processed message IDs for new session
     } else {
       console.log('[SCROLL DEBUG FloatingView] Resume mode - keeping existing messages to prevent scroll jump');
       // Only clear streaming state, keep messages
       setCurrentAssistantMessage('');
+      setStreamingToolUses([]);
       setMessageBuffers({}); // Clear delta streaming buffers
     }
     setChatInput(''); // Clear after capturing
@@ -1101,7 +1115,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
               // (realtime messages may duplicate API messages after backend saves)
               const apiContentSet = new Set(sessionMessages.map(m => m.content));
               const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-              const allMessages = [...sessionMessages, ...uniqueRealtimeMessages];
+              const allMessages = [...sessionMessages, ...uniqueRealtimeMessages].sort((a, b) => {
+                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
+                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
+                return timeA - timeB; // Oldest first (chronological order)
+              });
               const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
               return (
@@ -1766,7 +1784,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                 // Combine API messages + realtime messages (same as main AI Session tab)
                 const apiContentSet = new Set(sessionMessages.map(m => m.content));
                 const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-                const allMessages = [...sessionMessages, ...uniqueRealtimeMessages];
+                const allMessages = [...sessionMessages, ...uniqueRealtimeMessages].sort((a, b) => {
+                  const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
+                  const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
+                  return timeA - timeB; // Oldest first (chronological order)
+                });
                 const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
                 return (
