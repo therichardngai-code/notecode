@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -23,6 +23,7 @@ import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 // Shared types and utilities
 import type { ChatMessage, UIDiff } from '@/shared/types';
 import { messageToChat, diffToUI } from '@/shared/utils';
+import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
 import {
   StatusBadge, PriorityBadge, PropertyRow, ApprovalCard,
@@ -95,8 +96,16 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const activeSession = justStartedSession || latestSession;
   const activeSessionId = activeSession?.id || '';
 
+  // Determine session chain filter for Renew mode
+  // If there's a Renew in the chain, only show messages from Renew onwards
+  const filterSessionIds = useMemo(() => {
+    if (!latestSession) return null;
+    return getFilteredSessionIds(latestSession, sessions);
+  }, [latestSession, sessions]);
+
   // Fetch all messages for task (across all sessions) and diffs from active session
-  const { data: apiMessages = [] } = useTaskMessages(taskId);
+  // In Renew mode, only show messages from Renew session chain. In Retry/Resume, show all cumulative.
+  const { data: apiMessages = [] } = useTaskMessages(taskId, 200, filterSessionIds);
   const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
 
   // Convert API data to UI format

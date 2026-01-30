@@ -11,10 +11,15 @@ export interface MessageFilters {
   hasToolUse?: boolean;
 }
 
+export interface FindByTaskIdOptions {
+  limit?: number;
+  sessionIds?: string[];  // Filter messages by specific session IDs
+}
+
 export interface IMessageRepository {
   findById(id: string): Promise<Message | null>;
   findBySessionId(sessionId: string, filters?: MessageFilters): Promise<Message[]>;
-  findByTaskId(taskId: string, limit?: number): Promise<Message[]>;
+  findByTaskId(taskId: string, options?: FindByTaskIdOptions): Promise<Message[]>;
   findRecent(sessionId: string, limit?: number): Promise<Message[]>;
   findByProviderSessionId(providerSessionId: string, limit?: number): Promise<Message[]>;
   save(message: Message): Promise<Message>;

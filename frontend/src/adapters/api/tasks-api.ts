@@ -200,7 +200,18 @@ export const tasksApi = {
 
   /**
    * Get all messages for a task (across all sessions)
+   * @param id - Task ID
+   * @param limit - Maximum messages to fetch
+   * @param sessionIds - Optional: Filter by specific session IDs (backend filtering)
    */
-  getMessages: (id: string, limit = 200) =>
-    apiClient.get<TaskMessagesResponse>(`/api/tasks/${id}/messages`, { limit }),
+  getMessages: (id: string, limit = 200, sessionIds?: string[] | null) => {
+    const params: Record<string, any> = { limit };
+
+    // Add sessionIds param if provided (Phase 3: backend filtering)
+    if (sessionIds && sessionIds.length > 0) {
+      params.sessionIds = sessionIds.join(',');
+    }
+
+    return apiClient.get<TaskMessagesResponse>(`/api/tasks/${id}/messages`, params);
+  },
 };

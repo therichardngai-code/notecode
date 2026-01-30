@@ -84,13 +84,26 @@ export function useSessionDiffs(sessionId: string) {
 /**
  * Fetch all messages for a task (across all sessions)
  * Replaces useSessionMessages for cumulative conversation view
+ *
+ * Phase 3: Backend filtering - sessionIds passed to API for SQLite filtering
+ *
+ * @param taskId - Task ID to fetch messages for
+ * @param limit - Maximum number of messages to fetch
+ * @param filterSessionIds - Optional: Array of sessionIds to filter by (for Renew mode)
+ *                           Backend filters in SQLite (Phase 3 optimization).
+ *                           If null/undefined, all messages are returned (cumulative).
  */
-export function useTaskMessages(taskId: string | undefined | null, limit = 200) {
+export function useTaskMessages(
+  taskId: string | undefined | null,
+  limit = 200,
+  filterSessionIds?: string[] | null
+) {
   return useQuery({
-    queryKey: ['task-messages', taskId],
-    queryFn: () => tasksApi.getMessages(taskId!, limit),
+    queryKey: ['task-messages', taskId, filterSessionIds?.join(',') || 'all'],
+    queryFn: () => tasksApi.getMessages(taskId!, limit, filterSessionIds),
     select: (data) => {
       // Convert task messages format to session messages format (Message interface)
+      // Backend already filtered by sessionIds (Phase 3), so no client-side filtering needed
       return data.messages.map(msg => ({
         id: msg.id,
         sessionId: msg.sessionId,

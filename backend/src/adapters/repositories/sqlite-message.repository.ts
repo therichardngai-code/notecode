@@ -4,7 +4,7 @@
  */
 
 import { eq, desc, and, lt, sql } from 'drizzle-orm';
-import { IMessageRepository, MessageFilters } from '../../domain/ports/repositories/message.repository.port.js';
+import { IMessageRepository, MessageFilters, FindByTaskIdOptions } from '../../domain/ports/repositories/message.repository.port.js';
 import { Message } from '../../domain/entities/message.entity.js';
 import { Block, MessageRole } from '../../domain/value-objects/block-types.vo.js';
 import { messages, MessageRow } from '../../infrastructure/database/schema.js';
@@ -111,18 +111,42 @@ export class SqliteMessageRepository implements IMessageRepository {
    * Find all messages for a task (across all sessions)
    * Returns messages grouped by session in chronological order
    */
-  async findByTaskId(taskId: string, limit: number = 200): Promise<Message[]> {
+  async findByTaskId(taskId: string, options?: FindByTaskIdOptions): Promise<Message[]> {
     const db = getDatabase();
-    // Join messages with sessions to get all messages for a task
-    const rows = db.all<MessageRow>(sql`
-      SELECT m.* FROM messages m
-      JOIN sessions s ON m.session_id = s.id
-      WHERE s.task_id = ${taskId}
-      ORDER BY s.created_at ASC, m.timestamp ASC
-      LIMIT ${limit}
-    `);
+    const limit = options?.limit ?? 200;
+    const sessionIds = options?.sessionIds;
 
-    return rows.map(row => this.toEntity(row));
+    // Build query with optional sessionIds filter
+    if (sessionIds && sessionIds.length > 0) {
+      // With sessionIds filter - use sql tagged template with IN clause
+      // Build the IN clause values list
+      const sessionIdsSql = sql.join(
+        sessionIds.map(id => sql`${id}`),
+        sql`, `
+      );
+
+      const query = sql`
+        SELECT m.* FROM messages m
+        JOIN sessions s ON m.session_id = s.id
+        WHERE s.task_id = ${taskId}
+        AND m.session_id IN (${sessionIdsSql})
+        ORDER BY s.created_at ASC, m.timestamp ASC
+        LIMIT ${limit}
+      `;
+      const rows = db.all<MessageRow>(query);
+      return rows.map(row => this.toEntity(row));
+    } else {
+      // No filter (backward compatible)
+      const query = sql`
+        SELECT m.* FROM messages m
+        JOIN sessions s ON m.session_id = s.id
+        WHERE s.task_id = ${taskId}
+        ORDER BY s.created_at ASC, m.timestamp ASC
+        LIMIT ${limit}
+      `;
+      const rows = db.all<MessageRow>(query);
+      return rows.map(row => this.toEntity(row));
+    }
   }
 
   /**

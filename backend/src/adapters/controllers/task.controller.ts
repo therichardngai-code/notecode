@@ -133,7 +133,10 @@ export function registerTaskController(
   // GET /api/tasks/:id/messages - Get all messages for a task (across all sessions)
   app.get('/api/tasks/:id/messages', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { limit } = request.query as { limit?: string };
+    const { limit, sessionIds: sessionIdsParam } = request.query as {
+      limit?: string;
+      sessionIds?: string;  // Comma-separated session IDs
+    };
 
     if (!messageRepo) {
       return reply.status(501).send({ error: 'Message repository not available' });
@@ -144,7 +147,15 @@ export function registerTaskController(
       return reply.status(404).send({ error: 'Task not found' });
     }
 
-    const messages = await messageRepo.findByTaskId(id, limit ? parseInt(limit, 10) : 200);
+    // Parse sessionIds from CSV string
+    const sessionIds = sessionIdsParam
+      ? sessionIdsParam.split(',').map(s => s.trim()).filter(Boolean)
+      : undefined;
+
+    const messages = await messageRepo.findByTaskId(id, {
+      limit: limit ? parseInt(limit, 10) : 200,
+      sessionIds
+    });
 
     // Format messages for frontend
     const formattedMessages = messages.map(m => ({
