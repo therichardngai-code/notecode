@@ -96,11 +96,36 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const activeSession = justStartedSession || latestSession;
   const activeSessionId = activeSession?.id || '';
 
+  // Track providerSessionId to maintain stable query during Resume
+  // Resume continues same conversation (same providerSessionId), so keep using previous filter
+  const previousProviderSessionIdRef = useRef<string | null>(null);
+  const stableFilterSessionIds = useRef<string[] | null>(null);
+
   // Determine session chain filter for Renew mode
   // If there's a Renew in the chain, only show messages from Renew onwards
+  // CRITICAL: Keep filter stable during Resume (same providerSessionId) to prevent scroll jump
   const filterSessionIds = useMemo(() => {
     if (!latestSession) return null;
-    return getFilteredSessionIds(latestSession, sessions);
+
+    const currentProviderSessionId = latestSession.providerSessionId;
+    console.log('[SCROLL DEBUG FloatingView] filterSessionIds calculation:', {
+      currentProviderSessionId,
+      previousProviderSessionId: previousProviderSessionIdRef.current,
+      sessionId: latestSession.id,
+    });
+
+    // If providerSessionId hasn't changed, reuse previous filter (prevents refetch during Resume)
+    if (currentProviderSessionId && currentProviderSessionId === previousProviderSessionIdRef.current) {
+      console.log('[SCROLL DEBUG FloatingView] Same providerSessionId - keeping stable filter to prevent scroll jump');
+      return stableFilterSessionIds.current;
+    }
+
+    // ProviderSessionId changed or first load - recalculate filter
+    console.log('[SCROLL DEBUG FloatingView] ProviderSessionId changed - recalculating filter');
+    const newFilter = getFilteredSessionIds(latestSession, sessions);
+    previousProviderSessionIdRef.current = currentProviderSessionId;
+    stableFilterSessionIds.current = newFilter;
+    return newFilter;
   }, [latestSession, sessions]);
 
   // Fetch all messages for task (across all sessions) and diffs from active session
@@ -342,17 +367,33 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     // Only reset scroll tracking for 'renew' mode (fresh start)
     // For 'retry', preserve user's scroll position to avoid uncomfortable jump
     if (mode === 'renew') {
+      console.log('[SCROLL DEBUG FloatingView] Renew mode - resetting scroll tracking');
       userScrolledUpRef.current = false;
     }
     // Save scroll position for Resume (to restore after messages refetch)
     if (mode === 'retry' && container) {
+      console.log('[SCROLL DEBUG FloatingView] Resume clicked - saving scroll position:', {
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        containerExists: !!container,
+      });
       savedScrollPosition.current = container.scrollTop;
     }
-    // Clear chat state for new session
-    setRealtimeMessages([]);
-    setCurrentAssistantMessage('');
-    setMessageBuffers({}); // Clear delta streaming buffers
-    processedMessageIds.current.clear(); // Clear processed message IDs for new session
+    // Clear chat state - ONLY for Renew mode
+    // Resume mode keeps existing messages to prevent scroll jump
+    if (mode === 'renew') {
+      console.log('[SCROLL DEBUG FloatingView] Renew mode - clearing all messages');
+      setRealtimeMessages([]);
+      setCurrentAssistantMessage('');
+      setMessageBuffers({}); // Clear delta streaming buffers
+      processedMessageIds.current.clear(); // Clear processed message IDs for new session
+    } else {
+      console.log('[SCROLL DEBUG FloatingView] Resume mode - keeping existing messages to prevent scroll jump');
+      // Only clear streaming state, keep messages
+      setCurrentAssistantMessage('');
+      setMessageBuffers({}); // Clear delta streaming buffers
+    }
     setChatInput(''); // Clear after capturing
     setAttachedFiles([]); // Clear attached files
     setWsSessionStatus(null); // Reset WebSocket status for new session
@@ -421,23 +462,57 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // Restore scroll position after Resume (when messages refetch)
   // Use useLayoutEffect for synchronous execution before browser paint
   useLayoutEffect(() => {
-    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
-      isRestoringScroll.current = true;
-      const scrollPos = savedScrollPosition.current;
+    console.log('[SCROLL DEBUG FloatingView] useLayoutEffect triggered - sessionMessages count:', sessionMessages.length, {
+      hasSavedPosition: savedScrollPosition.current !== null,
+      savedPosition: savedScrollPosition.current,
+      containerExists: !!aiSessionContainerRef.current,
+      currentScrollTop: aiSessionContainerRef.current?.scrollTop,
+      scrollHeight: aiSessionContainerRef.current?.scrollHeight,
+      isRestoringScroll: isRestoringScroll.current,
+    });
 
-      // Wait for DOM to fully render before restoring
-      requestAnimationFrame(() => {
+    // Prevent duplicate restoration attempts (useLayoutEffect can trigger multiple times)
+    if (isRestoringScroll.current) {
+      console.log('[SCROLL DEBUG FloatingView] Already restoring - skipping duplicate attempt');
+      return;
+    }
+
+    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
+      const scrollPos = savedScrollPosition.current;
+      const container = aiSessionContainerRef.current;
+
+      console.log('[SCROLL DEBUG FloatingView] Checking if can restore - scrollHeight:', container.scrollHeight, 'vs needed:', scrollPos);
+
+      // KEY FIX: Only restore if container is tall enough
+      // During Resume, messages are cleared first, causing scrollHeight to drop
+      // Wait until messages are loaded and scrollHeight >= saved position
+      if (container.scrollHeight >= scrollPos + container.clientHeight) {
+        isRestoringScroll.current = true;
+        console.log('[SCROLL DEBUG FloatingView] Container tall enough - starting restoration to:', scrollPos);
+
+        // Wait for DOM to fully render before restoring
         requestAnimationFrame(() => {
-          if (aiSessionContainerRef.current) {
-            aiSessionContainerRef.current.scrollTop = scrollPos;
-          }
-          savedScrollPosition.current = null;
-          // Keep restoration flag active briefly to prevent auto-scroll override
-          setTimeout(() => {
-            isRestoringScroll.current = false;
-          }, 100);
+          requestAnimationFrame(() => {
+            console.log('[SCROLL DEBUG FloatingView] RAF callback - about to restore scroll');
+            if (aiSessionContainerRef.current) {
+              console.log('[SCROLL DEBUG FloatingView] Before restore:', aiSessionContainerRef.current.scrollTop);
+              aiSessionContainerRef.current.scrollTop = scrollPos;
+              console.log('[SCROLL DEBUG FloatingView] After restore:', aiSessionContainerRef.current.scrollTop, 'Expected:', scrollPos);
+            } else {
+              console.error('[SCROLL DEBUG FloatingView] Container lost during RAF!');
+            }
+            savedScrollPosition.current = null;
+            // Keep restoration flag active briefly to prevent auto-scroll override
+            setTimeout(() => {
+              isRestoringScroll.current = false;
+              console.log('[SCROLL DEBUG FloatingView] Restoration complete - flag cleared');
+            }, 100);
+          });
         });
-      });
+      } else {
+        console.log('[SCROLL DEBUG FloatingView] Container too short - waiting for more messages to load');
+        // Don't clear savedScrollPosition - let it retry on next sessionMessages update
+      }
     }
   }, [sessionMessages]);
 
@@ -1687,18 +1762,42 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
               <button onClick={() => setSubPanelTab('diffs')} className={cn("flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px", subPanelTab === 'diffs' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}><GitBranch className="w-3.5 h-3.5" />Diffs</button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 bg-background">
-              {subPanelTab === 'chat-session' && (
-                <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
-                  {sessionMessages.map((message) => (
-                    message.role === 'user' ? (
-                      <div key={message.id} className="flex justify-end mb-4"><div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div></div>
+              {subPanelTab === 'chat-session' && (() => {
+                // Combine API messages + realtime messages (same as main AI Session tab)
+                const apiContentSet = new Set(sessionMessages.map(m => m.content));
+                const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
+                const allMessages = [...sessionMessages, ...uniqueRealtimeMessages];
+                const hasMessages = allMessages.length > 0 || currentAssistantMessage;
+
+                return (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
+                    {!hasMessages ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                        <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+                        <p className="text-sm">No messages yet</p>
+                      </div>
                     ) : (
-                      <div key={message.id} className="mb-6"><MarkdownMessage content={message.content} className="text-sm text-foreground" /></div>
-                    )
-                  ))}
-                </div>
-              )}
+                      <>
+                        {allMessages.map((message) => (
+                          message.role === 'user' ? (
+                            <div key={message.id} className="flex justify-end mb-4"><div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div></div>
+                          ) : (
+                            <div key={message.id} className="mb-6"><MarkdownMessage content={message.content} className="text-sm text-foreground" /></div>
+                          )
+                        ))}
+
+                        {/* Show streaming assistant message */}
+                        {currentAssistantMessage && (
+                          <div className="mb-6">
+                            <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
               {subPanelTab === 'diffs' && selectedDiffFile && (
                 <div>
                   {sessionDiffs.filter(diff => diff.id === selectedDiffFile).map((diff) => (

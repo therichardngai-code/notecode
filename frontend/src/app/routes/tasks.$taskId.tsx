@@ -86,11 +86,29 @@ function TaskDetailPage() {
   const activeSession = justStartedSession || latestSession;
   const activeSessionId = activeSession?.id || '';
 
+  // Track providerSessionId to maintain stable query during Resume
+  // Resume continues same conversation (same providerSessionId), so keep using previous filter
+  const previousProviderSessionIdRef = useRef<string | null>(null);
+  const stableFilterSessionIds = useRef<string[] | null>(null);
+
   // Determine session chain filter for Renew mode
   // If there's a Renew in the chain, only show messages from Renew onwards
+  // CRITICAL: Keep filter stable during Resume (same providerSessionId) to prevent scroll jump
   const filterSessionIds = useMemo(() => {
     if (!latestSession) return null;
-    return getFilteredSessionIds(latestSession, sessions);
+
+    const currentProviderSessionId = latestSession.providerSessionId;
+
+    // If providerSessionId hasn't changed, reuse previous filter (prevents refetch during Resume)
+    if (currentProviderSessionId && currentProviderSessionId === previousProviderSessionIdRef.current) {
+      return stableFilterSessionIds.current;
+    }
+
+    // ProviderSessionId changed or first load - recalculate filter
+    const newFilter = getFilteredSessionIds(latestSession, sessions);
+    previousProviderSessionIdRef.current = currentProviderSessionId;
+    stableFilterSessionIds.current = newFilter;
+    return newFilter;
   }, [latestSession, sessions]);
 
   // Fetch all messages for task (across all sessions) and diffs from active session
@@ -99,7 +117,14 @@ function TaskDetailPage() {
   const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
 
   // Convert API data to UI format
+  console.log('[FLOW TRACE FullView] Before messageToChat:', {
+    apiMessagesCount: apiMessages.length,
+    sessionIds: [...new Set(apiMessages.map(m => m.sessionId))],
+  });
   const chatMessages: ChatMessage[] = apiMessages.map(messageToChat);
+  console.log('[FLOW TRACE FullView] After messageToChat:', {
+    chatMessagesCount: chatMessages.length,
+  });
   const sessionDiffs: UIDiff[] = apiDiffs.map(diffToUI);
 
   // Keep chatMessagesRef in sync for WebSocket callback dedup (avoids stale closure)
@@ -183,11 +208,18 @@ function TaskDetailPage() {
     if (mode === 'retry' && container) {
       savedScrollPosition.current = container.scrollTop;
     }
-    // Clear chat state for new session
-    setRealtimeMessages([]);
-    setCurrentAssistantMessage('');
-    setMessageBuffers({}); // Clear delta streaming buffers
-    processedMessageIds.current.clear(); // Clear processed message IDs for new session
+    // Clear chat state - ONLY for Renew mode
+    // Resume mode keeps existing messages to prevent scroll jump
+    if (mode === 'renew') {
+      setRealtimeMessages([]);
+      setCurrentAssistantMessage('');
+      setMessageBuffers({}); // Clear delta streaming buffers
+      processedMessageIds.current.clear(); // Clear processed message IDs for new session
+    } else {
+      // Only clear streaming state, keep messages
+      setCurrentAssistantMessage('');
+      setMessageBuffers({}); // Clear delta streaming buffers
+    }
     setChatInput(''); // Clear after capturing
     setAttachedFiles([]); // Clear attached files
     setWsSessionStatus(null); // Reset WebSocket status for new session
@@ -217,8 +249,13 @@ function TaskDetailPage() {
       // Set just-started session for immediate WebSocket connection
       // Always use 'running' status to ensure WebSocket connects (actual status comes via WebSocket)
       setJustStartedSession({ id: response.session.id, status: 'running' });
-      // Switch to AI Session tab to show real-time chat
-      setActiveInfoTab('ai-session');
+      // Switch to AI Session tab only if not already there (prevents unnecessary re-render)
+      if (activeInfoTab !== 'ai-session') {
+        console.log('[SCROLL DEBUG] Tab switch needed - switching from:', activeInfoTab, 'to: ai-session');
+        setActiveInfoTab('ai-session');
+      } else {
+        console.log('[SCROLL DEBUG] Already on ai-session tab - no switch needed');
+      }
     } catch (err) {
       setIsWaitingForResponse(false);
       console.error('Failed to start session:', err);
@@ -282,27 +319,44 @@ function TaskDetailPage() {
   const savedScrollPosition = useRef<number | null>(null);
   // Track if currently restoring scroll (prevent auto-scroll override)
   const isRestoringScroll = useRef(false);
+  // Track if user is scrolled up (for "New messages" indicator)
+  const [isScrolledUpFromBottom, setIsScrolledUpFromBottom] = useState(false);
+
+  // Container lifecycle tracking removed (too noisy)
 
   // Restore scroll position after Resume (when messages refetch)
   // Use useLayoutEffect for synchronous execution before browser paint
   useLayoutEffect(() => {
-    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
-      isRestoringScroll.current = true;
-      const scrollPos = savedScrollPosition.current;
+    // Prevent duplicate restoration attempts (useLayoutEffect can trigger multiple times)
+    if (isRestoringScroll.current) {
+      return;
+    }
 
-      // Wait for DOM to fully render before restoring
-      requestAnimationFrame(() => {
+    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
+      const scrollPos = savedScrollPosition.current;
+      const container = aiSessionContainerRef.current;
+
+      // KEY FIX: Only restore if container is tall enough
+      // During Resume, messages are cleared first, causing scrollHeight to drop
+      // Wait until messages are loaded and scrollHeight >= saved position
+      if (container.scrollHeight >= scrollPos + container.clientHeight) {
+        isRestoringScroll.current = true;
+
+        // Wait for DOM to fully render before restoring
         requestAnimationFrame(() => {
-          if (aiSessionContainerRef.current) {
-            aiSessionContainerRef.current.scrollTop = scrollPos;
-          }
-          savedScrollPosition.current = null;
-          // Keep restoration flag active briefly to prevent auto-scroll override
-          setTimeout(() => {
-            isRestoringScroll.current = false;
-          }, 100);
+          requestAnimationFrame(() => {
+            if (aiSessionContainerRef.current) {
+              aiSessionContainerRef.current.scrollTop = scrollPos;
+            }
+            savedScrollPosition.current = null;
+            // Keep restoration flag active briefly to prevent auto-scroll override
+            setTimeout(() => {
+              isRestoringScroll.current = false;
+            }, 100);
+          });
         });
-      });
+      }
+      // Container too short - wait for more messages to load (will retry on next update)
     }
   }, [chatMessages]);
 
@@ -1075,14 +1129,23 @@ function TaskDetailPage() {
               const allMessages = [...chatMessages, ...uniqueRealtimeMessages];
               const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
+              const scrollToBottom = () => {
+                if (aiSessionContainerRef.current) {
+                  aiSessionContainerRef.current.scrollTop = aiSessionContainerRef.current.scrollHeight;
+                }
+              };
+
               return (
+              <div className="relative">
               <div
                 ref={aiSessionContainerRef}
                 className="space-y-4 max-h-[400px] overflow-y-auto"
                 onScroll={(e) => {
                   const el = e.currentTarget;
+                  const scrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
                   // Mark as scrolled up if not near bottom
-                  userScrolledUpRef.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
+                  userScrolledUpRef.current = scrolledUp;
+                  setIsScrolledUpFromBottom(scrolledUp);
                 }}
               >
                 {/* Session Starting Indicator */}
@@ -1283,6 +1346,18 @@ function TaskDetailPage() {
                     {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
                   </div>
                 )}
+              </div>
+
+              {/* "New messages" indicator button - show when scrolled up and has new content */}
+              {isScrolledUpFromBottom && (allMessages.length > 0 || currentAssistantMessage) && (
+                <button
+                  onClick={scrollToBottom}
+                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all text-sm font-medium z-10 animate-in fade-in slide-in-from-bottom-2"
+                >
+                  <span>New messages</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+              )}
               </div>
             );
             })()}
@@ -1731,27 +1806,46 @@ function TaskDetailPage() {
           {/* File Details Content */}
           <ScrollArea className="flex-1">
             <div className="p-4">
-              {subPanelTab === 'chat-session' && (
-                <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
-                  {chatMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                      <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                      <p className="text-sm">No messages yet</p>
-                    </div>
-                  ) : chatMessages.map((message) => (
-                    message.role === 'user' ? (
-                      <div key={message.id} className="flex justify-end mb-4">
-                        <div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
+              {subPanelTab === 'chat-session' && (() => {
+                // Combine API messages + realtime messages (same as main AI Session tab)
+                const apiContentSet = new Set(chatMessages.map(m => m.content));
+                const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
+                const allMessages = [...chatMessages, ...uniqueRealtimeMessages];
+                const hasMessages = allMessages.length > 0 || currentAssistantMessage;
+
+                return (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
+                    {!hasMessages ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                        <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+                        <p className="text-sm">No messages yet</p>
                       </div>
                     ) : (
-                      <div key={message.id} className="mb-6">
-                        <MarkdownMessage content={message.content} className="text-sm text-foreground" />
-                      </div>
-                    )
-                  ))}
-                </div>
-              )}
+                      <>
+                        {allMessages.map((message) => (
+                          message.role === 'user' ? (
+                            <div key={message.id} className="flex justify-end mb-4">
+                              <div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
+                            </div>
+                          ) : (
+                            <div key={message.id} className="mb-6">
+                              <MarkdownMessage content={message.content} className="text-sm text-foreground" />
+                            </div>
+                          )
+                        ))}
+
+                        {/* Show streaming assistant message */}
+                        {currentAssistantMessage && (
+                          <div className="mb-6">
+                            <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               {subPanelTab === 'diffs' && (
                 <div>
