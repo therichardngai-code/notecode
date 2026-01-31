@@ -3,10 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
-  Calendar, User, Folder, Bot, Sparkles, Zap, Play, Clock, Plus, Pencil, Check,
-  AtSign, Paperclip, Globe, X, MessageSquare, FileCode, GitBranch,
-  ThumbsUp, ThumbsDown, Loader2, Wrench, ChevronDown, Maximize2,
-  RotateCcw, Copy, ShieldAlert,
+  Calendar, User, Folder, Bot, Sparkles, Zap, Plus, Pencil, Check,
+  FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
@@ -17,7 +15,6 @@ import type { TaskStatus } from '@/adapters/api/tasks-api';
 import type { ApprovalRequest, SessionResumeMode } from '@/adapters/api/sessions-api';
 import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
-import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 // Shared types and utilities
 import type { ChatMessage, UIDiff, ToolCommand } from '@/shared/types';
 import { messageToChat, diffToUI } from '@/shared/utils';
@@ -25,7 +22,8 @@ import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
 import {
   StatusBadge, PriorityBadge, PropertyRow, AttemptStats,
-  ContextWindowIndicator, ContextWarningDialog, ChatInputFooter,
+  ContextWarningDialog, ChatInputFooter, ContentPreviewModal, TaskInfoTabsNav,
+  FileDetailsPanel,
 } from '@/shared/components/task-detail';
 // Phase 5 Tabs
 import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
@@ -922,48 +920,13 @@ function TaskDetailPage() {
 
           {/* Tabbed Info Panel */}
           <div>
-            <div className="flex items-center gap-1 mb-4 border-b border-border">
-              <button onClick={() => setActiveInfoTab('activity')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeInfoTab === 'activity' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
-                <MessageSquare className="w-4 h-4" />Activity
-              </button>
-              <button onClick={() => setActiveInfoTab('ai-session')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeInfoTab === 'ai-session' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
-                <Bot className="w-4 h-4" />AI Session
-              </button>
-              <button onClick={() => setActiveInfoTab('diffs')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeInfoTab === 'diffs' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
-                <GitBranch className="w-4 h-4" />Diffs
-              </button>
-              {/* Sessions Tab with status indicator */}
-              <button onClick={() => setActiveInfoTab('sessions')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeInfoTab === 'sessions' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
-                {latestSession?.status === 'running' ? (
-                  <span className="relative flex h-2 w-2 mr-1">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                  </span>
-                ) : latestSession?.status === 'queued' ? (
-                  <span className="w-2 h-2 rounded-full bg-gray-400 mr-1" />
-                ) : latestSession?.status === 'paused' ? (
-                  <span className="w-2 h-2 rounded-full bg-yellow-500 mr-1" />
-                ) : latestSession?.status === 'completed' ? (
-                  <span className="w-2 h-2 rounded-full bg-green-500 mr-1" />
-                ) : latestSession?.status === 'failed' ? (
-                  <span className="w-2 h-2 rounded-full bg-red-500 mr-1" />
-                ) : latestSession?.status === 'cancelled' ? (
-                  <span className="w-2 h-2 rounded-full bg-gray-500 mr-1" />
-                ) : (
-                  <Clock className="w-4 h-4" />
-                )}
-                Sessions
-                {sessions.length > 0 && <span className="ml-1 text-xs text-muted-foreground">({sessions.length})</span>}
-              </button>
-              {/* Expand to sub-panel button */}
-              <button
-                onClick={handleExpandToSubPanel}
-                className="ml-auto p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                title="Expand to panel"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
-            </div>
+            <TaskInfoTabsNav
+              activeTab={activeInfoTab}
+              latestSession={latestSession}
+              sessionsCount={sessions.length}
+              onTabChange={setActiveInfoTab}
+              onExpandToSubPanel={handleExpandToSubPanel}
+            />
 
             {/* Activity Tab - derived from task, sessions, gitCommitApprovals */}
             {activeInfoTab === 'activity' && (
@@ -1083,143 +1046,28 @@ function TaskDetailPage() {
       </div>
 
       {/* File Details Panel - shown on the right when a diff file is selected or sub-panel is open */}
-      {(selectedDiffFile || isSubPanelOpen) && (
-        <div className="w-1/2 border-l border-border flex flex-col glass-strong">
-          {/* File Details Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <span className="text-sm font-medium text-foreground">File Details</span>
-            <button onClick={handleCloseFileDetails} className="p-1 rounded hover:bg-muted transition-colors" title="Close">
-              <X className="w-4 h-4 text-muted-foreground" />
-            </button>
-          </div>
-
-          {/* File Details Tabs */}
-          <div className="flex items-center gap-1 px-4 pt-3 border-b border-border">
-            <button onClick={() => setSubPanelTab('chat-session')} className={cn("flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px", subPanelTab === 'chat-session' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
-              <Bot className="w-3.5 h-3.5" />Chat Session
-            </button>
-            <button onClick={() => setSubPanelTab('diffs')} className={cn("flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px", subPanelTab === 'diffs' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
-              <GitBranch className="w-3.5 h-3.5" />Diffs
-            </button>
-          </div>
-
-          {/* File Details Content */}
-          <ScrollArea className="flex-1">
-            <div className="p-4">
-              {subPanelTab === 'chat-session' && (() => {
-                // Combine API messages + realtime messages (same as main AI Session tab)
-                const apiContentSet = new Set(chatMessages.map(m => m.content));
-                const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-                const allMessages = [...chatMessages, ...uniqueRealtimeMessages].sort((a, b) => {
-                  const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
-                  const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
-                  return timeA - timeB; // Oldest first (chronological order)
-                });
-                const hasMessages = allMessages.length > 0 || currentAssistantMessage;
-
-                return (
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
-                    {!hasMessages ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                        <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                        <p className="text-sm">No messages yet</p>
-                      </div>
-                    ) : (
-                      <>
-                        {allMessages.map((message) => (
-                          message.role === 'user' ? (
-                            <div key={message.id} className="flex justify-end mb-4">
-                              <div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
-                            </div>
-                          ) : (
-                            <div key={message.id} className="mb-6">
-                              <MarkdownMessage content={message.content} className="text-sm text-foreground" />
-                            </div>
-                          )
-                        ))}
-
-                        {/* Show streaming assistant message */}
-                        {currentAssistantMessage && (
-                          <div className="mb-6">
-                            <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {subPanelTab === 'diffs' && (
-                <div>
-                  {sessionDiffs.filter(diff => diff.id === selectedDiffFile).map((diff) => (
-                    <div key={diff.id}>
-                      {/* File Header */}
-                      <div className="flex items-center gap-3 mb-4 pb-3 border-b border-border flex-wrap">
-                        <FileCode className="w-5 h-5 text-muted-foreground" />
-                        <span className="text-base font-medium text-foreground">{diff.filename}</span>
-                        {diffApprovals[diff.id] === 'approved' && <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/20 text-green-600 font-medium">✓ Approved</span>}
-                        {diffApprovals[diff.id] === 'rejected' && <span className="text-xs px-2.5 py-1 rounded-full bg-red-500/20 text-red-600 font-medium">✗ Rejected</span>}
-                        <span className="text-sm text-green-500 ml-auto">+{diff.additions}</span>
-                        {diff.deletions > 0 && <span className="text-sm text-red-500">-{diff.deletions}</span>}
-                        <div className="flex items-center gap-2 ml-2">
-                          <button onClick={() => handleApproveDiff(diff.id)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors", diffApprovals[diff.id] === 'approved' ? "bg-green-500 text-white" : "bg-green-500/10 text-green-600 hover:bg-green-500/20")}>
-                            <ThumbsUp className="w-4 h-4" />Approve
-                          </button>
-                          <button onClick={() => handleRejectDiff(diff.id)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors", diffApprovals[diff.id] === 'rejected' ? "bg-red-500 text-white" : "bg-red-500/10 text-red-600 hover:bg-red-500/20")}>
-                            <ThumbsDown className="w-4 h-4" />Reject
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Diff Content */}
-                      <div className="border border-border rounded-lg overflow-hidden">
-                        {diff.chunks.map((chunk, chunkIdx) => (
-                          <div key={chunkIdx} className="font-mono text-xs">
-                            <div className="px-3 py-2 bg-muted/30 text-muted-foreground border-b border-border/50 sticky top-0">{chunk.header}</div>
-                            <div className="bg-background">
-                              {chunk.lines.map((line, lineIdx) => (
-                                <div key={lineIdx} className={cn("px-3 py-1 flex items-start gap-3", line.type === 'add' && "bg-green-500/10", line.type === 'remove' && "bg-red-500/10")}>
-                                  <span className="w-12 text-right text-muted-foreground/60 select-none shrink-0">{line.lineNum}</span>
-                                  <span className={cn("w-4 shrink-0", line.type === 'add' && "text-green-500", line.type === 'remove' && "text-red-500", line.type === 'context' && "text-muted-foreground/40")}>{line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}</span>
-                                  <span className={cn("flex-1 break-all", line.type === 'add' && "text-green-400", line.type === 'remove' && "text-red-400", line.type === 'context' && "text-foreground/80")}>{line.content}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
+      <FileDetailsPanel
+        selectedDiffFile={selectedDiffFile}
+        isSubPanelOpen={isSubPanelOpen}
+        subPanelTab={subPanelTab}
+        chatMessages={chatMessages}
+        realtimeMessages={realtimeMessages}
+        currentAssistantMessage={currentAssistantMessage}
+        sessionDiffs={sessionDiffs}
+        diffApprovals={diffApprovals}
+        onCloseFileDetails={handleCloseFileDetails}
+        onSetSubPanelTab={setSubPanelTab}
+        onApproveDiff={handleApproveDiff}
+        onRejectDiff={handleRejectDiff}
+      />
 
       {/* Content Modal for Write tool preview */}
-      {contentModalData && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" onClick={() => setContentModalData(null)}>
-          <div className="bg-background border border-border rounded-lg shadow-2xl w-[80vw] max-w-4xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <span className="text-sm font-medium text-foreground truncate">{contentModalData.filePath}</span>
-              <div className="flex items-center gap-2">
-                <button onClick={() => navigator.clipboard.writeText(contentModalData.content)} className="p-1.5 rounded hover:bg-muted transition-colors" title="Copy">
-                  <Copy className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button onClick={() => setContentModalData(null)} className="p-1.5 rounded hover:bg-muted transition-colors" title="Close">
-                  <X className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <pre className="text-xs font-mono whitespace-pre-wrap text-foreground/90">{contentModalData.content}</pre>
-            </div>
-          </div>
-        </div>
-      )}
+      <ContentPreviewModal
+        isOpen={!!contentModalData}
+        filePath={contentModalData?.filePath || ''}
+        content={contentModalData?.content || ''}
+        onClose={() => setContentModalData(null)}
+      />
 
       {/* Context Window Warning Dialog */}
       <ContextWarningDialog
