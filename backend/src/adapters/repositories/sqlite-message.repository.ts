@@ -3,7 +3,7 @@
  * Implements IMessageRepository using Drizzle ORM
  */
 
-import { eq, desc, and, lt, sql } from 'drizzle-orm';
+import { eq, asc, and, lt, sql } from 'drizzle-orm';
 import { IMessageRepository, MessageFilters, FindByTaskIdOptions } from '../../domain/ports/repositories/message.repository.port.js';
 import { Message } from '../../domain/entities/message.entity.js';
 import { Block, MessageRole } from '../../domain/value-objects/block-types.vo.js';
@@ -23,7 +23,7 @@ export class SqliteMessageRepository implements IMessageRepository {
     const db = getDatabase();
     let query = db.query.messages.findMany({
       where: eq(messages.sessionId, sessionId),
-      orderBy: [desc(messages.timestamp)],
+      orderBy: [asc(messages.timestamp)],
     });
 
     const rows = await query;
@@ -37,20 +37,20 @@ export class SqliteMessageRepository implements IMessageRepository {
       result = result.filter(m => m.hasToolUse() === filters.hasToolUse);
     }
 
-    // Return in chronological order
-    return result.reverse();
+    // Already in chronological order (timestamp ASC)
+    return result;
   }
 
   async findRecent(sessionId: string, limit: number = 50): Promise<Message[]> {
     const db = getDatabase();
     const rows = await db.query.messages.findMany({
       where: eq(messages.sessionId, sessionId),
-      orderBy: [desc(messages.timestamp)],
+      orderBy: [asc(messages.timestamp)],
       limit,
     });
 
-    // Return in chronological order
-    return rows.map(row => this.toEntity(row)).reverse();
+    // Already in chronological order (timestamp ASC)
+    return rows.map(row => this.toEntity(row));
   }
 
   async findByProviderSessionId(providerSessionId: string, limit: number = 200): Promise<Message[]> {
@@ -166,19 +166,19 @@ export class SqliteMessageRepository implements IMessageRepository {
           eq(messages.sessionId, sessionId),
           lt(messages.timestamp, options.before)
         ),
-        orderBy: [desc(messages.timestamp)],
+        orderBy: [asc(messages.timestamp)],
         limit,
       });
-      return rows.map(row => this.toEntity(row)).reverse();
+      return rows.map(row => this.toEntity(row));
     }
 
     // Get most recent messages
     const rows = await db.query.messages.findMany({
       where: eq(messages.sessionId, sessionId),
-      orderBy: [desc(messages.timestamp)],
+      orderBy: [asc(messages.timestamp)],
       limit,
     });
-    return rows.map(row => this.toEntity(row)).reverse();
+    return rows.map(row => this.toEntity(row));
   }
 
   // === Streaming Support ===

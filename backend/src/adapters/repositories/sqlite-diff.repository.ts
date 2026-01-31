@@ -3,7 +3,7 @@
  * Implements IDiffRepository using Drizzle ORM
  */
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { IDiffRepository } from '../../domain/ports/repositories/diff.repository.port.js';
 import { Diff, DiffOperation, DiffStatus, DiffHunk } from '../../domain/entities/diff.entity.js';
 import { diffs, DiffRow } from '../../infrastructure/database/schema.js';
@@ -22,6 +22,7 @@ export class SqliteDiffRepository implements IDiffRepository {
     const db = getDatabase();
     const rows = await db.query.diffs.findMany({
       where: eq(diffs.sessionId, sessionId),
+      orderBy: [asc(diffs.createdAt)],
     });
     return rows.map(row => this.toEntity(row));
   }
@@ -30,6 +31,7 @@ export class SqliteDiffRepository implements IDiffRepository {
     const db = getDatabase();
     const rows = await db.query.diffs.findMany({
       where: eq(diffs.approvalId, approvalId),
+      orderBy: [asc(diffs.createdAt)],
     });
     return rows.map(row => this.toEntity(row));
   }
@@ -46,6 +48,7 @@ export class SqliteDiffRepository implements IDiffRepository {
     const db = getDatabase();
     const rows = await db.query.diffs.findMany({
       where: eq(diffs.status, 'pending'),
+      orderBy: [asc(diffs.createdAt)],
     });
     return rows.map(row => this.toEntity(row));
   }
@@ -57,6 +60,7 @@ export class SqliteDiffRepository implements IDiffRepository {
         eq(diffs.sessionId, sessionId),
         eq(diffs.filePath, filePath)
       ),
+      orderBy: [asc(diffs.createdAt)],
     });
     return rows.map(row => this.toEntity(row));
   }
