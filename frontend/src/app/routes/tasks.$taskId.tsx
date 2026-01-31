@@ -7,7 +7,7 @@ import {
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useSessionWebSocket, useStartSession, useChatHandlers, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useChatHandlers, useTaskWebSocket, useRealtimeState, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
@@ -292,30 +292,30 @@ function TaskDetailPage() {
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // Real-time WebSocket chat state
-  const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
-  const [currentAssistantMessage, setCurrentAssistantMessage] = useState('');
-  const [currentToolUse, setCurrentToolUse] = useState<ToolUseBlock | null>(null);
-  const [streamingToolUses, setStreamingToolUses] = useState<ToolCommand[]>([]);
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  // Track session status from WebSocket (more immediate than React Query)
-  const [wsSessionStatus, setWsSessionStatus] = useState<string | null>(null);
-  // Message buffers for delta streaming (per-message incremental content)
-  const [, setMessageBuffers] = useState<Record<string, string>>({});
-  // Ref for streaming buffer (avoids stale closure in finalization)
-  const streamingBufferRef = useRef<string>('');
-  // Ref for AI session container (prevents height collapse on Resume)
+  // Realtime state hook
+  const {
+    realtimeMessages,
+    setRealtimeMessages,
+    currentAssistantMessage,
+    setCurrentAssistantMessage,
+    currentToolUse,
+    setCurrentToolUse,
+    setStreamingToolUses,
+    isWaitingForResponse,
+    setIsWaitingForResponse,
+    wsSessionStatus,
+    setWsSessionStatus,
+    setMessageBuffers,
+    streamingBufferRef,
+    processedMessageIds,
+  } = useRealtimeState();
+
+  // Scroll restoration state (will be extracted in 2.4)
   const aiSessionContainerRef = useRef<HTMLDivElement>(null);
-  // Track if user has scrolled up (to prevent auto-scroll to bottom when reading history)
   const userScrolledUpRef = useRef(false);
-  // Ref for chatMessages to enable dedup in WebSocket callback (avoids stale closure)
   const chatMessagesRef = useRef<ChatMessage[]>([]);
-  // Track processed message IDs to prevent duplicates (messageId-based dedup)
-  const processedMessageIds = useRef<Set<string>>(new Set());
-  // Save scroll position before Resume to restore after messages refetch
   const savedScrollPosition = useRef<number | null>(null);
-  // Track if currently restoring scroll (prevent auto-scroll override)
   const isRestoringScroll = useRef(false);
-  // Track if user is scrolled up (for "New messages" indicator)
   const [isScrolledUpFromBottom, setIsScrolledUpFromBottom] = useState(false);
 
   // Container lifecycle tracking removed (too noisy)
@@ -388,117 +388,20 @@ function TaskDetailPage() {
     (wsSessionStatus === null || !terminalStates.includes(wsSessionStatus));
 
   // WebSocket connection for real-time chat
-  const { isConnected: isWsConnected, sendUserInput, sendCancel, sendApprovalResponse } = useSessionWebSocket({
+  const { isConnected: isWsConnected, sendUserInput, sendCancel, sendApprovalResponse } = useTaskWebSocket({
     sessionId: activeSessionId,
-    enabled: isSessionLive,
-    onMessage: (text, isFinal, messageId) => {
-      if (isFinal) {
-        // Use ref for authoritative buffer value (avoids stale closure)
-        const finalContent = streamingBufferRef.current + (text || '');
-        const msgId = messageId || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-        if (finalContent && !processedMessageIds.current.has(msgId)) {
-          // Dedupe by messageId: check against BOTH realtimeMessages AND chatMessages (API)
-          const apiHasMessage = chatMessagesRef.current.some(m => m.id === msgId);
-          if (!apiHasMessage) {
-            setRealtimeMessages(prev => {
-              if (prev.some(m => m.id === msgId)) return prev;
-              return [...prev, {
-                id: msgId,
-                role: 'assistant',
-                content: finalContent,
-                commands: streamingToolUses.length > 0 ? streamingToolUses : undefined,
-              }];
-            });
-            processedMessageIds.current.add(msgId);
-          }
-        }
-        streamingBufferRef.current = '';
-        setCurrentAssistantMessage('');
-        setCurrentToolUse(null);
-        setStreamingToolUses([]);
-        setIsWaitingForResponse(false);
-      } else {
-        streamingBufferRef.current += text;
-        setCurrentAssistantMessage(streamingBufferRef.current);
-      }
-    },
-    onToolUse: (tool) => {
-      setCurrentToolUse(tool);
-      setStreamingToolUses(prev => [...prev, {
-        cmd: tool.name,
-        status: 'success',
-        input: tool.input,
-      }]);
-    },
-    onStatus: (status) => {
-      // Update WebSocket session status immediately (before React Query refetch)
-      setWsSessionStatus(status);
-      if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-        // NOTE: Don't add message here - onMessage('', true) already handles it
-        // Adding here causes duplication due to stale closure
-        setCurrentToolUse(null);
-        setIsWaitingForResponse(false);
-        // Refetch session data to update status in UI
-        if (activeSessionId) {
-          queryClient.invalidateQueries({ queryKey: sessionKeys.messages(activeSessionId) });
-          queryClient.invalidateQueries({ queryKey: sessionKeys.detail(activeSessionId) });
-          queryClient.invalidateQueries({ queryKey: sessionKeys.lists() });
-        }
-      }
-    },
-    onApprovalRequired: (data) => {
-      setPendingApprovals(prev => [...prev, {
-        id: data.requestId,
-        sessionId: activeSessionId,
-        type: 'tool',
-        payload: { toolName: data.toolName, toolInput: data.toolInput as ApprovalRequest['payload']['toolInput'] },
-        toolCategory: data.category,
-        status: 'pending',
-        timeoutAt: new Date(data.timeoutAt).toISOString(),
-        decidedAt: null,
-        decidedBy: null,
-        createdAt: new Date().toISOString(),
-      }]);
-    },
-    onError: (message) => {
-      console.error('WebSocket error:', message);
-      setIsWaitingForResponse(false);
-    },
-    onDisconnected: () => {
-      // Reset waiting state when WebSocket disconnects to prevent chat from being blocked
-      // Use ref for authoritative buffer value (avoids stale closure)
-      if (streamingBufferRef.current) {
-        setRealtimeMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: streamingBufferRef.current }]);
-        streamingBufferRef.current = '';
-        setCurrentAssistantMessage('');
-      }
-      setCurrentToolUse(null);
-      setIsWaitingForResponse(false);
-    },
-    // Delta streaming callbacks
-    onDelta: (messageId, text, offset) => {
-      // Append delta to message buffer for incremental streaming
-      setMessageBuffers(prev => ({
-        ...prev,
-        [messageId]: (prev[messageId] || '') + text,
-      }));
-      // Update current streaming display
-      setCurrentAssistantMessage((prev) => prev + text);
-    },
-    onStreamingBuffer: (messageId, content, offset) => {
-      // Reconnect catch-up: restore buffered content
-      setMessageBuffers(prev => ({
-        ...prev,
-        [messageId]: content,
-      }));
-      setCurrentAssistantMessage(content);
-    },
-    onUserMessageSaved: (messageId, _content) => {
-      // User message confirmed saved to backend
-      console.log('User message saved:', messageId);
-      // Optionally update message ID for user message if needed
-    },
+    isSessionLive,
+    chatMessagesRef,
+    streamingBufferRef,
+    processedMessageIds,
+    setRealtimeMessages,
+    setCurrentAssistantMessage,
+    setCurrentToolUse,
+    setStreamingToolUses,
+    setIsWaitingForResponse,
+    setWsSessionStatus,
+    setPendingApprovals,
+    setMessageBuffers,
   });
 
   // Close dropdown on click outside

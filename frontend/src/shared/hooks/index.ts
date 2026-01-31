@@ -15,3 +15,5 @@ export { useFolderPicker } from './use-folder-picker';
 export { useSettings, useUpdateSettings, useSetApiKey, useRemoveApiKey, useEncryptionStatus } from './use-settings';
 export { useVersionCheck, useCurrentVersion } from './use-version-check';
 export { useChatHandlers } from './use-chat-handlers';
+export { useTaskWebSocket } from './use-task-websocket';
+export { useRealtimeState } from './use-realtime-state';
