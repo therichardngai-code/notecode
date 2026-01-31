@@ -17,3 +17,8 @@ export { useVersionCheck, useCurrentVersion } from './use-version-check';
 export { useChatHandlers } from './use-chat-handlers';
 export { useTaskWebSocket } from './use-task-websocket';
 export { useRealtimeState } from './use-realtime-state';
+export { useMessageConversion } from './use-message-conversion';
+export { useFilteredSessionIds } from './use-filtered-session-ids';
+export { useDragDrop } from './use-drag-drop';
+export { useContextPicker } from './use-context-picker';
+export { useTaskUIState } from './use-task-ui-state';

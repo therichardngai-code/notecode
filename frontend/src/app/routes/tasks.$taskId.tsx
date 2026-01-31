@@ -1,23 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
   Folder, Bot, Sparkles, Zap,
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useChatHandlers, useTaskWebSocket, useRealtimeState, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useChatHandlers, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useDragDrop, useContextPicker, useTaskUIState, type TaskDetailProperty } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
-import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
 import type { ApprovalRequest, SessionResumeMode } from '@/adapters/api/sessions-api';
 import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
 // Shared types and utilities
-import type { ChatMessage, UIDiff, ToolCommand } from '@/shared/types';
-import { messageToChat, diffToUI } from '@/shared/utils';
-import { getFilteredSessionIds } from '@/shared/utils/session-chain';
+import type { ChatMessage } from '@/shared/types';
 // Shared task-detail components
 import {
   ContextWarningDialog, ChatInputFooter, ContentPreviewModal, TaskInfoTabsNav,
@@ -37,7 +33,6 @@ const taskDetailPropertyTypes = [statusPropertyType, ...propertyTypes];
 
 function TaskDetailPage() {
   const { taskId } = Route.useParams();
-  const queryClient = useQueryClient();
   const openFileAsTab = useUIStore((s) => s.openFileAsTab);
 
   // Shared hook - single source of truth (API only)
@@ -90,29 +85,10 @@ function TaskDetailPage() {
   const activeSessionId = activeSession?.id || '';
 
   // Track providerSessionId to maintain stable query during Resume
-  // Resume continues same conversation (same providerSessionId), so keep using previous filter
-  const previousProviderSessionIdRef = useRef<string | null>(null);
-  const stableFilterSessionIds = useRef<string[] | null>(null);
-
   // Determine session chain filter for Renew mode
   // If there's a Renew in the chain, only show messages from Renew onwards
   // CRITICAL: Keep filter stable during Resume (same providerSessionId) to prevent scroll jump
-  const filterSessionIds = useMemo(() => {
-    if (!latestSession) return null;
-
-    const currentProviderSessionId = latestSession.providerSessionId;
-
-    // If providerSessionId hasn't changed, reuse previous filter (prevents refetch during Resume)
-    if (currentProviderSessionId && currentProviderSessionId === previousProviderSessionIdRef.current) {
-      return stableFilterSessionIds.current;
-    }
-
-    // ProviderSessionId changed or first load - recalculate filter
-    const newFilter = getFilteredSessionIds(latestSession, sessions);
-    previousProviderSessionIdRef.current = currentProviderSessionId;
-    stableFilterSessionIds.current = newFilter;
-    return newFilter;
-  }, [latestSession, sessions]);
+  const filterSessionIds = useFilteredSessionIds({ latestSession, sessions });
 
   // Fetch all messages for task (across all sessions) and diffs from active session
   // In Renew mode, only show messages from Renew session chain. In Retry/Resume, show all cumulative.
@@ -120,8 +96,7 @@ function TaskDetailPage() {
   const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
 
   // Convert API data to UI format
-  const chatMessages: ChatMessage[] = apiMessages.map(messageToChat);
-  const sessionDiffs: UIDiff[] = apiDiffs.map(diffToUI);
+  const { chatMessages, sessionDiffs } = useMessageConversion({ apiMessages, apiDiffs });
 
   // Keep chatMessagesRef in sync for WebSocket callback dedup (avoids stale closure)
   useEffect(() => {
@@ -259,37 +234,46 @@ function TaskDetailPage() {
   const isStartingSession = startSessionMutation.isPending;
 
   // UI state
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
-  const [activeInfoTab, setActiveInfoTab] = useState<'activity' | 'ai-session' | 'diffs' | 'sessions'>('ai-session');
-  const [chatInput, setChatInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [diffApprovals, setDiffApprovals] = useState<Record<string, 'approved' | 'rejected' | null>>({});
-  const [showAddProperty, setShowAddProperty] = useState(false);
+  // UI state hook
+  const {
+    isDescriptionExpanded, setIsDescriptionExpanded,
+    activeInfoTab, setActiveInfoTab,
+    chatInput, setChatInput,
+    isTyping, setIsTyping,
+    diffApprovals, setDiffApprovals,
+    showAddProperty, setShowAddProperty,
+    expandedCommands, setExpandedCommands,
+    attachedFiles, setAttachedFiles,
+    selectedModel, setSelectedModel,
+    webSearchEnabled, setWebSearchEnabled,
+    showModelDropdown, setShowModelDropdown,
+    chatPermissionMode, setChatPermissionMode,
+    showPermissionDropdown, setShowPermissionDropdown,
+    selectedDiffFile, setSelectedDiffFile,
+    subPanelTab, setSubPanelTab,
+    isSubPanelOpen, setIsSubPanelOpen,
+    contentModalData, setContentModalData,
+  } = useTaskUIState();
+
   const addPropertyRef = useRef<HTMLDivElement>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
-  const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
-
-  // Chat input options state (aligned with FloatingTaskDetailPanel)
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState<'default' | 'haiku' | 'sonnet' | 'opus'>('default');
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [chatPermissionMode, setChatPermissionMode] = useState<'default' | 'acceptEdits' | 'bypassPermissions'>('default');
-  const [showPermissionDropdown, setShowPermissionDropdown] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const permissionDropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Drag and drop state
-  const [isDragOver, setIsDragOver] = useState(false);
+  // Drag and drop hook
+  const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useDragDrop({ setAttachedFiles });
 
-  // @ mention context picker state
-  const [showContextPicker, setShowContextPicker] = useState(false);
-  const [contextSearch, setContextSearch] = useState('');
-  const [cursorPosition, setCursorPosition] = useState(0);
-  const [contextPickerIndex, setContextPickerIndex] = useState(0);
-  const contextPickerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+
+  // @ mention context picker hook
+  const {
+    showContextPicker, contextPickerIndex, contextPickerRef, filteredFiles,
+    handleChatInputChange, handleContextPickerKeyDown, handlePaste,
+    selectContextFile, addContext
+  } = useContextPicker({
+    chatInput, setChatInput, attachedFiles, setAttachedFiles, chatInputRef
+  });
 
   // Real-time WebSocket chat state
   // Realtime state hook
@@ -370,13 +354,6 @@ function TaskDetailPage() {
   }, [currentAssistantMessage]);
 
   // Sample project files - in real implementation, fetch from API
-  const projectFiles = [
-    'src/index.ts', 'src/app.tsx', 'src/components/Button.tsx', 'src/components/Modal.tsx',
-    'src/hooks/useAuth.ts', 'src/utils/helpers.ts', 'package.json', 'tsconfig.json', 'README.md',
-  ];
-
-  // Filter files based on search
-  const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
 
   // Check if session is running (use activeSession AND wsSessionStatus for immediate updates)
   // wsSessionStatus provides immediate feedback from WebSocket before React Query refetches
@@ -415,7 +392,7 @@ function TaskDetailPage() {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showAddProperty]);
+  }, [showAddProperty, setShowAddProperty]);
 
   // Close edit mode on click outside edit form
   useEffect(() => {
@@ -428,7 +405,7 @@ function TaskDetailPage() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isEditing, cancelEdit]);
+  }, [isEditing, cancelEdit, setShowAddProperty]);
   const toggleCommand = (key: string) => {
     setExpandedCommands(prev => {
       const next = new Set(prev);
@@ -446,7 +423,7 @@ function TaskDetailPage() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showModelDropdown]);
+  }, [showModelDropdown, setShowModelDropdown]);
 
   // Close permission dropdown on click outside
   useEffect(() => {
@@ -456,20 +433,8 @@ function TaskDetailPage() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showPermissionDropdown]);
+  }, [showPermissionDropdown, setShowPermissionDropdown]);
 
-  // Close context picker on click outside
-  useEffect(() => {
-    if (!showContextPicker) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (contextPickerRef.current && !contextPickerRef.current.contains(e.target as Node)) setShowContextPicker(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showContextPicker]);
-
-  // Reset picker index when search changes
-  useEffect(() => { setContextPickerIndex(0); }, [contextSearch]);
 
   // Handle file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -483,82 +448,10 @@ function TaskDetailPage() {
 
   const removeAttachedFile = (index: number) => setAttachedFiles(prev => prev.filter((_, i) => i !== index));
 
-  // Drag and drop handlers
-  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }, []);
-  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }, []);
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      const filePaths = Array.from(files).map(f => f.name);
-      setAttachedFiles(prev => [...prev, ...filePaths]);
-    }
-  }, []);
 
   // Handle paste from clipboard
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    const files: string[] = [];
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].kind === 'file') {
-        const file = items[i].getAsFile();
-        if (file) files.push(file.name);
-      }
-    }
-    if (files.length > 0) setAttachedFiles(prev => [...prev, ...files]);
-  }, []);
-
-  // Handle input change - detect @ trigger
-  const handleChatInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    const cursorPos = e.target.selectionStart || 0;
-    setChatInput(value);
-    setCursorPosition(cursorPos);
-    const textBeforeCursor = value.slice(0, cursorPos);
-    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
-    if (lastAtIndex !== -1) {
-      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
-      const charBeforeAt = lastAtIndex > 0 ? textBeforeCursor[lastAtIndex - 1] : ' ';
-      if ((charBeforeAt === ' ' || lastAtIndex === 0) && !textAfterAt.includes(' ')) {
-        setContextSearch(textAfterAt);
-        setShowContextPicker(true);
-        return;
-      }
-    }
-    setShowContextPicker(false);
-  }, []);
-
-  // Select file from context picker
-  const selectContextFile = useCallback((file: string) => {
-    const textBeforeCursor = chatInput.slice(0, cursorPosition);
-    const textAfterCursor = chatInput.slice(cursorPosition);
-    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
-    const newText = textBeforeCursor.slice(0, lastAtIndex) + `@${file} ` + textAfterCursor;
-    setChatInput(newText);
-    setShowContextPicker(false);
-    setContextSearch('');
-    if (!attachedFiles.includes(file)) setAttachedFiles(prev => [...prev, file]);
-    chatInputRef.current?.focus();
-  }, [chatInput, cursorPosition, attachedFiles]);
-
-  // Handle keyboard navigation in context picker
-  const handleContextPickerKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!showContextPicker) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(prev => Math.min(prev + 1, filteredFiles.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setContextPickerIndex(prev => Math.max(prev - 1, 0)); }
-    else if (e.key === 'Enter' && filteredFiles.length > 0) { e.preventDefault(); selectContextFile(filteredFiles[contextPickerIndex]); }
-    else if (e.key === 'Escape') setShowContextPicker(false);
-  }, [showContextPicker, filteredFiles, contextPickerIndex, selectContextFile]);
 
   // File Details sub-panel state
-  const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
-  const [subPanelTab, setSubPanelTab] = useState<'chat-session' | 'diffs'>('diffs');
-  const [isSubPanelOpen, setIsSubPanelOpen] = useState(false);
-
-  // Content modal state for Write tool preview
-  const [contentModalData, setContentModalData] = useState<{ filePath: string; content: string } | null>(null);
 
   // Chat handlers hook
   const { sendMessage, handleChatKeyDown } = useChatHandlers({
@@ -783,7 +676,7 @@ function TaskDetailPage() {
         onRemoveFile={removeAttachedFile}
         onFileSelect={handleFileSelect}
         onSelectContextFile={selectContextFile}
-        onAddContext={() => { setChatInput(chatInput + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }}
+        onAddContext={addContext}
         onSetSelectedModel={setSelectedModel}
         onToggleWebSearch={() => setWebSearchEnabled(!webSearchEnabled)}
         onSetPermissionMode={setChatPermissionMode}
