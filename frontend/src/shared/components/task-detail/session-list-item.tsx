@@ -3,6 +3,7 @@
  * Shows status icon, session ID, attempt number, resume mode, and timestamps
  */
 
+import { memo } from 'react';
 import { Clock, Pause, CheckCircle, X } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { Session } from '@/adapters/api/sessions-api';
@@ -59,7 +60,7 @@ function StatusIcon({ status }: { status: string }) {
   }
 }
 
-export function SessionListItem({ session, index, isLatest }: SessionListItemProps) {
+export const SessionListItem = memo(function SessionListItem({ session, index, isLatest }: SessionListItemProps) {
   const createdAt = new Date(session.createdAt);
   const endedAt = session.endedAt ? new Date(session.endedAt) : null;
 
@@ -94,4 +95,4 @@ export function SessionListItem({ session, index, isLatest }: SessionListItemPro
       </div>
     </div>
   );
-}
+});

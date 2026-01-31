@@ -20,8 +20,8 @@ import { cn } from '@/shared/lib/utils';
 import { ScrollArea } from '@radix-ui/react-scroll-area';
 
 // Panel items - single click toggles panel, double click opens in tab
-// (same as prototype: explorer, source-control, inbox)
-const panelItems = ['/explorer', '/source-control', '/inbox'];
+// (same as prototype: source-control, inbox)
+const panelItems = ['/source-control', '/inbox'];
 
 interface NavigatorProps {
   isCollapsed?: boolean;

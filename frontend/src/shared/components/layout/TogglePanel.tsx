@@ -7,11 +7,12 @@ interface TogglePanelProps {
   onClose?: () => void;
   onFileClick?: (fileName: string, filePath: string) => void;
   onOpenFileInNewTab?: (fileName: string, filePath: string) => void;
+  projectId?: string;
 }
 
-export function TogglePanel({ activePanel, onClose, onFileClick, onOpenFileInNewTab }: TogglePanelProps) {
+export function TogglePanel({ activePanel, onClose, onFileClick, onOpenFileInNewTab, projectId }: TogglePanelProps) {
   const panels: Record<PanelType, React.ReactNode> = {
-    explorer: <ExplorerPanel onClose={onClose} onFileClick={onFileClick} onOpenInNewTab={onOpenFileInNewTab} />,
+    explorer: <ExplorerPanel onClose={onClose} onFileClick={onFileClick} onOpenInNewTab={onOpenFileInNewTab} projectId={projectId} />,
     search: <SearchPanel onClose={onClose} />,
     'source-control': <SourceControlPanel onClose={onClose} />,
     inbox: <InboxPanel onClose={onClose} />,

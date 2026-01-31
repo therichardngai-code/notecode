@@ -3,7 +3,24 @@
  * Base HTTP client for backend communication
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Extend window interface for Electron API
+declare global {
+  interface Window {
+    electronAPI?: {
+      onBackendUrl: (callback: (url: string) => void) => void;
+    };
+  }
+}
+
+let API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+// Check for Electron and listen for dynamic port
+if (typeof window !== 'undefined' && window.electronAPI) {
+  window.electronAPI.onBackendUrl((url: string) => {
+    console.log('[API Client] Received dynamic backend URL:', url);
+    API_BASE_URL = url;
+  });
+}
 
 export class ApiError extends Error {
   statusCode: number;

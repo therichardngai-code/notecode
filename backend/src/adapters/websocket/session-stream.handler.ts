@@ -405,6 +405,34 @@ export class SessionStreamHandler {
             costUsd: (result.total_cost_usd as number) ?? 0,
           }];
 
+          // Compute context window from token usage
+          if (session.provider && usage) {
+            const contextWindow = this.computeContextWindow(
+              usage.input_tokens ?? 0,
+              usage.cache_creation_input_tokens ?? 0,
+              usage.cache_read_input_tokens ?? 0,
+              session.provider
+            );
+            session.updateContextWindow(contextWindow);
+
+            console.log(`[SessionStream] Context: ${contextWindow.contextPercent}% (${contextWindow.totalContextTokens.toLocaleString()}/${contextWindow.contextSize.toLocaleString()} tokens)`);
+
+            // Broadcast to frontend via WebSocket
+            this.broadcast(sessionId, {
+              type: 'context:update',
+              data: {
+                sessionId,
+                contextWindow
+              }
+            });
+
+            // Log warning if critical
+            const config = PROVIDER_CONTEXT_CONFIG[session.provider];
+            if (contextWindow.contextPercent >= config.criticalThreshold) {
+              console.warn(`[SessionStream] ⚠️ Context window at ${contextWindow.contextPercent}% - consider Renew`);
+            }
+          }
+
           // Only update if session is still running (not cancelled)
           if (session.status === 'running') {
             if (isSuccess) {
@@ -424,35 +452,6 @@ export class SessionStreamHandler {
         });
       }
 
-      // Parse context window data (if available in any output)
-      // CLI may send context_window in data, result, or status events
-      if (output.content && typeof output.content === 'object') {
-        const session = await this.sessionRepo.findById(sessionId);
-        if (session && session.provider) {
-          const contextWindow = this.parseContextWindow(output.content, session.provider);
-          if (contextWindow) {
-            session.updateContextWindow(contextWindow);
-            await this.sessionRepo.save(session);
-
-            console.log(`[SessionStream] Context: ${contextWindow.contextPercent}% (${contextWindow.totalContextTokens.toLocaleString()}/${contextWindow.contextSize.toLocaleString()} tokens)`);
-
-            // Broadcast to frontend via WebSocket
-            this.broadcast(sessionId, {
-              type: 'context:update',
-              data: {
-                sessionId,
-                contextWindow
-              }
-            });
-
-            // Log warning if critical
-            const config = PROVIDER_CONTEXT_CONFIG[session.provider];
-            if (contextWindow.contextPercent >= config.criticalThreshold) {
-              console.warn(`[SessionStream] ⚠️ Context window at ${contextWindow.contextPercent}% - consider Renew`);
-            }
-          }
-        }
-      }
     });
 
     // Subscribe to exit - persist status to DB as fallback
@@ -827,42 +826,34 @@ export class SessionStreamHandler {
   }
 
   /**
-   * Parse context_window data from CLI JSON output
-   * CRITICAL FIX: Excludes cache_read tokens (don't count toward context)
-   * Only input_tokens + cache_creation_input_tokens consume context window
+   * Compute context window usage from token counts
+   * Matches statusline.cjs logic: includes ALL token types (input + cache_creation + cache_read)
    */
-  private parseContextWindow(
-    data: any,
+  private computeContextWindow(
+    inputTokens: number,
+    cacheCreationTokens: number,
+    cacheReadTokens: number,
     provider: ProviderType
-  ): ContextWindowUsage | null {
-    const usage = data.context_window?.current_usage;
-    const contextSize = data.context_window?.context_window_size;
-
-    if (!usage || !contextSize) {
-      return null;
-    }
-
+  ): ContextWindowUsage {
     const config = PROVIDER_CONTEXT_CONFIG[provider];
 
-    // CRITICAL: Only input + cache_creation count toward context window
-    // cache_read does NOT consume context (cached content)
-    const totalContextTokens =
-      (usage.input_tokens ?? 0) +
-      (usage.cache_creation_input_tokens ?? 0);
+    // IMPORTANT: Include ALL tokens (matches statusline.cjs lines 404-406)
+    // input + cache_creation + cache_read
+    const totalContextTokens = inputTokens + cacheCreationTokens + cacheReadTokens;
 
     // Add provider-specific buffer to estimate effective usage
     // Buffer accounts for autocompact reserved space
     const effectiveTokens = totalContextTokens + config.autocompactBuffer;
     const contextPercent = Math.min(100,
-      Math.round((effectiveTokens / contextSize) * 100)
+      Math.round((effectiveTokens / config.contextSize) * 100)
     );
 
     return {
-      inputTokens: usage.input_tokens ?? 0,
-      cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
-      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+      inputTokens,
+      cacheCreationTokens,
+      cacheReadTokens,
       totalContextTokens,
-      contextSize,
+      contextSize: config.contextSize,
       contextPercent,
       provider,
       timestamp: new Date()

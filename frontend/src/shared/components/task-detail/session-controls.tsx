@@ -3,6 +3,7 @@
  * Provides retry/renew/fork actions for session recovery
  */
 
+import { memo } from 'react';
 import { RotateCcw, RefreshCw, Copy } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { Session, SessionResumeMode } from '@/adapters/api/sessions-api';
@@ -13,7 +14,7 @@ export interface SessionControlsProps {
   isLoading: boolean;
 }
 
-export function SessionControls({
+export const SessionControls = memo(function SessionControls({
   session,
   onStartSession,
   isLoading,
@@ -60,4 +61,4 @@ export function SessionControls({
       </div>
     </div>
   );
-}
+});

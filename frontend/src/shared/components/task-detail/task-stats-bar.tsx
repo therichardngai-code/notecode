@@ -3,6 +3,8 @@
  * Displays total attempts with breakdown by type (renew, retry, fork)
  */
 
+import { memo } from 'react';
+
 export interface TaskStatsBarProps {
   totalAttempts: number;
   sessionsCount: number;
@@ -11,7 +13,7 @@ export interface TaskStatsBarProps {
   forkCount?: number;
 }
 
-export function TaskStatsBar({
+export const TaskStatsBar = memo(function TaskStatsBar({
   totalAttempts,
   sessionsCount,
   renewCount = 0,
@@ -29,4 +31,4 @@ export function TaskStatsBar({
       {forkCount > 0 && <span className="text-purple-500">{forkCount} fork</span>}
     </div>
   );
-}
+});

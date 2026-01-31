@@ -34,6 +34,17 @@ export interface ToolStats {
   webFetchRequests: number;
 }
 
+export interface ContextWindowUsage {
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalContextTokens: number;
+  contextSize: number;
+  contextPercent: number;
+  provider: ProviderType;
+  timestamp: string;
+}
+
 export interface Session {
   id: string;
   taskId: string;
@@ -53,6 +64,7 @@ export interface Session {
   tokenUsage: TokenUsage;
   modelUsage: ModelUsage[];
   toolStats: ToolStats;
+  contextWindow?: ContextWindowUsage;
   createdAt: Date;
   updatedAt: Date;
 }

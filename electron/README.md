@@ -44,21 +44,27 @@ npm run build
 
 ### Run in Development Mode
 
+**IMPORTANT:** Backend must be built first (compiled to `dist/main.js`).
+
 ```bash
-# Terminal 1: Start backend (if needed)
-cd ../backend
-npm run dev
+# Option 1: Auto-build and start (recommended)
+npm run electron:dev
 
-# Terminal 2: Start frontend dev server
-cd ../frontend
-npm run dev
+# Option 2: Manual steps
+# Step 1: Build backend
+npm run build --prefix backend
 
-# Terminal 3: Start Electron
-cd ../electron
-npm run dev
+# Step 2: Start frontend dev server
+cd frontend && npm run dev
+
+# Step 3: In another terminal, start Electron
+cd electron && npm run dev
 ```
 
-**Note:** Electron will connect to Vite dev server at `http://localhost:5173`
+**Note:**
+- Electron will connect to Vite dev server at `http://localhost:5173`
+- Backend runs compiled code (`dist/main.js`), not TypeScript source
+- If you modify backend, rebuild: `npm run build --prefix backend`
 
 ## Building Desktop Apps
 

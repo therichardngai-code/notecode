@@ -17,3 +17,4 @@ export * from './settings.controller.js';
 export * from './version.controller.js';
 export * from './backup.controller.js';
 export * from './cli-provider-hooks.controller.js';
+export { filesRoutes as registerFilesController } from './files.controller.js';

@@ -2,6 +2,7 @@
  * Status Badge component - displays task status with icon and color
  */
 
+import { memo } from 'react';
 import { Clock, Play, Pause, CheckCircle, Archive } from 'lucide-react';
 import { statusConfig, type StatusId } from '@/shared/config/task-config';
 
@@ -18,7 +19,7 @@ export interface StatusBadgeProps {
   status: StatusId;
 }
 
-export function StatusBadge({ status }: StatusBadgeProps) {
+export const StatusBadge = memo(function StatusBadge({ status }: StatusBadgeProps) {
   const config = statusConfig[status];
   const Icon = iconMap[status];
 
@@ -31,4 +32,4 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       {config.label}
     </div>
   );
-}
+});

@@ -101,13 +101,7 @@ export function useTaskMessages(
   return useQuery({
     queryKey: ['task-messages', taskId, filterSessionIds?.join(',') || 'all'],
     queryFn: async () => {
-      console.log('[FLOW TRACE] useTaskMessages fetching from backend...');
       const result = await tasksApi.getMessages(taskId!, limit, filterSessionIds);
-      console.log('[FLOW TRACE] useTaskMessages backend response:', {
-        messageCount: result.messages.length,
-        sessionIds: [...new Set(result.messages.map(m => m.sessionId))],
-        firstMessage: result.messages[0]?.blocks[0]?.content?.substring(0, 50),
-      });
       return result;
     },
     placeholderData: (previousData) => previousData, // Keep previous data during refetch to prevent scroll jump
@@ -125,10 +119,6 @@ export function useTaskMessages(
         toolInput: null,
         toolResult: null,
       }));
-      console.log('[FLOW TRACE] useTaskMessages select result:', {
-        convertedCount: converted.length,
-        sessionIds: [...new Set(converted.map(m => m.sessionId))],
-      });
       return converted;
     },
     enabled: !!taskId,
@@ -146,18 +136,11 @@ export function useStartSession() {
   return useMutation({
     mutationFn: (data: StartSessionRequest) => sessionsApi.start(data),
     onSuccess: (response, variables) => {
-      console.log('[FLOW TRACE] useStartSession.onSuccess:', {
-        mode: variables.mode,
-        newSessionId: response.session.id,
-        newProviderSessionId: response.session.providerSessionId,
-        willInvalidateMessages: true,
-      });
       queryClient.invalidateQueries({ queryKey: sessionKeys.list(variables.taskId) });
       queryClient.invalidateQueries({ queryKey: sessionKeys.running() });
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(variables.taskId) });
       // Invalidate task messages to refetch cumulative messages after Resume
       queryClient.invalidateQueries({ queryKey: ['task-messages', variables.taskId] });
-      console.log('[FLOW TRACE] Messages query invalidated - will refetch');
     },
   });
 }

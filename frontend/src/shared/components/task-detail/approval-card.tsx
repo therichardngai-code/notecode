@@ -3,7 +3,7 @@
  * Used in AI Session tab for tool approval requests
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { Clock, FileCode, Terminal, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { ApprovalRequest } from '@/adapters/api/sessions-api';
@@ -15,7 +15,7 @@ export interface ApprovalCardProps {
   isProcessing: boolean;
 }
 
-export function ApprovalCard({
+export const ApprovalCard = memo(function ApprovalCard({
   approval,
   onApprove,
   onReject,
@@ -106,4 +106,4 @@ export function ApprovalCard({
       </div>
     </div>
   );
-}
+});

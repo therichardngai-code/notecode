@@ -25,6 +25,18 @@ export interface ToolStats {
 // Session resume modes
 export type SessionResumeMode = 'renew' | 'retry' | 'fork';
 
+// Context window usage tracking
+export interface ContextWindowUsage {
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalContextTokens: number;
+  contextSize: number;
+  contextPercent: number;
+  provider: ProviderType;
+  timestamp: string;
+}
+
 export interface Session {
   id: string;
   taskId: string;
@@ -50,6 +62,7 @@ export interface Session {
   resumeMode?: SessionResumeMode | null;  // null = first attempt
   attemptNumber?: number;  // defaults to 1
   resumedFromSessionId?: string | null;  // Source session ID (for retry/fork)
+  contextWindow?: ContextWindowUsage | null;  // Context window tracking
   createdAt: string;
   updatedAt: string;
 }

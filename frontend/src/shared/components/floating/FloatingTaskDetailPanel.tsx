@@ -28,7 +28,9 @@ import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 import {
   StatusBadge, PriorityBadge, PropertyRow, ApprovalCard,
   AttemptStats, GitStatusCard,
+  ContextWindowIndicator, ContextWarningDialog,
 } from '@/shared/components/task-detail';
+import { useContextWarning } from '@/shared/hooks/use-context-warning';
 import { useUIStore } from '@/shared/stores';
 
 interface FloatingTaskDetailPanelProps {
@@ -79,6 +81,9 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )[0];
 
+  // Context window warning hook
+  const { showWarning, dismissWarning } = useContextWarning(latestSession);
+
   // Start session mutation (invalidates queries automatically) - same as FullView
   const startSessionMutation = useStartSession();
 
@@ -108,20 +113,13 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     if (!latestSession) return null;
 
     const currentProviderSessionId = latestSession.providerSessionId;
-    console.log('[SCROLL DEBUG FloatingView] filterSessionIds calculation:', {
-      currentProviderSessionId,
-      previousProviderSessionId: previousProviderSessionIdRef.current,
-      sessionId: latestSession.id,
-    });
 
     // If providerSessionId hasn't changed, reuse previous filter (prevents refetch during Resume)
     if (currentProviderSessionId && currentProviderSessionId === previousProviderSessionIdRef.current) {
-      console.log('[SCROLL DEBUG FloatingView] Same providerSessionId - keeping stable filter to prevent scroll jump');
       return stableFilterSessionIds.current;
     }
 
     // ProviderSessionId changed or first load - recalculate filter
-    console.log('[SCROLL DEBUG FloatingView] ProviderSessionId changed - recalculating filter');
     const newFilter = getFilteredSessionIds(latestSession, sessions);
     previousProviderSessionIdRef.current = currentProviderSessionId;
     stableFilterSessionIds.current = newFilter;
@@ -379,30 +377,21 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     // Only reset scroll tracking for 'renew' mode (fresh start)
     // For 'retry', preserve user's scroll position to avoid uncomfortable jump
     if (mode === 'renew') {
-      console.log('[SCROLL DEBUG FloatingView] Renew mode - resetting scroll tracking');
       userScrolledUpRef.current = false;
     }
     // Save scroll position for Resume (to restore after messages refetch)
     if (mode === 'retry' && container) {
-      console.log('[SCROLL DEBUG FloatingView] Resume clicked - saving scroll position:', {
-        scrollTop: container.scrollTop,
-        scrollHeight: container.scrollHeight,
-        clientHeight: container.clientHeight,
-        containerExists: !!container,
-      });
       savedScrollPosition.current = container.scrollTop;
     }
     // Clear chat state - ONLY for Renew mode
     // Resume mode keeps existing messages to prevent scroll jump
     if (mode === 'renew') {
-      console.log('[SCROLL DEBUG FloatingView] Renew mode - clearing all messages');
       setRealtimeMessages([]);
       setCurrentAssistantMessage('');
       setStreamingToolUses([]);
       setMessageBuffers({}); // Clear delta streaming buffers
       processedMessageIds.current.clear(); // Clear processed message IDs for new session
     } else {
-      console.log('[SCROLL DEBUG FloatingView] Resume mode - keeping existing messages to prevent scroll jump');
       // Only clear streaming state, keep messages
       setCurrentAssistantMessage('');
       setStreamingToolUses([]);
@@ -476,18 +465,8 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // Restore scroll position after Resume (when messages refetch)
   // Use useLayoutEffect for synchronous execution before browser paint
   useLayoutEffect(() => {
-    console.log('[SCROLL DEBUG FloatingView] useLayoutEffect triggered - sessionMessages count:', sessionMessages.length, {
-      hasSavedPosition: savedScrollPosition.current !== null,
-      savedPosition: savedScrollPosition.current,
-      containerExists: !!aiSessionContainerRef.current,
-      currentScrollTop: aiSessionContainerRef.current?.scrollTop,
-      scrollHeight: aiSessionContainerRef.current?.scrollHeight,
-      isRestoringScroll: isRestoringScroll.current,
-    });
-
     // Prevent duplicate restoration attempts (useLayoutEffect can trigger multiple times)
     if (isRestoringScroll.current) {
-      console.log('[SCROLL DEBUG FloatingView] Already restoring - skipping duplicate attempt');
       return;
     }
 
@@ -495,38 +474,27 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
       const scrollPos = savedScrollPosition.current;
       const container = aiSessionContainerRef.current;
 
-      console.log('[SCROLL DEBUG FloatingView] Checking if can restore - scrollHeight:', container.scrollHeight, 'vs needed:', scrollPos);
-
       // KEY FIX: Only restore if container is tall enough
       // During Resume, messages are cleared first, causing scrollHeight to drop
       // Wait until messages are loaded and scrollHeight >= saved position
       if (container.scrollHeight >= scrollPos + container.clientHeight) {
         isRestoringScroll.current = true;
-        console.log('[SCROLL DEBUG FloatingView] Container tall enough - starting restoration to:', scrollPos);
 
         // Wait for DOM to fully render before restoring
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            console.log('[SCROLL DEBUG FloatingView] RAF callback - about to restore scroll');
             if (aiSessionContainerRef.current) {
-              console.log('[SCROLL DEBUG FloatingView] Before restore:', aiSessionContainerRef.current.scrollTop);
               aiSessionContainerRef.current.scrollTop = scrollPos;
-              console.log('[SCROLL DEBUG FloatingView] After restore:', aiSessionContainerRef.current.scrollTop, 'Expected:', scrollPos);
-            } else {
-              console.error('[SCROLL DEBUG FloatingView] Container lost during RAF!');
             }
             savedScrollPosition.current = null;
             // Keep restoration flag active briefly to prevent auto-scroll override
             setTimeout(() => {
               isRestoringScroll.current = false;
-              console.log('[SCROLL DEBUG FloatingView] Restoration complete - flag cleared');
             }, 100);
           });
         });
-      } else {
-        console.log('[SCROLL DEBUG FloatingView] Container too short - waiting for more messages to load');
-        // Don't clear savedScrollPosition - let it retry on next sessionMessages update
       }
+      // Don't clear savedScrollPosition - let it retry on next sessionMessages update
     }
   }, [sessionMessages]);
 
@@ -1589,13 +1557,14 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                 </div>
               </div>
             )}
-            <div className="mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <button
                 onClick={() => { setChatInput(chatInput + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors"
               >
                 <AtSign className="w-3.5 h-3.5" />Add context
               </button>
+              <ContextWindowIndicator contextWindow={latestSession?.contextWindow} />
             </div>
             {/* Attached Files Display */}
             {attachedFiles.length > 0 && (
@@ -1881,6 +1850,17 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
           </div>
         </div>
       )}
+
+      {/* Context Window Warning Dialog */}
+      <ContextWarningDialog
+        open={showWarning}
+        contextWindow={latestSession?.contextWindow}
+        onClose={dismissWarning}
+        onRenew={() => {
+          dismissWarning();
+          handleStartSessionWithMode('renew');
+        }}
+      />
     </>
   );
 }

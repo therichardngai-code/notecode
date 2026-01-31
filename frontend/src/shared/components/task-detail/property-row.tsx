@@ -2,13 +2,15 @@
  * Property Row component - read-only display of task property
  */
 
+import { memo } from 'react';
+
 export interface PropertyRowProps {
   icon: React.ElementType;
   label: string;
   value?: string;
 }
 
-export function PropertyRow({ icon: Icon, label, value }: PropertyRowProps) {
+export const PropertyRow = memo(function PropertyRow({ icon: Icon, label, value }: PropertyRowProps) {
   if (!value) return null;
 
   return (
@@ -20,4 +22,4 @@ export function PropertyRow({ icon: Icon, label, value }: PropertyRowProps) {
       <span className="text-sm text-foreground truncate">{value}</span>
     </div>
   );
-}
+});

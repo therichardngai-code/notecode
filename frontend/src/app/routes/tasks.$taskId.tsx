@@ -25,7 +25,9 @@ import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
 import {
   StatusBadge, PriorityBadge, PropertyRow, ApprovalCard, AttemptStats,
+  ContextWindowIndicator, ContextWarningDialog,
 } from '@/shared/components/task-detail';
+import { useContextWarning } from '@/shared/hooks/use-context-warning';
 import { useUIStore } from '@/shared/stores';
 
 export const Route = createFileRoute('/tasks/$taskId')({
@@ -68,6 +70,9 @@ function TaskDetailPage() {
   const latestSession = [...sessions].sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )[0];
+
+  // Context window warning hook
+  const { showWarning, dismissWarning } = useContextWarning(latestSession);
 
   // Start session mutation (invalidates queries automatically)
   const startSessionMutation = useStartSession();
@@ -117,14 +122,7 @@ function TaskDetailPage() {
   const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
 
   // Convert API data to UI format
-  console.log('[FLOW TRACE FullView] Before messageToChat:', {
-    apiMessagesCount: apiMessages.length,
-    sessionIds: [...new Set(apiMessages.map(m => m.sessionId))],
-  });
   const chatMessages: ChatMessage[] = apiMessages.map(messageToChat);
-  console.log('[FLOW TRACE FullView] After messageToChat:', {
-    chatMessagesCount: chatMessages.length,
-  });
   const sessionDiffs: UIDiff[] = apiDiffs.map(diffToUI);
 
   // Keep chatMessagesRef in sync for WebSocket callback dedup (avoids stale closure)
@@ -253,10 +251,7 @@ function TaskDetailPage() {
       setJustStartedSession({ id: response.session.id, status: 'running' });
       // Switch to AI Session tab only if not already there (prevents unnecessary re-render)
       if (activeInfoTab !== 'ai-session') {
-        console.log('[SCROLL DEBUG] Tab switch needed - switching from:', activeInfoTab, 'to: ai-session');
         setActiveInfoTab('ai-session');
-      } else {
-        console.log('[SCROLL DEBUG] Already on ai-session tab - no switch needed');
       }
     } catch (err) {
       setIsWaitingForResponse(false);
@@ -1617,13 +1612,14 @@ function TaskDetailPage() {
                 </div>
               </div>
             )}
-            <div className="mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <button
                 onClick={() => { setChatInput(chatInput + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors"
               >
                 <AtSign className="w-3.5 h-3.5" />Add context
               </button>
+              <ContextWindowIndicator contextWindow={latestSession?.contextWindow} />
             </div>
             {/* Attached Files Display */}
             {attachedFiles.length > 0 && (
@@ -1938,6 +1934,17 @@ function TaskDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Context Window Warning Dialog */}
+      <ContextWarningDialog
+        open={showWarning}
+        contextWindow={latestSession?.contextWindow}
+        onClose={dismissWarning}
+        onRenew={() => {
+          dismissWarning();
+          handleStartSessionWithMode('renew');
+        }}
+      />
     </div>
   );
 }

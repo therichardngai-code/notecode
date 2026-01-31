@@ -15,3 +15,6 @@ export { DiffFileCard, type DiffFileCardProps, DiffStatsSummary, type DiffStatsS
 export { SessionActionsBar, type SessionActionsBarProps } from './session-actions-bar';
 export { TaskStatsBar, type TaskStatsBarProps } from './task-stats-bar';
 export { SessionListItem, type SessionListItemProps } from './session-list-item';
+export { ContextWindowIndicator } from './context-window-indicator';
+export { ContextWarningDialog } from './context-warning-dialog';
+export * from './tabs';

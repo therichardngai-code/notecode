@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Plus, RefreshCw, PanelLeftClose } from 'lucide-react';
 import { FileTreeItem, type FileNode } from './file-tree-item';
+import { filesApi } from '@/adapters/api/files-api';
 
-// Mock file tree
+// Mock file tree (fallback when no project)
 const mockFileTree: FileNode[] = [
   {
     name: 'src',
@@ -17,14 +18,60 @@ const mockFileTree: FileNode[] = [
   { name: 'README.md', type: 'file' },
 ];
 
+// Convert API FileNode to UI FileNode format
+function convertFileTree(nodes: any[]): FileNode[] {
+  return nodes.map(node => ({
+    name: node.name,
+    type: node.type === 'directory' ? 'folder' as const : 'file' as const,
+    children: node.children ? convertFileTree(node.children) : undefined,
+  }));
+}
+
 interface ExplorerPanelProps {
   onClose?: () => void;
   onFileClick?: (fileName: string, filePath: string) => void;
   onOpenInNewTab?: (fileName: string, filePath: string) => void;
+  projectId?: string;
 }
 
-export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab }: ExplorerPanelProps) {
+export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId }: ExplorerPanelProps) {
   const [search, setSearch] = useState('');
+  const [fileTree, setFileTree] = useState<FileNode[]>(mockFileTree);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load real file tree from API
+  useEffect(() => {
+    if (!projectId) {
+      // No project ID - use mock data
+      setFileTree(mockFileTree);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    filesApi.getTree(projectId)
+      .then(res => {
+        const children = res.tree.children || [];
+        setFileTree(convertFileTree(children));
+      })
+      .catch(err => {
+        setError('Failed to load file tree');
+        setFileTree(mockFileTree); // Fallback to mock data
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [projectId]);
+
+  const handleRefresh = () => {
+    if (projectId) {
+      window.location.reload();
+    }
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -37,7 +84,7 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab }: Explorer
           <button className="p-1.5 rounded-lg hover:bg-muted">
             <Plus className="w-4 h-4 text-muted-foreground" />
           </button>
-          <button className="p-1.5 rounded-lg hover:bg-muted">
+          <button onClick={handleRefresh} className="p-1.5 rounded-lg hover:bg-muted">
             <RefreshCw className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -55,7 +102,17 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab }: Explorer
         </div>
       </div>
       <div className="flex-1 overflow-y-auto py-2">
-        {mockFileTree.map((node, idx) => (
+        {loading && (
+          <div className="text-center py-4 text-muted-foreground text-sm">
+            Loading file tree...
+          </div>
+        )}
+        {error && (
+          <div className="text-center py-4 text-red-500 text-sm">
+            {error}
+          </div>
+        )}
+        {!loading && fileTree.map((node, idx) => (
           <FileTreeItem key={idx} node={node} onFileClick={onFileClick} onOpenInNewTab={onOpenInNewTab} />
         ))}
       </div>

@@ -3,6 +3,7 @@
  * Used when a session is in terminal state (failed, completed, cancelled, paused)
  */
 
+import { memo } from 'react';
 import { RotateCcw, RefreshCw, Copy } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { Session, SessionResumeMode } from '@/adapters/api/sessions-api';
@@ -20,7 +21,7 @@ const statusStyles: Record<string, string> = {
   paused: 'bg-yellow-500/20 text-yellow-600',
 };
 
-export function SessionActionsBar({ session, onStartSession, isLoading }: SessionActionsBarProps) {
+export const SessionActionsBar = memo(function SessionActionsBar({ session, onStartSession, isLoading }: SessionActionsBarProps) {
   const showActions = ['failed', 'completed', 'cancelled', 'paused'].includes(session.status);
   if (!showActions) return null;
 
@@ -58,4 +59,4 @@ export function SessionActionsBar({ session, onStartSession, isLoading }: Sessio
       </button>
     </div>
   );
-}
+});

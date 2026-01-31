@@ -3,6 +3,7 @@
  * Shows file header, chunks, and approve/reject buttons
  */
 
+import { memo } from 'react';
 import { FileCode, ExternalLink, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { UIDiff } from '@/shared/types';
@@ -16,7 +17,7 @@ export interface DiffFileCardProps {
   maxHeight?: string;
 }
 
-export function DiffFileCard({
+export const DiffFileCard = memo(function DiffFileCard({
   diff,
   approval,
   onApprove,
@@ -138,7 +139,7 @@ export function DiffFileCard({
       </div>
     </div>
   );
-}
+});
 
 /**
  * Diff Stats Summary - shows total files changed with additions/deletions
@@ -147,7 +148,7 @@ export interface DiffStatsSummaryProps {
   diffs: UIDiff[];
 }
 
-export function DiffStatsSummary({ diffs }: DiffStatsSummaryProps) {
+export const DiffStatsSummary = memo(function DiffStatsSummary({ diffs }: DiffStatsSummaryProps) {
   if (diffs.length === 0) return null;
 
   const totalAdditions = diffs.reduce((sum, d) => sum + d.additions, 0);
@@ -160,4 +161,4 @@ export function DiffStatsSummary({ diffs }: DiffStatsSummaryProps) {
       <span className="text-red-500">-{totalDeletions}</span>
     </div>
   );
-}
+});

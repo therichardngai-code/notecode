@@ -54,7 +54,7 @@ export async function startServer(options?: {
 
   // CRITICAL: Electron reads this log to detect backend URL
   if (!silent) {
-    console.log(`NoteCode backend running at http://localhost:${actualPort}`);
+    console.log(`Server listening on http://localhost:${actualPort}`);
     console.log(`Health check: http://localhost:${actualPort}/health`);
   }
 
@@ -94,8 +94,10 @@ async function main(): Promise<void> {
   }
 }
 
-// Only run main() when executed directly (not imported)
-// In ES modules, check if this file is the entry point
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` || !isElectron) {
+// Run main() when executed as entry point
+// Works for direct execution, Electron spawn, and npm scripts
+const isMainModule = process.argv[1]?.includes('main.js') || process.argv[1]?.includes('main.ts');
+
+if (isMainModule) {
   main();
 }

@@ -3,6 +3,7 @@
  * Displays total attempts with breakdown by type (retry, renew, fork)
  */
 
+import { memo } from 'react';
 import { RotateCcw } from 'lucide-react';
 
 export interface AttemptStatsProps {
@@ -12,7 +13,7 @@ export interface AttemptStatsProps {
   forkCount: number;
 }
 
-export function AttemptStats({
+export const AttemptStats = memo(function AttemptStats({
   totalAttempts,
   renewCount,
   retryCount,
@@ -32,4 +33,4 @@ export function AttemptStats({
       {parts.length > 0 && <span className="text-muted-foreground/70">({parts.join(', ')})</span>}
     </span>
   );
-}
+});

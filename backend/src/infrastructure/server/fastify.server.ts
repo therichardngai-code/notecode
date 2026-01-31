@@ -23,6 +23,7 @@ import {
   registerVersionController,
   registerBackupController,
   registerCliProviderHooksController,
+  registerFilesController,
 } from '../../adapters/controllers/index.js';
 import { CliProviderHooksService } from '../../adapters/services/cli-provider-hooks.service.js';
 import { registerNotificationSSE } from '../../adapters/sse/notification-sse.handler.js';
@@ -280,6 +281,9 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
 
   // Register system controller (folder picker, path validation)
   registerSystemController(app);
+
+  // Register files controller (file tree, file content for Explorer)
+  await app.register(registerFilesController, { prefix: '/api' });
 
   // Register settings controller
   registerSettingsController(app, settingsRepo);

@@ -2,13 +2,14 @@
  * Priority Badge component - displays task priority with color
  */
 
+import { memo } from 'react';
 import { priorityConfig } from '@/shared/config/task-config';
 
 export interface PriorityBadgeProps {
   priority?: 'low' | 'medium' | 'high';
 }
 
-export function PriorityBadge({ priority }: PriorityBadgeProps) {
+export const PriorityBadge = memo(function PriorityBadge({ priority }: PriorityBadgeProps) {
   if (!priority) return null;
 
   const config = priorityConfig[priority];
@@ -21,4 +22,4 @@ export function PriorityBadge({ priority }: PriorityBadgeProps) {
       {config.label}
     </span>
   );
-}
+});

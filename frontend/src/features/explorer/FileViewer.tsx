@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { fileSystemAdapter } from './file-system-adapter';
+import { RealFileSystemAdapter } from './real-file-system-adapter';
 import { LoadingSpinner } from '@/shared/components/common';
 import { detectLanguage, getLanguageDisplayName, isBinaryFile } from './utils/language-detector';
+import { ExternalLink } from 'lucide-react';
 
 interface FileViewerProps {
   filePath: string | null;
+  projectId?: string;
+  onOpenInEditor?: (filePath: string) => void;
 }
 
 // Maximum lines to syntax highlight (fallback to plain text for larger files)
@@ -24,7 +28,7 @@ const MAX_HIGHLIGHTED_LINES = 10000;
  *
  * @param filePath - Path to file being viewed
  */
-export const FileViewer: React.FC<FileViewerProps> = ({ filePath }) => {
+export const FileViewer: React.FC<FileViewerProps> = ({ filePath, projectId, onOpenInEditor }) => {
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
@@ -37,7 +41,12 @@ export const FileViewer: React.FC<FileViewerProps> = ({ filePath }) => {
     const loadFile = async () => {
       setLoading(true);
       try {
-        const fileContent = await fileSystemAdapter.readFile(filePath);
+        // Use real adapter if projectId provided, otherwise mock
+        const adapter = projectId
+          ? new RealFileSystemAdapter(projectId)
+          : fileSystemAdapter;
+
+        const fileContent = await adapter.readFile(filePath);
         setContent(fileContent);
       } catch (error) {
         setContent(`Error: ${error instanceof Error ? error.message : 'Unknown'}`);
@@ -47,7 +56,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({ filePath }) => {
     };
 
     loadFile();
-  }, [filePath]);
+  }, [filePath, projectId]);
 
   if (!filePath) {
     return (
@@ -127,12 +136,26 @@ export const FileViewer: React.FC<FileViewerProps> = ({ filePath }) => {
     <div className="h-full w-full flex flex-col">
       {/* Header with file path and language badge */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/50">
-        <span className="font-mono text-sm text-foreground/80 truncate flex-1">
-          {filePath}
-        </span>
-        <span className="ml-2 px-2 py-0.5 text-xs font-medium rounded bg-primary/10 text-primary">
-          {displayLanguage}
-        </span>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="font-mono text-sm text-foreground/80 truncate">
+            {filePath}
+          </span>
+          <span className="px-2 py-0.5 text-xs font-medium rounded bg-primary/10 text-primary">
+            {displayLanguage}
+          </span>
+        </div>
+
+        {/* Open in Editor button */}
+        {onOpenInEditor && filePath && (
+          <button
+            onClick={() => onOpenInEditor(filePath)}
+            className="ml-2 px-3 py-1.5 text-xs rounded bg-primary hover:bg-primary/90 text-primary-foreground flex items-center gap-1.5 transition-colors"
+            title="Open in VS Code"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Open in Editor
+          </button>
+        )}
       </div>
 
       {/* Syntax highlighted content */}

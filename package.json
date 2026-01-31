@@ -7,8 +7,10 @@
   "private": true,
   "scripts": {
     "electron:install": "cd electron && npm install",
+    "electron:rebuild": "cd electron && npm run rebuild",
     "electron:build": "cd electron && npm run build",
-    "electron:dev": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\" \"wait-on http://localhost:5173 && cd electron && npm run dev\"",
+    "electron:dev": "npm run build --prefix backend && npm run electron:rebuild && concurrently \"npm run dev --prefix frontend\" \"wait-on http://localhost:5173 && cd electron && npm run dev\"",
+    "electron:start": "npm run build --prefix backend && npm run electron:rebuild && cd electron && npm run dev",
     "electron:package": "npm run build && cd electron && npm run build && npm run package",
     "electron:package:win": "npm run build && cd electron && npm run build && npm run package:win",
     "electron:package:mac": "npm run build && cd electron && npm run build && npm run package:mac",

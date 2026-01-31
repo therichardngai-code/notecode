@@ -3,6 +3,7 @@
  * Displays git branch, staged/unstaged changes, and pending approvals
  */
 
+import { memo } from 'react';
 import { GitBranch, CheckCircle, FileCode, Plus, AlertTriangle } from 'lucide-react';
 import type { TaskGitStatus } from '@/adapters/api/git-api';
 
@@ -11,7 +12,7 @@ export interface GitStatusCardProps {
   onViewApproval?: (approvalId: string) => void;
 }
 
-export function GitStatusCard({ gitStatus, onViewApproval }: GitStatusCardProps) {
+export const GitStatusCard = memo(function GitStatusCard({ gitStatus, onViewApproval }: GitStatusCardProps) {
   if (!gitStatus) return null;
 
   const { branchName, baseBranch, currentBranch, isOnTaskBranch, hasChanges, staged, unstaged, untracked, pendingApproval } = gitStatus;
@@ -95,4 +96,4 @@ export function GitStatusCard({ gitStatus, onViewApproval }: GitStatusCardProps)
       )}
     </div>
   );
-}
+});

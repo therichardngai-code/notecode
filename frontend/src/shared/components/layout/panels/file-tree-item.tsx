@@ -16,7 +16,7 @@ interface FileTreeItemProps {
 }
 
 export function FileTreeItem({ node, level = 0, path = '', onFileClick, onOpenInNewTab }: FileTreeItemProps) {
-  const [isOpen, setIsOpen] = useState(level < 2);
+  const [isOpen, setIsOpen] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isFolder = node.type === 'folder';

@@ -3,6 +3,7 @@
  * Displays tree view of session attempts with status icons
  */
 
+import { memo } from 'react';
 import { Clock, Play, CheckCircle, X } from 'lucide-react';
 import type { Session, SessionResumeMode } from '@/adapters/api/sessions-api';
 
@@ -10,7 +11,7 @@ export interface SessionHistoryProps {
   sessions: Session[];
 }
 
-export function SessionHistory({ sessions }: SessionHistoryProps) {
+export const SessionHistory = memo(function SessionHistory({ sessions }: SessionHistoryProps) {
   if (sessions.length === 0) return null;
 
   // Sort by createdAt ascending (oldest first for tree view)
@@ -49,4 +50,4 @@ export function SessionHistory({ sessions }: SessionHistoryProps) {
       </div>
     </div>
   );
-}
+});

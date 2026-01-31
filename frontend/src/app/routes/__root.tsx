@@ -11,8 +11,12 @@ import {
   TogglePanel,
 } from '@/shared/components/layout';
 import { FloatingTaskDetailPanel } from '@/shared/components/floating/FloatingTaskDetailPanel';
-import { useTabManager, usePanelState, useFloatingPanels } from '@/shared/hooks';
+import { useTabManager, usePanelState, useFloatingPanels, useSettings } from '@/shared/hooks';
 import { useUIStore } from '@/shared/stores';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { detectLanguage, getLanguageDisplayName } from '@/features/explorer/utils/language-detector';
+import { ExternalLink } from 'lucide-react';
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -20,6 +24,10 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   const [isNavCollapsed, setIsNavCollapsed] = useState(false);
+
+  // Get active project ID from settings
+  const { data: settings } = useSettings();
+  const activeProjectId = settings?.currentActiveProjectId;
 
   // Task detail panel state from store - use atomic selectors for proper Zustand subscription
   const isTaskDetailPanelOpen = useUIStore((state) => state.isTaskDetailPanelOpen);
@@ -85,6 +93,29 @@ function RootLayout() {
     openNewTaskPanel,
   } = useFloatingPanels();
 
+  // Handle opening file in external editor (VS Code)
+  const handleOpenInExternalEditor = async (filePath: string | undefined) => {
+    if (!filePath || !activeProjectId) return;
+
+    try {
+      const response = await fetch('/api/files/open-external', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: activeProjectId,
+          filePath
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Failed to open file:', error.error);
+      }
+    } catch (error) {
+      console.error('Failed to open file in editor:', error);
+    }
+  };
+
   return (
     <AppShell>
       <div className="flex-1 flex overflow-hidden">
@@ -115,6 +146,7 @@ function RootLayout() {
                   onClose={handlePanelClose}
                   onFileClick={handleFileClick}
                   onOpenFileInNewTab={handleOpenFileInNewTab}
+                  projectId={activeProjectId}
                 />
               )}
             </div>
@@ -125,13 +157,56 @@ function RootLayout() {
                 const activeTab = tabs.find((t) => t.id === activeTabId);
                 if (activeTab?.fileContent) {
                   return (
-                    <div className="h-full flex flex-col">
-                      <div className="flex items-center gap-2 px-4 py-2 border-b border-border text-sm text-muted-foreground">
-                        <span className="truncate">{activeTab.filePath}</span>
+                    <div className="h-full flex flex-col bg-[#1e1e1e]">
+                      {/* Header with file path + Open in Editor button */}
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] bg-[#252526]">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-sm font-mono text-[#cccccc] truncate">
+                            {activeTab.filePath}
+                          </span>
+                          <span className="text-xs text-[#858585]">
+                            {getLanguageDisplayName(detectLanguage(activeTab.filePath || ''))}
+                          </span>
+                        </div>
+
+                        {/* Open in Editor button */}
+                        <button
+                          onClick={() => handleOpenInExternalEditor(activeTab.filePath)}
+                          className="ml-2 px-3 py-1.5 text-xs rounded bg-[#0e639c] hover:bg-[#1177bb] text-white flex items-center gap-1.5 transition-colors"
+                          title="Open in VS Code (Ctrl+O)"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Open in Editor
+                        </button>
                       </div>
-                      <pre className="flex-1 p-4 text-sm font-mono overflow-auto whitespace-pre-wrap break-words">
-                        {activeTab.fileContent}
-                      </pre>
+
+                      {/* VS Code-style syntax highlighted content */}
+                      <div className="flex-1 overflow-auto">
+                        <SyntaxHighlighter
+                          language={detectLanguage(activeTab.filePath || '')}
+                          style={vscDarkPlus}
+                          showLineNumbers={true}
+                          wrapLines={true}
+                          customStyle={{
+                            margin: 0,
+                            padding: '1rem',
+                            fontSize: '14px',
+                            fontFamily: '"Cascadia Code", "Fira Code", "Consolas", "Monaco", monospace',
+                            background: '#1e1e1e',
+                            height: '100%',
+                          }}
+                          lineNumberStyle={{
+                            minWidth: '3.5em',
+                            paddingRight: '1em',
+                            color: '#858585',
+                            userSelect: 'none',
+                            borderRight: '1px solid #2d2d2d',
+                            marginRight: '1em',
+                          }}
+                        >
+                          {activeTab.fileContent}
+                        </SyntaxHighlighter>
+                      </div>
                     </div>
                   );
                 }

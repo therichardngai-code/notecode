@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { FileTreeNode } from './FileTreeNode';
 import { fileSystemAdapter, type FileTreeNode as FileTreeNodeType } from './file-system-adapter';
+import { RealFileSystemAdapter } from './real-file-system-adapter';
+import { LoadingSpinner } from '@/shared/components/common';
 
 interface FileTreeProps {
   onFileSelect: (filePath: string) => void;
+  projectId?: string;
 }
 
-export const FileTree: React.FC<FileTreeProps> = ({ onFileSelect }) => {
+export const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, projectId }) => {
   const [tree, setTree] = useState<FileTreeNodeType | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     path: string;
     x: number;
@@ -16,11 +21,24 @@ export const FileTree: React.FC<FileTreeProps> = ({ onFileSelect }) => {
 
   useEffect(() => {
     const loadTree = async () => {
-      const rootTree = await fileSystemAdapter.buildFileTree('/');
-      setTree(rootTree);
+      setLoading(true);
+      setError(null);
+      try {
+        // Use real adapter if projectId provided, otherwise mock
+        const adapter = projectId
+          ? new RealFileSystemAdapter(projectId)
+          : fileSystemAdapter;
+
+        const rootTree = await adapter.buildFileTree('/');
+        setTree(rootTree);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load file tree');
+      } finally {
+        setLoading(false);
+      }
     };
     loadTree();
-  }, []);
+  }, [projectId]);
 
   const handleContextMenu = (path: string, event: React.MouseEvent) => {
     setContextMenu({ path, x: event.clientX, y: event.clientY });
@@ -37,8 +55,25 @@ export const FileTree: React.FC<FileTreeProps> = ({ onFileSelect }) => {
     }
   }, [contextMenu]);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-destructive">
+        <p className="text-sm font-medium">Error loading file tree</p>
+        <p className="text-xs mt-1">{error}</p>
+      </div>
+    );
+  }
+
   if (!tree) {
-    return <div style={{ padding: '16px' }}>Loading...</div>;
+    return <div className="p-4 text-muted-foreground text-sm">No files found</div>;
   }
 
   return (

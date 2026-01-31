@@ -27,21 +27,24 @@ async function startBackendServer(): Promise<number> {
 
     // In production, backend is bundled in resources
     // In development, run from backend directory
+    // __dirname = electron/dist, so ../../backend = notecode/backend
     const backendPath = isDevMode
-      ? path.join(__dirname, '../../../backend')
+      ? path.join(__dirname, '../../backend')
       : path.join(process.resourcesPath, 'backend');
 
-    const backendScript = isDevMode
-      ? path.join(backendPath, 'src/main.ts')
-      : path.join(backendPath, 'dist/main.js');
+    // ALWAYS use compiled backend (dist/main.js)
+    // Build backend first: npm run build --prefix backend
+    const backendScript = path.join(backendPath, 'dist/main.js');
 
     console.log('[Electron] Starting backend server...');
     console.log('[Electron] Backend path:', backendPath);
     console.log('[Electron] Backend script:', backendScript);
+    console.log('[Electron] Mode:', isDevMode ? 'development' : 'production');
 
-    // Start backend process
-    const nodeCmd = isDevMode ? 'tsx' : 'node';
-    backendProcess = spawn(nodeCmd, [backendScript], {
+    // Start backend process with Node.js (not tsx)
+    // Use process.execPath to ensure we find Node.js on Windows
+    // This requires backend to be built first
+    backendProcess = spawn(process.execPath, [backendScript], {
       cwd: backendPath,
       env: {
         ...process.env,
@@ -75,7 +78,17 @@ async function startBackendServer(): Promise<number> {
 
     backendProcess.on('error', (error) => {
       console.error('[Electron] Failed to start backend:', error);
-      reject(error);
+
+      // Check if error is due to missing compiled backend
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        const helpMessage = isDevMode
+          ? 'Build backend first: npm run build --prefix backend'
+          : 'Backend files not found in packaged app';
+        console.error('[Electron] ' + helpMessage);
+        reject(new Error(`Backend startup failed: ${helpMessage}`));
+      } else {
+        reject(error);
+      }
     });
 
     backendProcess.on('exit', (code) => {
@@ -117,7 +130,10 @@ async function createWindow(): Promise<void> {
       },
       titleBarStyle: 'hiddenInset', // macOS-style title bar
       frame: process.platform !== 'darwin',
-      show: false, // Show after ready-to-show
+      show: true, // Show immediately so window is always visible
+      center: true, // Center on screen
+      x: undefined, // Don't set position - use default
+      y: undefined,
     });
 
     // Load frontend
@@ -134,13 +150,10 @@ async function createWindow(): Promise<void> {
       console.log('[Electron] Backend URL sent to renderer:', `http://localhost:${port}`);
     });
 
-    // Show window when ready
-    mainWindow.once('ready-to-show', () => {
-      mainWindow?.show();
-      if (isDev()) {
-        mainWindow?.webContents.openDevTools();
-      }
-    });
+    // Open DevTools in development
+    if (isDev()) {
+      mainWindow.webContents.openDevTools();
+    }
 
     // Handle window close
     mainWindow.on('closed', () => {
