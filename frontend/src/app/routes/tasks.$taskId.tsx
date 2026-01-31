@@ -3,12 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
-  Calendar, User, Folder, Bot, Sparkles, Zap, Plus, Pencil, Check,
+  Folder, Bot, Sparkles, Zap,
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
-import { type StatusId } from '@/shared/config/task-config';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useSessionWebSocket, useStartSession, useChatHandlers, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import { PropertyItem, type Property } from '@/shared/components/layout/floating-panels/property-item';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
@@ -21,9 +20,8 @@ import { messageToChat, diffToUI } from '@/shared/utils';
 import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
 import {
-  StatusBadge, PriorityBadge, PropertyRow, AttemptStats,
   ContextWarningDialog, ChatInputFooter, ContentPreviewModal, TaskInfoTabsNav,
-  FileDetailsPanel,
+  FileDetailsPanel, TaskEditPanel,
 } from '@/shared/components/task-detail';
 // Phase 5 Tabs
 import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
@@ -659,46 +657,26 @@ function TaskDetailPage() {
   // Content modal state for Write tool preview
   const [contentModalData, setContentModalData] = useState<{ filePath: string; content: string } | null>(null);
 
-  // Chat handler - use WebSocket when connected
-  const sendMessage = async (content: string) => {
-    if (!content.trim()) return;
-    if (isWaitingForResponse || isTyping) return;
-
-    // Build message content with attached files
-    let fullContent = content.trim();
-    if (attachedFiles.length > 0) {
-      const filesContext = attachedFiles.map(f => `@${f}`).join(' ');
-      fullContent = `${filesContext}\n\n${fullContent}`;
-    }
-
-    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: fullContent };
-
-    // If WebSocket is connected (session running), send via WebSocket
-    if (isWsConnected && isSessionLive) {
-      setRealtimeMessages(prev => [...prev, userMessage]);
-      setChatInput('');
-      setAttachedFiles([]);
-      setIsWaitingForResponse(true);
-      setCurrentAssistantMessage('');
-      sendUserInput(content.trim(), {
-        model: selectedModel !== 'default' ? `claude-3-5-${selectedModel}-latest` : undefined,
-        permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
-        files: attachedFiles.length > 0 ? attachedFiles : undefined,
-        disableWebTools: !webSearchEnabled, // true = disable web search
-      });
-    } else {
-      // Fallback: just add to local messages (no active session)
-      setChatInput('');
-      setAttachedFiles([]);
-      setIsTyping(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setIsTyping(false);
-    }
-  };
-
-  const handleChatKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !showContextPicker) { e.preventDefault(); sendMessage(chatInput); }
-  };
+  // Chat handlers hook
+  const { sendMessage, handleChatKeyDown } = useChatHandlers({
+    isWsConnected,
+    isSessionLive,
+    chatInput,
+    attachedFiles,
+    selectedModel,
+    chatPermissionMode,
+    webSearchEnabled,
+    isWaitingForResponse,
+    isTyping,
+    showContextPicker,
+    sendUserInput,
+    setRealtimeMessages,
+    setChatInput,
+    setAttachedFiles,
+    setIsWaitingForResponse,
+    setCurrentAssistantMessage,
+    setIsTyping,
+  });
 
   // Start task: Update status to in-progress AND start a new session
   const handleStartTask = async () => {
@@ -762,159 +740,33 @@ function TaskDetailPage() {
       <div className={cn("flex-1 flex flex-col transition-all duration-300", (selectedDiffFile || isSubPanelOpen) ? "max-w-[50%]" : "")}>
       <ScrollArea className="flex-1">
         <div className="p-6 max-w-4xl mx-auto">
-          {isEditing ? (
-            /* Edit Mode */
-            <div ref={editFormRef}>
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full text-2xl font-medium text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/50 mb-6"
-                placeholder="Task title"
-              />
-
-              {/* Editable Properties - using shared PropertyItem */}
-              <div className="space-y-3 mb-4">
-                {editProperties
-                  .filter((p) => p.type !== 'status' && p.type !== 'project' && p.type !== 'provider') // Status handled separately, Project/Provider not editable
-                  .map((property) => (
-                    <PropertyItem
-                      key={property.id}
-                      property={property as Property}
-                      onRemove={() => removeProperty(property.id)}
-                      onUpdate={(values) => updateProperty(property.id, values)}
-                    />
-                  ))}
-              </div>
-
-              {/* Add Property (exclude: project, provider, autoBranch) */}
-              <div className="relative mb-4" ref={addPropertyRef}>
-                <button
-                  onClick={() => setShowAddProperty(!showAddProperty)}
-                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add a property</span>
-                </button>
-
-                {showAddProperty && (
-                  <div className="absolute top-full left-0 mt-1 w-56 glass border border-border rounded-lg shadow-lg py-1 z-20">
-                    {taskDetailPropertyTypes
-                      .filter((type) => !['project', 'provider', 'autoBranch'].includes(type.id))
-                      .map((type) => {
-                        const exists = editProperties.find((p) => p.type === type.id);
-                        return (
-                          <button
-                            key={type.id}
-                            onClick={() => {
-                              addProperty(type.id as TaskDetailProperty['type']);
-                              setShowAddProperty(false);
-                            }}
-                            disabled={!!exists}
-                            className={cn(
-                              'w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors',
-                              exists ? 'text-muted-foreground/50 cursor-not-allowed' : 'text-popover-foreground hover:bg-accent'
-                            )}
-                          >
-                            <type.icon className="w-4 h-4" />
-                            <div className="text-left">
-                              <div className="font-medium">{type.label}</div>
-                              <div className="text-xs text-muted-foreground">{type.description}</div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border my-6" />
-
-              {/* Description */}
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-foreground mb-3">Description</h3>
-                <textarea
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  className="w-full h-32 text-sm text-foreground bg-muted/30 border border-border rounded-lg p-3 outline-none resize-none placeholder:text-muted-foreground focus:border-primary/50 transition-colors"
-                  placeholder="Describe the task details..."
-                />
-              </div>
-
-              {/* Save/Cancel buttons */}
-              <div className="flex items-center gap-2 mb-6">
-                <button
-                  onClick={saveEdit}
-                  disabled={isUpdating}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm font-medium disabled:opacity-50"
-                >
-                  {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  Save
-                </button>
-                <button
-                  onClick={cancelEdit}
-                  className="flex items-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-md hover:bg-muted/80 transition-colors text-sm font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* View Mode */
-            <>
-              <h1 className="text-2xl font-medium text-foreground mb-2">{task.title}</h1>
-
-              {/* Description */}
-              {task.description && (
-                <div className="mb-6 overflow-hidden">
-                  <p className={cn("text-sm text-muted-foreground break-words", !isDescriptionExpanded && "line-clamp-2")}>{task.description}</p>
-                  {task.description.length > 100 && (
-                    <button onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)} className="text-xs text-primary hover:underline mt-1">
-                      {isDescriptionExpanded ? 'Show less' : 'Show more'}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Status & Priority & Attempts & Edit button */}
-              <div className="flex items-center gap-3 mb-6 flex-wrap">
-                {projectName && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Folder className="w-3 h-3" />{projectName}</span>}
-                <StatusBadge status={task.status as StatusId} />
-                <PriorityBadge priority={task.priority} />
-                <AttemptStats
-                  totalAttempts={task.totalAttempts ?? 0}
-                  renewCount={task.renewCount ?? 0}
-                  retryCount={task.retryCount ?? 0}
-                  forkCount={task.forkCount ?? 0}
-                />
-                <button onClick={startEdit} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <Pencil className="w-3 h-3" />Edit
-                </button>
-              </div>
-
-              {/* Properties (read-only) - 1 Project + 2 max Properties visible, scroll for rest */}
-              <div className="mb-6">
-                <h3 className="text-sm font-medium text-foreground mb-3">Properties</h3>
-                <div className="border border-border rounded-lg overflow-hidden">
-                  <div className="max-h-[108px] overflow-y-auto divide-y divide-border">
-                    <PropertyRow icon={Folder} label="Project" value={projectName} />
-                    {displayProperties
-                      .filter((p) => p.type !== 'status' && p.type !== 'project')
-                      .map((prop) => (
-                        <PropertyRow
-                          key={prop.id}
-                          icon={getPropertyIcon(prop.type)}
-                          label={propertyTypes.find((t) => t.id === prop.type)?.label || prop.type}
-                          value={getPropertyDisplayValue(prop)}
-                        />
-                      ))}
-                    <PropertyRow icon={User} label="Assignee" value={task.assignee || undefined} />
-                    <PropertyRow icon={Calendar} label="Due Date" value={task.dueDate || undefined} />
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+          <TaskEditPanel
+            isEditing={isEditing}
+            task={task}
+            projectName={projectName}
+            displayProperties={displayProperties}
+            editTitle={editTitle}
+            editDescription={editDescription}
+            editProperties={editProperties}
+            showAddProperty={showAddProperty}
+            isDescriptionExpanded={isDescriptionExpanded}
+            isUpdating={isUpdating}
+            editFormRef={editFormRef}
+            addPropertyRef={addPropertyRef}
+            taskDetailPropertyTypes={taskDetailPropertyTypes}
+            onSetEditTitle={setEditTitle}
+            onSetEditDescription={setEditDescription}
+            onSetShowAddProperty={setShowAddProperty}
+            onSetIsDescriptionExpanded={setIsDescriptionExpanded}
+            onStartEdit={startEdit}
+            onSaveEdit={saveEdit}
+            onCancelEdit={cancelEdit}
+            onAddProperty={addProperty}
+            onRemoveProperty={removeProperty}
+            onUpdateProperty={updateProperty}
+            getPropertyIcon={getPropertyIcon}
+            getPropertyDisplayValue={getPropertyDisplayValue}
+          />
 
           <div className="border-t border-border my-6" />
 
