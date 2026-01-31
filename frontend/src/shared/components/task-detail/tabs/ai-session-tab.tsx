@@ -6,6 +6,7 @@ import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 import { ChatMessageItem } from './chat-message-item';
 import type { Session, ApprovalRequest } from '@/adapters/api/sessions-api';
 import type { ChatMessage, ToolCommand } from '@/shared/types/task-detail-types';
+import type { ToolUseBlock } from '@/shared/hooks';
 
 interface AISessionTabProps {
   // Messages
@@ -14,7 +15,7 @@ interface AISessionTabProps {
   currentAssistantMessage: string;
 
   // Tool use
-  currentToolUse: ToolCommand | null;
+  currentToolUse: ToolUseBlock | null;
   expandedCommands: Set<string>;
 
   // Session state
@@ -30,7 +31,7 @@ interface AISessionTabProps {
   processingApproval: string | null;
 
   // Scroll management
-  aiSessionContainerRef: React.RefObject<HTMLDivElement>;
+  aiSessionContainerRef: React.RefObject<HTMLDivElement | null>;
   userScrolledUpRef: React.MutableRefObject<boolean>;
   isScrolledUpFromBottom: boolean;
 

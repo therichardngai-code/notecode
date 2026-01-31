@@ -4,9 +4,9 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
   Calendar, User, Folder, Bot, Sparkles, Zap, Play, Pause, Clock, Plus, Pencil, Check,
-  AtSign, Paperclip, Globe, X, MessageSquare, FileCode, GitBranch, Terminal, CheckCircle,
-  ThumbsUp, ThumbsDown, ExternalLink, Loader2, Wrench, ChevronDown, ChevronRight, Maximize2,
-  RotateCcw, RefreshCw, Copy, ShieldAlert, Eye,
+  AtSign, Paperclip, Globe, X, MessageSquare, FileCode, GitBranch, CheckCircle,
+  ThumbsUp, ThumbsDown, ExternalLink, Loader2, Wrench, ChevronDown, Maximize2,
+  RotateCcw, RefreshCw, Copy, ShieldAlert,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useSessionWebSocket, useStartSession, sessionKeys, type TaskDetailProperty, type ToolUseBlock } from '@/shared/hooks';
@@ -19,16 +19,16 @@ import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
 import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 // Shared types and utilities
-import type { ChatMessage, UIDiff } from '@/shared/types';
+import type { ChatMessage, UIDiff, ToolCommand } from '@/shared/types';
 import { messageToChat, diffToUI } from '@/shared/utils';
 import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
 import {
-  StatusBadge, PriorityBadge, PropertyRow, ApprovalCard, AttemptStats,
+  StatusBadge, PriorityBadge, PropertyRow, AttemptStats,
   ContextWindowIndicator, ContextWarningDialog,
 } from '@/shared/components/task-detail';
 // Phase 5 Tabs
-import { ActivityTab } from '@/shared/components/task-detail/tabs';
+import { ActivityTab, AISessionTab } from '@/shared/components/task-detail/tabs';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
 import { useUIStore } from '@/shared/stores';
 
@@ -975,250 +975,33 @@ function TaskDetailPage() {
             )}
 
             {/* AI Session Tab */}
-            {activeInfoTab === 'ai-session' && (() => {
-              // Combine API messages + realtime messages, deduplicating by content
-              // (realtime messages may duplicate API messages after backend saves)
-              const apiContentSet = new Set(chatMessages.map(m => m.content));
-              const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-              const allMessages = [...chatMessages, ...uniqueRealtimeMessages].sort((a, b) => {
-                const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
-                const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
-                return timeA - timeB; // Oldest first (chronological order)
-              });
-              const hasMessages = allMessages.length > 0 || currentAssistantMessage;
+            {activeInfoTab === 'ai-session' && (
+              <AISessionTab
+                chatMessages={chatMessages}
+                realtimeMessages={realtimeMessages}
+                currentAssistantMessage={currentAssistantMessage}
+                currentToolUse={currentToolUse}
+                expandedCommands={expandedCommands}
+                latestSession={latestSession}
+                isStartingSession={isStartingSession}
+                isWaitingForResponse={isWaitingForResponse}
+                isTyping={isTyping}
+                isWsConnected={isWsConnected}
+                isSessionLive={isSessionLive}
+                pendingApprovals={pendingApprovals}
+                processingApproval={processingApproval}
+                aiSessionContainerRef={aiSessionContainerRef}
+                userScrolledUpRef={userScrolledUpRef}
+                isScrolledUpFromBottom={isScrolledUpFromBottom}
+                onApproveRequest={handleApproveRequest}
+                onRejectRequest={handleRejectRequest}
+                onToggleCommand={toggleCommand}
+                onSetContentModal={setContentModalData}
+                onOpenFileAsTab={openFileAsTab}
+                onSetScrolledUp={setIsScrolledUpFromBottom}
+              />
+            )}
 
-              const scrollToBottom = () => {
-                if (aiSessionContainerRef.current) {
-                  aiSessionContainerRef.current.scrollTop = aiSessionContainerRef.current.scrollHeight;
-                }
-              };
-
-              return (
-              <div className="relative">
-              <div
-                ref={aiSessionContainerRef}
-                className="space-y-4 max-h-[400px] overflow-y-auto"
-                onScroll={(e) => {
-                  const el = e.currentTarget;
-                  const scrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
-                  // Mark as scrolled up if not near bottom
-                  userScrolledUpRef.current = scrolledUp;
-                  setIsScrolledUpFromBottom(scrolledUp);
-                }}
-              >
-                {/* Session Starting Indicator */}
-                {isStartingSession && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Starting session...</span>
-                  </div>
-                )}
-
-                {/* Pending Approval Requests */}
-                {pendingApprovals.map((approval) => (
-                  <ApprovalCard
-                    key={approval.id}
-                    approval={approval}
-                    onApprove={() => handleApproveRequest(approval.id)}
-                    onReject={() => handleRejectRequest(approval.id)}
-                    isProcessing={processingApproval === approval.id}
-                  />
-                ))}
-                {!latestSession ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                    <Bot className="w-8 h-8 mb-2 opacity-50" />
-                    <p className="text-sm">No AI session for this task</p>
-                    <p className="text-xs mt-1">Start the task to begin an AI session</p>
-                  </div>
-                ) : !hasMessages && pendingApprovals.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                    <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                    <p className="text-sm">No messages yet</p>
-                  </div>
-                ) : allMessages.map((message) => (
-                  message.role === 'user' ? (
-                    <div key={message.id} className="flex justify-end mb-4">
-                      <div className="bg-muted border border-border rounded-full px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
-                    </div>
-                  ) : (
-                    <div key={message.id} className="mb-6">
-                      <MarkdownMessage content={message.content} className="text-sm text-foreground" />
-                      {message.files && message.files.map((file, idx) => (
-                        <div key={idx} className="flex items-center gap-2 px-2 py-1 bg-muted/30 rounded text-xs font-mono text-muted-foreground">
-                          <FileCode className="w-3 h-3" /><span className="flex-1">{file.name}</span>
-                          {file.additions !== undefined && <span className="text-green-500">+{file.additions}</span>}
-                          {file.deletions !== undefined && file.deletions > 0 && <span className="text-red-500">-{file.deletions}</span>}
-                        </div>
-                      ))}
-                      {message.commands && message.commands.length > 0 && (
-                        <div className="space-y-1 mt-2">
-                          {message.commands.map((cmd, idx) => {
-                            const cmdKey = `${message.id}-${idx}`;
-                            const isExpanded = expandedCommands.has(cmdKey);
-                            const hasInput = cmd.input && Object.keys(cmd.input).length > 0;
-                            return (
-                              <div key={idx} className="bg-muted/30 rounded text-xs font-mono overflow-hidden">
-                                <button
-                                  onClick={() => hasInput && toggleCommand(cmdKey)}
-                                  className={cn("w-full flex items-center gap-2 px-2 py-1", hasInput && "hover:bg-muted/50 cursor-pointer")}
-                                >
-                                  {hasInput ? (
-                                    isExpanded ? <ChevronDown className="w-3 h-3 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 text-muted-foreground" />
-                                  ) : (
-                                    <Terminal className="w-3 h-3 text-muted-foreground" />
-                                  )}
-                                  <span className="flex-1 text-foreground text-left">{cmd.cmd}</span>
-                                  {cmd.status === 'success' && <CheckCircle className="w-3 h-3 text-green-500" />}
-                                </button>
-                                {isExpanded && cmd.input && (
-                                  <div className="px-3 py-2 border-t border-border/50 bg-background/50 space-y-1">
-                                    {/* File path - Read, Write, Edit, Glob */}
-                                    {'file_path' in cmd.input && (
-                                      <div className="flex items-center gap-2 text-muted-foreground">
-                                        <FileCode className="w-3 h-3 shrink-0" />
-                                        <span className="truncate">{String(cmd.input.file_path)}</span>
-                                      </div>
-                                    )}
-                                    {/* Query - WebSearch */}
-                                    {'query' in cmd.input && (
-                                      <div className="flex items-center gap-2 text-muted-foreground">
-                                        <Globe className="w-3 h-3 shrink-0" />
-                                        <span className="truncate">{String(cmd.input.query)}</span>
-                                      </div>
-                                    )}
-                                    {/* Command - Bash */}
-                                    {'command' in cmd.input && (
-                                      <div className="flex items-start gap-2 text-muted-foreground">
-                                        <Terminal className="w-3 h-3 shrink-0 mt-0.5" />
-                                        <code className="text-[10px] break-all">{String(cmd.input.command)}</code>
-                                      </div>
-                                    )}
-                                    {/* Pattern - Grep, Glob */}
-                                    {'pattern' in cmd.input && (
-                                      <div className="flex items-center gap-2 text-muted-foreground">
-                                        <span className="text-[10px] font-medium">Pattern:</span>
-                                        <code className="text-[10px]">{String(cmd.input.pattern)}</code>
-                                      </div>
-                                    )}
-                                    {/* URL - WebFetch */}
-                                    {'url' in cmd.input && (
-                                      <div className="flex items-center gap-2 text-muted-foreground">
-                                        <Globe className="w-3 h-3 shrink-0" />
-                                        <span className="truncate text-[10px]">{String(cmd.input.url)}</span>
-                                      </div>
-                                    )}
-                                    {/* Content - Write, Edit with action buttons */}
-                                    {'content' in cmd.input && (
-                                      <div className="mt-1">
-                                        <div className="flex items-center justify-end gap-1 mb-1">
-                                          <button
-                                            onClick={() => navigator.clipboard.writeText(String(cmd.input.content))}
-                                            className="p-1 rounded hover:bg-muted transition-colors"
-                                            title="Copy content"
-                                          >
-                                            <Copy className="w-3 h-3 text-muted-foreground" />
-                                          </button>
-                                          <button
-                                            onClick={() => setContentModalData({ filePath: 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content', content: String(cmd.input.content) })}
-                                            className="p-1 rounded hover:bg-muted transition-colors"
-                                            title="View in modal"
-                                          >
-                                            <Eye className="w-3 h-3 text-muted-foreground" />
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              const filePath = 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content';
-                                              openFileAsTab(filePath, String(cmd.input.content));
-                                            }}
-                                            className="p-1 rounded hover:bg-muted transition-colors"
-                                            title="Open in new tab"
-                                          >
-                                            <ExternalLink className="w-3 h-3 text-muted-foreground" />
-                                          </button>
-                                        </div>
-                                        <pre className="p-2 bg-muted/50 rounded text-[10px] max-h-[120px] overflow-auto whitespace-pre-wrap text-foreground/80">
-                                          {String(cmd.input.content).slice(0, 500)}{String(cmd.input.content).length > 500 ? '...' : ''}
-                                        </pre>
-                                      </div>
-                                    )}
-                                    {/* Todos - TodoWrite */}
-                                    {'todos' in cmd.input && Array.isArray(cmd.input.todos) && (
-                                      <div className="space-y-1">
-                                        {(cmd.input.todos as Array<{content?: string; status?: string}>).slice(0, 5).map((todo, i) => (
-                                          <div key={i} className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                            <span className={cn("w-2 h-2 rounded-full", todo.status === 'completed' ? 'bg-green-500' : todo.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-400')} />
-                                            <span className="truncate">{todo.content}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {/* Fallback: show raw JSON if no known fields */}
-                                    {!('file_path' in cmd.input || 'query' in cmd.input || 'command' in cmd.input || 'pattern' in cmd.input || 'url' in cmd.input || 'content' in cmd.input || 'todos' in cmd.input) && (
-                                      <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
-                                        {JSON.stringify(cmd.input, null, 2).slice(0, 300)}
-                                      </pre>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                ))}
-                {/* Streaming assistant message */}
-                {currentAssistantMessage && (
-                  <div className="mb-6">
-                    <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
-                    <span className="inline-block w-2 h-4 bg-primary animate-pulse mt-1" />
-                  </div>
-                )}
-                {/* Current tool in use */}
-                {currentToolUse && (
-                  <div className="mb-4 bg-muted/30 rounded-lg p-3 border border-border/50">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                      <Wrench className="w-3.5 h-3.5 animate-pulse" />
-                      <span className="font-medium">{currentToolUse.name}</span>
-                    </div>
-                    {currentToolUse.input && Object.keys(currentToolUse.input).length > 0 && (
-                      <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
-                        {JSON.stringify(currentToolUse.input, null, 2).slice(0, 500)}
-                      </pre>
-                    )}
-                  </div>
-                )}
-                {/* Waiting indicator */}
-                {isWaitingForResponse && !currentAssistantMessage && !currentToolUse && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>AI is thinking...</span>
-                  </div>
-                )}
-                {isTyping && <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Thinking...</span></div>}
-                {/* Connection indicator at bottom - prevents jump when appearing */}
-                {isSessionLive && !isStartingSession && (
-                  <div className={cn("flex items-center gap-2 px-2 py-1.5 rounded text-xs", isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600")}>
-                    <span className={cn("w-2 h-2 rounded-full", isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse")} />
-                    {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
-                  </div>
-                )}
-              </div>
-
-              {/* "New messages" indicator button - show when scrolled up and has new content */}
-              {isScrolledUpFromBottom && (allMessages.length > 0 || currentAssistantMessage) && (
-                <button
-                  onClick={scrollToBottom}
-                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all text-sm font-medium z-10 animate-in fade-in slide-in-from-bottom-2"
-                >
-                  <span>New messages</span>
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-              )}
-              </div>
-            );
-            })()}
 
             {/* Diffs Tab */}
             {activeInfoTab === 'diffs' && (
