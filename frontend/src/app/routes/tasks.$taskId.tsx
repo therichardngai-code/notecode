@@ -25,7 +25,7 @@ import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
 import {
   StatusBadge, PriorityBadge, PropertyRow, AttemptStats,
-  ContextWindowIndicator, ContextWarningDialog,
+  ContextWindowIndicator, ContextWarningDialog, ChatInputFooter,
 } from '@/shared/components/task-detail';
 // Phase 5 Tabs
 import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
@@ -1032,212 +1032,54 @@ function TaskDetailPage() {
       </ScrollArea>
 
       {/* Chat Input Footer */}
-      <div className="p-4">
-        <div className="max-w-4xl mx-auto">
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={cn(
-              "rounded-2xl border p-3 transition-colors relative",
-              isDragOver
-                ? "border-primary border-dashed bg-primary/10"
-                : isWsConnected && isSessionLive
-                  ? "border-green-500/30 bg-green-500/5 focus-within:border-green-500/50"
-                  : "border-border bg-muted/30 focus-within:border-primary/50"
-            )}
-          >
-            {/* Drag overlay */}
-            {isDragOver && (
-              <div className="absolute inset-0 flex items-center justify-center bg-primary/10 rounded-2xl z-10">
-                <div className="flex items-center gap-2 text-primary text-sm font-medium">
-                  <Paperclip className="w-5 h-5" />
-                  Drop files here
-                </div>
-              </div>
-            )}
-            <div className="mb-2 flex items-center gap-2">
-              <button
-                onClick={() => { setChatInput(chatInput + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors"
-              >
-                <AtSign className="w-3.5 h-3.5" />Add context
-              </button>
-              <ContextWindowIndicator contextWindow={latestSession?.contextWindow} />
-            </div>
-            {/* Attached Files Display */}
-            {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {attachedFiles.map((file, idx) => (
-                  <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-xs text-foreground">
-                    <FileCode className="w-3 h-3" />
-                    <span className="max-w-[150px] truncate">{file}</span>
-                    <button onClick={() => removeAttachedFile(idx)} className="hover:text-destructive"><X className="w-3 h-3" /></button>
-                  </span>
-                ))}
-              </div>
-            )}
-            {/* Input with @ context picker */}
-            <div className="relative mb-2">
-              <input
-                ref={chatInputRef}
-                type="text"
-                value={chatInput}
-                onChange={handleChatInputChange}
-                onKeyDown={(e) => { handleContextPickerKeyDown(e); if (!showContextPicker) handleChatKeyDown(e); }}
-                onPaste={handlePaste}
-                placeholder={isSessionLive && isWsConnected ? "Type @ to add context..." : "Type @ to add files..."}
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-                disabled={isTyping || isWaitingForResponse}
-              />
-              {/* @ Context Picker Dropdown */}
-              {showContextPicker && filteredFiles.length > 0 && (
-                <div
-                  ref={contextPickerRef}
-                  className="absolute bottom-full left-0 mb-1 w-72 max-h-48 overflow-y-auto glass border border-border rounded-lg shadow-lg py-1 z-30"
-                >
-                  <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Files</div>
-                  {filteredFiles.slice(0, 8).map((file, idx) => (
-                    <button
-                      key={file}
-                      onClick={() => selectContextFile(file)}
-                      className={cn(
-                        "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors",
-                        idx === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
-                      )}
-                    >
-                      <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{file}</span>
-                    </button>
-                  ))}
-                  {filteredFiles.length > 8 && (
-                    <div className="px-3 py-1 text-xs text-muted-foreground">+{filteredFiles.length - 8} more</div>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-0.5">
-                {/* File Attachment */}
-                <input type="file" ref={fileInputRef} onChange={handleFileSelect} multiple className="hidden" />
-                <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg hover:bg-muted transition-colors" title="Attach file">
-                  <Paperclip className="w-4 h-4 text-muted-foreground" />
-                </button>
-                {/* Model Selector */}
-                <div className="relative" ref={modelDropdownRef}>
-                  <button
-                    onClick={() => setShowModelDropdown(!showModelDropdown)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                      selectedModel !== 'default' ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    {selectedModel === 'default' ? 'Default' : selectedModel.charAt(0).toUpperCase() + selectedModel.slice(1)}
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-                  {showModelDropdown && (
-                    <div className="absolute bottom-full left-0 mb-1 w-32 glass border border-border rounded-lg shadow-lg py-1 z-20">
-                      {(['default', 'haiku', 'sonnet', 'opus'] as const).map((model) => (
-                        <button
-                          key={model}
-                          onClick={() => { setSelectedModel(model); setShowModelDropdown(false); }}
-                          className={cn(
-                            "w-full px-3 py-1.5 text-left text-xs hover:bg-accent transition-colors",
-                            selectedModel === model ? "text-primary font-medium" : "text-popover-foreground"
-                          )}
-                        >
-                          {model === 'default' ? 'Default' : model.charAt(0).toUpperCase() + model.slice(1)}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {/* Web Search Toggle */}
-                <button
-                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    webSearchEnabled ? "text-blue-500 bg-blue-500/10" : "text-muted-foreground hover:text-foreground"
-                  )}
-                  title={webSearchEnabled ? "Web search enabled" : "Web search disabled"}
-                >
-                  <Globe className={cn("w-3.5 h-3.5", webSearchEnabled && "text-blue-500")} />
-                  Web
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                {/* Permission Mode Selector */}
-                <div className="relative" ref={permissionDropdownRef}>
-                  <button
-                    onClick={() => setShowPermissionDropdown(!showPermissionDropdown)}
-                    className={cn(
-                      "p-1.5 rounded-lg transition-colors",
-                      chatPermissionMode === 'default' && "text-muted-foreground hover:text-foreground hover:bg-muted",
-                      chatPermissionMode === 'acceptEdits' && "text-yellow-500 bg-yellow-500/10",
-                      chatPermissionMode === 'bypassPermissions' && "text-red-500 bg-red-500/10"
-                    )}
-                    title={`Permission: ${chatPermissionMode}`}
-                  >
-                    {chatPermissionMode === 'default' && <ShieldAlert className="w-4 h-4" />}
-                    {chatPermissionMode === 'acceptEdits' && <Pencil className="w-4 h-4" />}
-                    {chatPermissionMode === 'bypassPermissions' && <Zap className="w-4 h-4" />}
-                  </button>
-                  {showPermissionDropdown && (
-                    <div className="absolute bottom-full right-0 mb-1 w-44 glass border border-border rounded-lg shadow-lg py-1 z-20">
-                      <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Permission Mode</div>
-                      <button
-                        onClick={() => { setChatPermissionMode('default'); setShowPermissionDropdown(false); }}
-                        className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors", chatPermissionMode === 'default' && "text-primary font-medium")}
-                      >
-                        <ShieldAlert className="w-3.5 h-3.5" />Default (Ask)
-                      </button>
-                      <button
-                        onClick={() => { setChatPermissionMode('acceptEdits'); setShowPermissionDropdown(false); }}
-                        className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors", chatPermissionMode === 'acceptEdits' && "text-yellow-500 font-medium")}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />Accept Edits
-                      </button>
-                      <button
-                        onClick={() => { setChatPermissionMode('bypassPermissions'); setShowPermissionDropdown(false); }}
-                        className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors", chatPermissionMode === 'bypassPermissions' && "text-red-500 font-medium")}
-                      >
-                        <Zap className="w-3.5 h-3.5" />Bypass All
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {/* Action Buttons */}
-                {isWaitingForResponse && isSessionLive ? (
-                  <button onClick={() => { sendCancel(); setIsWaitingForResponse(false); setCurrentAssistantMessage(''); }} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-xs font-medium">
-                    <X className="w-3.5 h-3.5" />Cancel
-                  </button>
-                ) : isSessionLive && isWsConnected ? (
-                  <button onClick={() => sendMessage(chatInput)} disabled={!chatInput.trim() || isWaitingForResponse} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
-                    <Sparkles className="w-3.5 h-3.5" />Send
-                  </button>
-                ) : task.status === 'not-started' ? (
-                  <button onClick={handleStartTask} disabled={isUpdating} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
-                    <Play className="w-3.5 h-3.5" />Start
-                  </button>
-                ) : task.status === 'in-progress' && !isSessionLive ? (
-                  <button onClick={() => handleStartSessionWithMode('retry')} disabled={isStartingSession} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
-                    {isStartingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Resume
-                  </button>
-                ) : task.status === 'in-progress' ? (
-                  <button onClick={handleCancelTask} disabled={isUpdating} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors text-xs font-medium disabled:opacity-50">
-                    <X className="w-3.5 h-3.5" />Cancel
-                  </button>
-                ) : (
-                  <button onClick={handleContinueTask} disabled={isUpdating} className="h-7 px-3 rounded-lg flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50">
-                    <Play className="w-3.5 h-3.5" />Continue
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ChatInputFooter
+        latestSession={latestSession}
+        isSessionLive={isSessionLive}
+        isWsConnected={isWsConnected}
+        task={task}
+        isStartingSession={isStartingSession}
+        isUpdating={isUpdating}
+        chatInput={chatInput}
+        attachedFiles={attachedFiles}
+        selectedModel={selectedModel}
+        webSearchEnabled={webSearchEnabled}
+        chatPermissionMode={chatPermissionMode}
+        isDragOver={isDragOver}
+        showContextPicker={showContextPicker}
+        filteredFiles={filteredFiles}
+        contextPickerIndex={contextPickerIndex}
+        showModelDropdown={showModelDropdown}
+        showPermissionDropdown={showPermissionDropdown}
+        chatInputRef={chatInputRef as React.RefObject<HTMLInputElement>}
+        fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
+        contextPickerRef={contextPickerRef as React.RefObject<HTMLDivElement>}
+        modelDropdownRef={modelDropdownRef as React.RefObject<HTMLDivElement>}
+        permissionDropdownRef={permissionDropdownRef as React.RefObject<HTMLDivElement>}
+        onChatInputChange={handleChatInputChange}
+        onChatKeyDown={handleChatKeyDown}
+        onContextPickerKeyDown={handleContextPickerKeyDown}
+        onPaste={handlePaste}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onRemoveFile={removeAttachedFile}
+        onFileSelect={handleFileSelect}
+        onSelectContextFile={selectContextFile}
+        onAddContext={() => { setChatInput(chatInput + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }}
+        onSetSelectedModel={setSelectedModel}
+        onToggleWebSearch={() => setWebSearchEnabled(!webSearchEnabled)}
+        onSetPermissionMode={setChatPermissionMode}
+        onToggleModelDropdown={() => setShowModelDropdown(!showModelDropdown)}
+        onTogglePermissionDropdown={() => setShowPermissionDropdown(!showPermissionDropdown)}
+        onSendMessage={sendMessage}
+        onSendCancel={sendCancel}
+        onStartTask={handleStartTask}
+        onStartSessionWithMode={handleStartSessionWithMode}
+        onCancelTask={handleCancelTask}
+        onContinueTask={handleContinueTask}
+        isWaitingForResponse={isWaitingForResponse}
+        isTyping={isTyping}
+      />
       </div>
 
       {/* File Details Panel - shown on the right when a diff file is selected or sub-panel is open */}
