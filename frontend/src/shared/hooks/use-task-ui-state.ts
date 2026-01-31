@@ -1,19 +1,22 @@
 import { useState } from 'react';
 
+/**
+ * Task detail UI state management (non-chat state only)
+ *
+ * Chat-related state has been moved to useChatInputState for performance.
+ * This prevents parent component re-renders on chat input keystrokes.
+ *
+ * Note: isTyping is kept here (not in ChatInputFooter) because it's displayed
+ * in AISessionTab, not in the chat input. It's set by useChatHandlers (inside
+ * ChatInputFooter) but displayed in the parent's AI session tab.
+ */
 export function useTaskUIState() {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [activeInfoTab, setActiveInfoTab] = useState<'activity' | 'ai-session' | 'diffs' | 'sessions'>('ai-session');
-  const [chatInput, setChatInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [isTyping, setIsTyping] = useState(false); // Displayed in AISessionTab
   const [diffApprovals, setDiffApprovals] = useState<Record<string, 'approved' | 'rejected' | null>>({});
   const [showAddProperty, setShowAddProperty] = useState(false);
   const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState<'default' | 'haiku' | 'sonnet' | 'opus'>('default');
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [chatPermissionMode, setChatPermissionMode] = useState<'default' | 'acceptEdits' | 'bypassPermissions'>('default');
-  const [showPermissionDropdown, setShowPermissionDropdown] = useState(false);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [subPanelTab, setSubPanelTab] = useState<'chat-session' | 'diffs'>('diffs');
   const [isSubPanelOpen, setIsSubPanelOpen] = useState(false);
@@ -22,17 +25,10 @@ export function useTaskUIState() {
   return {
     isDescriptionExpanded, setIsDescriptionExpanded,
     activeInfoTab, setActiveInfoTab,
-    chatInput, setChatInput,
     isTyping, setIsTyping,
     diffApprovals, setDiffApprovals,
     showAddProperty, setShowAddProperty,
     expandedCommands, setExpandedCommands,
-    attachedFiles, setAttachedFiles,
-    selectedModel, setSelectedModel,
-    webSearchEnabled, setWebSearchEnabled,
-    showModelDropdown, setShowModelDropdown,
-    chatPermissionMode, setChatPermissionMode,
-    showPermissionDropdown, setShowPermissionDropdown,
     selectedDiffFile, setSelectedDiffFile,
     subPanelTab, setSubPanelTab,
     isSubPanelOpen, setIsSubPanelOpen,

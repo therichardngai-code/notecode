@@ -6,7 +6,7 @@ import {
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useChatHandlers, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useDragDrop, useContextPicker, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, type TaskDetailProperty } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, type TaskDetailProperty } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
 import type { SessionResumeMode } from '@/adapters/api/sessions-api';
@@ -14,7 +14,7 @@ import type { SessionResumeMode } from '@/adapters/api/sessions-api';
 import type { ChatMessage } from '@/shared/types';
 // Shared task-detail components
 import {
-  ContextWarningDialog, ChatInputFooter, ContentPreviewModal, TaskInfoTabsNav,
+  ContextWarningDialog, ChatInputFooter, type ChatInputFooterHandle, ContentPreviewModal, TaskInfoTabsNav,
   FileDetailsPanel, TaskEditPanel,
 } from '@/shared/components/task-detail';
 // Phase 5 Tabs
@@ -115,7 +115,8 @@ function TaskDetailPage() {
   const handleStartSessionWithMode = async (mode: SessionResumeMode) => {
     if (!taskId) return;
     // Capture chat input BEFORE clearing state - pass as initialPrompt to backend
-    const newPrompt = chatInput.trim() || undefined;
+    // Read from ChatInputFooter ref (no subscription - rerender-defer-reads pattern)
+    const newPrompt = chatInputFooterRef.current?.getChatInput() || undefined;
     // Prevent height collapse: lock container height before clearing state
     const container = aiSessionContainerRef.current;
     if (container) {
@@ -144,8 +145,10 @@ function TaskDetailPage() {
       setCurrentAssistantMessage('');
       setMessageBuffers({}); // Clear delta streaming buffers
     }
-    setChatInput(''); // Clear after capturing
-    setAttachedFiles([]); // Clear attached files
+    // Clear chat input and attached files via ref (encapsulated in ChatInputFooter)
+    if (newPrompt) {
+      chatInputFooterRef.current?.clearChatInput();
+    }
     setWsSessionStatus(null); // Reset WebSocket status for new session
     setJustStartedSession(null); // Clear previous
     // Release height lock after a short delay
@@ -189,22 +192,14 @@ function TaskDetailPage() {
   };
   const isStartingSession = startSessionMutation.isPending;
 
-  // UI state
-  // UI state hook
+  // UI state hook (chat state moved to ChatInputFooter for performance)
   const {
     isDescriptionExpanded, setIsDescriptionExpanded,
     activeInfoTab, setActiveInfoTab,
-    chatInput, setChatInput,
-    isTyping, setIsTyping,
+    isTyping, setIsTyping, // Keep at parent - displayed in AISessionTab
     diffApprovals, setDiffApprovals,
     showAddProperty, setShowAddProperty,
     expandedCommands, setExpandedCommands,
-    attachedFiles, setAttachedFiles,
-    selectedModel, setSelectedModel,
-    webSearchEnabled, setWebSearchEnabled,
-    showModelDropdown, setShowModelDropdown,
-    chatPermissionMode, setChatPermissionMode,
-    showPermissionDropdown, setShowPermissionDropdown,
     selectedDiffFile, setSelectedDiffFile,
     subPanelTab, setSubPanelTab,
     isSubPanelOpen, setIsSubPanelOpen,
@@ -213,23 +208,9 @@ function TaskDetailPage() {
 
   const addPropertyRef = useRef<HTMLDivElement>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
-  const permissionDropdownRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Drag and drop hook
-  const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useDragDrop({ setAttachedFiles });
-
-  const chatInputRef = useRef<HTMLInputElement>(null);
-
-  // @ mention context picker hook
-  const {
-    showContextPicker, contextPickerIndex, contextPickerRef, filteredFiles,
-    handleChatInputChange, handleContextPickerKeyDown, handlePaste,
-    selectContextFile, addContext
-  } = useContextPicker({
-    chatInput, setChatInput, attachedFiles, setAttachedFiles, chatInputRef
-  });
+  // Ref to ChatInputFooter imperative handle (rerender-defer-reads pattern)
+  const chatInputFooterRef = useRef<ChatInputFooterHandle>(null);
 
   // Real-time WebSocket chat state
   // Realtime state hook
@@ -340,64 +321,10 @@ function TaskDetailPage() {
     });
   };
 
-  // Close model dropdown on click outside
-  useEffect(() => {
-    if (!showModelDropdown) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) setShowModelDropdown(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showModelDropdown, setShowModelDropdown]);
-
-  // Close permission dropdown on click outside
-  useEffect(() => {
-    if (!showPermissionDropdown) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (permissionDropdownRef.current && !permissionDropdownRef.current.contains(e.target as Node)) setShowPermissionDropdown(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showPermissionDropdown, setShowPermissionDropdown]);
-
-
-  // Handle file selection
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      const filePaths = Array.from(files).map(f => f.name);
-      setAttachedFiles(prev => [...prev, ...filePaths]);
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const removeAttachedFile = (index: number) => setAttachedFiles(prev => prev.filter((_, i) => i !== index));
-
 
   // Handle paste from clipboard
 
   // File Details sub-panel state
-
-  // Chat handlers hook
-  const { sendMessage, handleChatKeyDown } = useChatHandlers({
-    isWsConnected,
-    isSessionLive,
-    chatInput,
-    attachedFiles,
-    selectedModel,
-    chatPermissionMode,
-    webSearchEnabled,
-    isWaitingForResponse,
-    isTyping,
-    showContextPicker,
-    sendUserInput,
-    setRealtimeMessages,
-    setChatInput,
-    setAttachedFiles,
-    setIsWaitingForResponse,
-    setCurrentAssistantMessage,
-    setIsTyping,
-  });
 
   // Start task: Update status to in-progress AND start a new session
   const handleStartTask = async () => {
@@ -566,54 +493,29 @@ function TaskDetailPage() {
         </div>
       </ScrollArea>
 
-      {/* Chat Input Footer */}
+      {/* Chat Input Footer - Fully encapsulated (rerender-defer-reads pattern) */}
       <ChatInputFooter
+        ref={chatInputFooterRef}
         latestSession={latestSession}
         isSessionLive={isSessionLive}
         isWsConnected={isWsConnected}
         task={task}
         isStartingSession={isStartingSession}
         isUpdating={isUpdating}
-        chatInput={chatInput}
-        attachedFiles={attachedFiles}
-        selectedModel={selectedModel}
-        webSearchEnabled={webSearchEnabled}
-        chatPermissionMode={chatPermissionMode}
-        isDragOver={isDragOver}
-        showContextPicker={showContextPicker}
-        filteredFiles={filteredFiles}
-        contextPickerIndex={contextPickerIndex}
-        showModelDropdown={showModelDropdown}
-        showPermissionDropdown={showPermissionDropdown}
-        chatInputRef={chatInputRef as React.RefObject<HTMLInputElement>}
-        fileInputRef={fileInputRef as React.RefObject<HTMLInputElement>}
-        contextPickerRef={contextPickerRef as React.RefObject<HTMLDivElement>}
-        modelDropdownRef={modelDropdownRef as React.RefObject<HTMLDivElement>}
-        permissionDropdownRef={permissionDropdownRef as React.RefObject<HTMLDivElement>}
-        onChatInputChange={handleChatInputChange}
-        onChatKeyDown={handleChatKeyDown}
-        onContextPickerKeyDown={handleContextPickerKeyDown}
-        onPaste={handlePaste}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onRemoveFile={removeAttachedFile}
-        onFileSelect={handleFileSelect}
-        onSelectContextFile={selectContextFile}
-        onAddContext={addContext}
-        onSetSelectedModel={setSelectedModel}
-        onToggleWebSearch={() => setWebSearchEnabled(!webSearchEnabled)}
-        onSetPermissionMode={setChatPermissionMode}
-        onToggleModelDropdown={() => setShowModelDropdown(!showModelDropdown)}
-        onTogglePermissionDropdown={() => setShowPermissionDropdown(!showPermissionDropdown)}
-        onSendMessage={sendMessage}
-        onSendCancel={sendCancel}
+        realtimeMessages={realtimeMessages}
+        setRealtimeMessages={setRealtimeMessages}
+        currentAssistantMessage={currentAssistantMessage}
+        setCurrentAssistantMessage={setCurrentAssistantMessage}
+        isWaitingForResponse={isWaitingForResponse}
+        setIsWaitingForResponse={setIsWaitingForResponse}
+        isTyping={isTyping}
+        setIsTyping={setIsTyping}
+        sendUserInput={sendUserInput}
+        sendCancel={sendCancel}
         onStartTask={handleStartTask}
         onStartSessionWithMode={handleStartSessionWithMode}
         onCancelTask={handleCancelTask}
         onContinueTask={handleContinueTask}
-        isWaitingForResponse={isWaitingForResponse}
-        isTyping={isTyping}
       />
       </div>
 

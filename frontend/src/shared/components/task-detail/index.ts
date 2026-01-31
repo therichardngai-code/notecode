@@ -23,7 +23,7 @@ export { PermissionSelectorDropdown } from './permission-selector-dropdown';
 export { FileAttachmentList } from './file-attachment-list';
 export { ChatInputField } from './chat-input-field';
 export { ChatActionButtons } from './chat-action-buttons';
-export { ChatInputFooter } from './chat-input-footer';
+export { ChatInputFooter, type ChatInputFooterHandle } from './chat-input-footer';
 export { ContentPreviewModal } from './content-preview-modal';
 export { TaskInfoTabsNav } from './task-info-tabs-nav';
 export { FileDetailsPanel } from './file-details-panel';
