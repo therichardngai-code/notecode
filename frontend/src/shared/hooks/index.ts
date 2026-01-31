@@ -7,7 +7,7 @@ export { useTaskCreation, type TaskFormData, type TaskProperty } from './use-tas
 export { useTaskDetail, type TaskDetailProperty } from './use-task-detail';
 export { useSessions, useSession, useSessionMessages, useSessionDiffs, useTaskMessages, useStartSession, sessionKeys } from './use-sessions-query';
 export { useLatestSession } from './use-latest-session';
-export { useTaskSessionState, type UseTaskSessionStateReturn, type UseTaskSessionStateOptions } from './use-task-session-state';
+export { useTaskSessionState, type UseTaskSessionStateReturn, type UseTaskSessionStateOptions, type StreamingToolCommand } from './use-task-session-state';
 export { useChatInput, type UseChatInputReturn } from './use-chat-input';
 export { useSessionWebSocket, type UseSessionWebSocketOptions, type ConnectionState, type ToolUseBlock } from './use-session-websocket';
 export { useChatSession, type ChatMessage, type ChatSessionStatus, type UseChatSessionOptions, type ToolCommand } from './use-chat-session';
