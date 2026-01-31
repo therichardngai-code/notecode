@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import type { Session } from '@/domain/entities/session';
+import type { Session } from '@/adapters/api/sessions-api';
 import { PROVIDER_CONTEXT_CONFIG } from '@/shared/constants/provider-config';
 
 interface UseContextWarningResult {

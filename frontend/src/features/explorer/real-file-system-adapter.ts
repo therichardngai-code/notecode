@@ -8,7 +8,11 @@ import { filesApi, type FileNode } from '@/adapters/api/files-api';
 import type { FileTreeNode } from './file-system-adapter';
 
 export class RealFileSystemAdapter implements IFileSystem {
-  constructor(private projectId: string) {}
+  private projectId: string;
+
+  constructor(projectId: string) {
+    this.projectId = projectId;
+  }
 
   async readFile(path: string): Promise<string> {
     const response = await filesApi.readFile(this.projectId, path);

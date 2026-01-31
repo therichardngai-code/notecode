@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, GitBranch, FileCode, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { X, GitBranch, FileCode, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { gitApi, type GitCommitApproval, type FileDiff } from '@/adapters/api/git-api';
 

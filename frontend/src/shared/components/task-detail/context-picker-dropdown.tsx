@@ -7,7 +7,7 @@ interface ContextPickerDropdownProps {
   filteredFiles: string[];
   selectedIndex: number;
   onSelect: (file: string) => void;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**

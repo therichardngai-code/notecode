@@ -58,7 +58,7 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
         const children = res.tree.children || [];
         setFileTree(convertFileTree(children));
       })
-      .catch(err => {
+      .catch(() => {
         setError('Failed to load file tree');
         setFileTree(mockFileTree); // Fallback to mock data
       })

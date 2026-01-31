@@ -47,8 +47,8 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
   const { selectFolder, isSelecting: isSelectingFolder } = useFolderPicker({
     onSelect: async (path, name) => {
       const result = await createProject.mutateAsync({ name, path });
-      if (result?.id) {
-        onUpdate([result.id]);
+      if (result?.project?.id) {
+        onUpdate([result.project.id]);
         setShowDropdown(false);
       }
     },

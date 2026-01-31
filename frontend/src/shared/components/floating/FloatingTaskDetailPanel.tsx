@@ -21,7 +21,7 @@ import { sessionsApi } from '@/adapters/api/sessions-api';
 import { gitApi, type TaskGitStatus, type GitCommitApproval } from '@/adapters/api/git-api';
 import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 // Shared types and utilities
-import type { ChatMessage, UIDiff } from '@/shared/types';
+import type { ChatMessage, UIDiff, ToolCommand } from '@/shared/types';
 import { messageToChat, diffToUI } from '@/shared/utils';
 import { getFilteredSessionIds } from '@/shared/utils/session-chain';
 // Shared task-detail components
@@ -1065,11 +1065,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                   return activities.map((act, idx) => {
                     if (act.type === 'task_created') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5"><User className="w-3 h-3 text-muted-foreground" /></div><div><p className="text-foreground"><span className="font-medium">Task created</span></p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
                     if (act.type === 'branch_created') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0 mt-0.5"><GitBranch className="w-3 h-3 text-blue-500" /></div><div><p className="text-foreground"><span className="font-medium">Branch created:</span> {String(act.data?.branch)}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
-                    if (act.type === 'session_started') { const mode = act.data?.mode as string | undefined; return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0 mt-0.5"><Bot className="w-3 h-3 text-purple-500" /></div><div><p className="text-foreground"><span className="font-medium">Session started</span> #{act.data?.attempt}{mode ? ` (${mode})` : ''}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>; }
-                    if (act.type === 'session_completed') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5"><CheckCircle className="w-3 h-3 text-green-500" /></div><div><p className="text-foreground"><span className="font-medium">Session completed</span> #{act.data?.attempt}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
-                    if (act.type === 'session_failed') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5"><X className="w-3 h-3 text-red-500" /></div><div><p className="text-foreground"><span className="font-medium">Session failed</span> #{act.data?.attempt}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
+                    if (act.type === 'session_started') { const mode = act.data?.mode as string | undefined; return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0 mt-0.5"><Bot className="w-3 h-3 text-purple-500" /></div><div><p className="text-foreground"><span className="font-medium">Session started</span> #{String(act.data?.attempt ?? '')}{mode ? ` (${mode})` : ''}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>; }
+                    if (act.type === 'session_completed') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5"><CheckCircle className="w-3 h-3 text-green-500" /></div><div><p className="text-foreground"><span className="font-medium">Session completed</span> #{String(act.data?.attempt ?? '')}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
+                    if (act.type === 'session_failed') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5"><X className="w-3 h-3 text-red-500" /></div><div><p className="text-foreground"><span className="font-medium">Session failed</span> #{String(act.data?.attempt ?? '')}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
                     if (act.type === 'commit_approval_requested') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-yellow-500/10 flex items-center justify-center shrink-0 mt-0.5"><GitBranch className="w-3 h-3 text-yellow-500" /></div><div><p className="text-foreground"><span className="font-medium">Commit approval requested</span></p><p className="text-xs text-muted-foreground truncate max-w-[200px]">{String(act.data?.message || 'No message')}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
-                    if (act.type === 'commit_approved') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5"><Check className="w-3 h-3 text-green-500" /></div><div><p className="text-foreground"><span className="font-medium">Commit approved</span></p><p className="text-xs text-muted-foreground truncate max-w-[200px]">{String(act.data?.message || 'No message')}</p>{act.data?.sha && <p className="text-xs text-muted-foreground font-mono">{String(act.data.sha).slice(0, 7)}</p>}<p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
+                    if (act.type === 'commit_approved') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5"><Check className="w-3 h-3 text-green-500" /></div><div><p className="text-foreground"><span className="font-medium">Commit approved</span></p><p className="text-xs text-muted-foreground truncate max-w-[200px]">{String(act.data?.message || 'No message')}</p>{act.data?.sha ? <p className="text-xs text-muted-foreground font-mono">{String(act.data.sha).slice(0, 7)}</p> : null}<p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
                     if (act.type === 'commit_rejected') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-red-500/10 flex items-center justify-center shrink-0 mt-0.5"><X className="w-3 h-3 text-red-500" /></div><div><p className="text-foreground"><span className="font-medium">Commit rejected</span></p><p className="text-xs text-muted-foreground truncate max-w-[200px]">{String(act.data?.message || 'No message')}</p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
                     if (act.type === 'task_completed') return <div key={idx} className="flex items-start gap-3 text-sm"><div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5"><CheckCircle className="w-3 h-3 text-green-500" /></div><div><p className="text-foreground"><span className="font-medium">Task completed</span></p><p className="text-xs text-muted-foreground">{formatDate(act.date)}</p></div></div>;
                     return null;
@@ -1203,18 +1203,18 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                                       </div>
                                     )}
                                     {/* Content - Write, Edit with action buttons */}
-                                    {'content' in cmd.input && (
+                                    {cmd.input && 'content' in cmd.input && (
                                       <div className="mt-1">
                                         <div className="flex items-center justify-end gap-1 mb-1">
                                           <button
-                                            onClick={() => navigator.clipboard.writeText(String(cmd.input.content))}
+                                            onClick={() => navigator.clipboard.writeText(String(cmd.input?.content ?? ''))}
                                             className="p-1 rounded hover:bg-muted transition-colors"
                                             title="Copy content"
                                           >
                                             <Copy className="w-3 h-3 text-muted-foreground" />
                                           </button>
                                           <button
-                                            onClick={() => setContentModalData({ filePath: 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content', content: String(cmd.input.content) })}
+                                            onClick={() => setContentModalData({ filePath: cmd.input && 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content', content: String(cmd.input?.content ?? '') })}
                                             className="p-1 rounded hover:bg-muted transition-colors"
                                             title="View in modal"
                                           >
@@ -1222,8 +1222,8 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                                           </button>
                                           <button
                                             onClick={() => {
-                                              const filePath = 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content';
-                                              openFileAsTab(filePath, String(cmd.input.content));
+                                              const filePath = cmd.input && 'file_path' in cmd.input ? String(cmd.input.file_path) : 'Content';
+                                              openFileAsTab(filePath, String(cmd.input?.content ?? ''));
                                             }}
                                             className="p-1 rounded hover:bg-muted transition-colors"
                                             title="Open in new tab"
@@ -1232,12 +1232,12 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                                           </button>
                                         </div>
                                         <pre className="p-2 bg-muted/50 rounded text-[10px] max-h-[120px] overflow-auto whitespace-pre-wrap text-foreground/80">
-                                          {String(cmd.input.content).slice(0, 500)}{String(cmd.input.content).length > 500 ? '...' : ''}
+                                          {String(cmd.input?.content ?? '').slice(0, 500)}{String(cmd.input?.content ?? '').length > 500 ? '...' : ''}
                                         </pre>
                                       </div>
                                     )}
                                     {/* Todos - TodoWrite */}
-                                    {'todos' in cmd.input && Array.isArray(cmd.input.todos) && (
+                                    {cmd.input && 'todos' in cmd.input && Array.isArray(cmd.input.todos) && (
                                       <div className="space-y-1">
                                         {(cmd.input.todos as Array<{content?: string; status?: string}>).slice(0, 5).map((todo, i) => (
                                           <div key={i} className="flex items-center gap-2 text-[10px] text-muted-foreground">

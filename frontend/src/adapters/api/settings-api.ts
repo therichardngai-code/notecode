@@ -4,17 +4,10 @@
  */
 
 import { apiClient } from './api-client';
+import type { ApprovalGateConfig, ApprovalGateRule } from './projects-api';
 
-// Approval gate rule (shared with projects)
-export interface ApprovalGateRule {
-  pattern: string;
-  action: 'approve' | 'deny' | 'ask';
-}
-
-export interface ApprovalGateConfig {
-  enabled: boolean;
-  rules?: ApprovalGateRule[];
-}
+// Re-export for backward compatibility
+export type { ApprovalGateConfig, ApprovalGateRule };
 
 // Types
 export interface GlobalSettings {

@@ -26,8 +26,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useChatSession, type ChatMessage, type ToolCommand } from '@/shared/hooks';
-import type { ToolUseBlock } from '@/shared/hooks/use-session-websocket';
+import { useChatSession, type ChatMessage } from '@/shared/hooks';
+// ToolUseBlock import removed - not used in this component
 import { projectsApi, type Project, type Chat } from '@/adapters/api';
 
 // Chat history type (shared with AIChatView)
@@ -95,7 +95,7 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
 
   // Chat session hook (real API)
   const {
-    status: chatStatus,
+    status: _chatStatus, // Reserved for status display
     messages,
     isStreaming,
     currentToolUse,
@@ -294,10 +294,7 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
     setAttachedFiles([]);
   };
 
-  const handleSelectChat = (chat: ChatHistory) => {
-    setSelectedChat(chat);
-    setShowHistory(false);
-  };
+  // Chat history selection - implementation reserved for future
 
   const handleOpenFullChat = () => {
     setIsOpen(false);

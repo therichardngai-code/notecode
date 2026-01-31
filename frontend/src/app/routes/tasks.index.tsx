@@ -13,14 +13,15 @@ import { useTasks } from '@/shared/hooks/use-tasks-query';
 import { useSessions, useStopSession, useDeleteSession } from '@/shared/hooks/use-sessions-query';
 import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 
-// Search params for handling ?id=taskId, ?session=sessionId
-type TasksSearch = { id?: string; session?: string };
+// Search params for handling ?id=taskId, ?session=sessionId, ?projectId=projectId
+type TasksSearch = { id?: string; session?: string; projectId?: string };
 
 export const Route = createFileRoute('/tasks/')({
   component: TasksIndexPage,
   validateSearch: (search: Record<string, unknown>): TasksSearch => ({
     id: typeof search.id === 'string' ? search.id : undefined,
     session: typeof search.session === 'string' ? search.session : undefined,
+    projectId: typeof search.projectId === 'string' ? search.projectId : undefined,
   }),
 });
 
@@ -393,7 +394,7 @@ function TasksIndexPage() {
 
           {/* Add Task Button */}
           <button
-            onClick={openNewTaskPanel}
+            onClick={() => openNewTaskPanel()}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-foreground text-background text-sm font-medium hover:bg-foreground/90 transition-colors opacity-0 animate-float-up"
             style={{ animationDelay: '0.15s' }}
           >

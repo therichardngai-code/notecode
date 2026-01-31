@@ -12,8 +12,7 @@ import type { Session } from '@/adapters/api/sessions-api';
 import type { Task } from '@/adapters/api/tasks-api';
 import type { ChatMessage } from '@/shared/types';
 
-type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
-type ModelType = 'default' | 'haiku' | 'sonnet' | 'opus';
+// Type aliases removed - using types from adapters/api directly
 
 // Exposed methods interface (minimal API - rerender-defer-reads pattern)
 export interface ChatInputFooterHandle {
@@ -71,9 +70,9 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
     task,
     isStartingSession,
     isUpdating,
-    realtimeMessages,
+    realtimeMessages: _realtimeMessages, // Reserved for streaming display
     setRealtimeMessages,
-    currentAssistantMessage,
+    currentAssistantMessage: _currentAssistantMessage, // Reserved for streaming
     setCurrentAssistantMessage,
     isWaitingForResponse,
     setIsWaitingForResponse,
@@ -103,8 +102,8 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
       // setIsTyping - comes from parent (passed to useChatHandlers)
       showModelDropdown,
       showPermissionDropdown,
-      setShowModelDropdown,
-      setShowPermissionDropdown,
+      setShowModelDropdown: _setShowModelDropdown, // Used by ModelSelectorDropdown
+      setShowPermissionDropdown: _setShowPermissionDropdown, // Used by PermissionSelectorDropdown
       getChatInput,
       clearChatInput,
       toggleWebSearch,
@@ -123,7 +122,7 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
     const fileInputRef = useRef<HTMLInputElement>(null);
     const modelDropdownRef = useRef<HTMLDivElement>(null);
     const permissionDropdownRef = useRef<HTMLDivElement>(null);
-    const contextPickerRef = useRef<HTMLDivElement>(null);
+    // Note: contextPickerRef is provided by useContextPicker hook
 
     // LOCAL HOOKS - Move inside component (performance optimization)
     const contextPicker = useContextPicker({

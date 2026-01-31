@@ -9,7 +9,7 @@ interface ModelSelectorDropdownProps {
   isOpen: boolean;
   onSelect: (model: ModelType) => void;
   onToggle: () => void;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**

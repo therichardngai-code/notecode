@@ -135,7 +135,7 @@ export function useStartSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: StartSessionRequest) => sessionsApi.start(data),
-    onSuccess: (response, variables) => {
+    onSuccess: (_response, variables) => {
       queryClient.invalidateQueries({ queryKey: sessionKeys.list(variables.taskId) });
       queryClient.invalidateQueries({ queryKey: sessionKeys.running() });
       queryClient.invalidateQueries({ queryKey: taskKeys.detail(variables.taskId) });

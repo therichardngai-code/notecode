@@ -7,7 +7,7 @@
 import { useCallback, useState, useEffect } from 'react';
 import { useTask, useUpdateTask } from './use-tasks-query';
 import { useProject } from './use-projects-query';
-import type { Task, UpdateTaskRequest, TaskStatus, TaskPriority, AgentRole, ProviderType, ToolConfig, PermissionMode } from '@/adapters/api';
+import type { Task, UpdateTaskRequest, TaskStatus, TaskPriority, AgentRole, ProviderType, PermissionMode } from '@/adapters/api';
 import { getProviderForModel } from '@/shared/config/property-config';
 
 // UI property format (matches PropertyItem component but includes 'status')
@@ -254,7 +254,7 @@ export function useTaskDetail({ taskId }: UseTaskDetailOptions) {
         ...propsUpdate,
       };
 
-      const result = await updateTaskMutation.mutateAsync({ id: taskId, data: updateData });
+      await updateTaskMutation.mutateAsync({ id: taskId, data: updateData });
       setIsEditing(false);
       return { success: true };
     } catch (err) {

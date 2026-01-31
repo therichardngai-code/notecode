@@ -57,7 +57,7 @@ function ExplorerPage() {
   };
 
   // Handle opening file in new tab
-  const handleOpenInNewTab = async (fileName: string, filePath: string) => {
+  const handleOpenInNewTab = async (_fileName: string, filePath: string) => {
     if (!activeProjectId) return;
 
     try {
@@ -144,7 +144,7 @@ function ExplorerPage() {
         {selectedFile ? (
           <FileViewer
             filePath={selectedFile}
-            projectId={activeProjectId}
+            projectId={activeProjectId ?? undefined}
             onOpenInEditor={handleOpenInExternalEditor}
           />
         ) : (

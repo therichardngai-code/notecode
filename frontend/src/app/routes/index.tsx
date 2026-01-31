@@ -8,7 +8,7 @@ import { useRecentProjects, useFavoriteProjects } from '@/shared/hooks/use-proje
 import { useRunningSessions, useSessions } from '@/shared/hooks/use-sessions-query';
 import { useFloatingPanels, useFolderPicker } from '@/shared/hooks';
 import { useUpdateSettings } from '@/shared/hooks/use-settings';
-import { tasksApi, projectsApi, systemApi } from '@/adapters/api';
+import { tasksApi, projectsApi } from '@/adapters/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/shared/lib/utils';
 import { CreateProjectDialog } from '@/shared/components/dialogs/create-project-dialog';

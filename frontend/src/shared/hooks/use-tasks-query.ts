@@ -24,7 +24,7 @@ export const taskKeys = {
     search?: string;
     agentId?: string;
   }) => [...taskKeys.lists(), filters] as const,
-  stats: (projectId: string) => [...taskKeys.all, 'stats', projectId] as const,
+  stats: (projectId?: string) => [...taskKeys.all, 'stats', projectId] as const,
   details: () => [...taskKeys.all, 'detail'] as const,
   detail: (id: string) => [...taskKeys.details(), id] as const,
 };

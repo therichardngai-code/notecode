@@ -9,7 +9,7 @@ interface PermissionSelectorDropdownProps {
   isOpen: boolean;
   onSelect: (mode: PermissionMode) => void;
   onToggle: () => void;
-  containerRef: React.RefObject<HTMLDivElement>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 /**

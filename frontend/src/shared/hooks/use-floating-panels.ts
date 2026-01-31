@@ -58,5 +58,6 @@ export function useFloatingPanels() {
     handleCreateTask,
     handleAutoStartTask,
     openNewTaskPanel,
+    openChatPanel: handleGoToFullChat, // Alias for navigating to chat
   };
 }

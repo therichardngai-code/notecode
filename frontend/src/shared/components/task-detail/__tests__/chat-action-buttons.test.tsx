@@ -1,15 +1,31 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatActionButtons } from '../chat-action-buttons';
 import type { Task } from '@/adapters/api/tasks-api';
 
 const createMockTask = (overrides: Partial<Task> = {}): Task => ({
   id: 'task-1',
-  title: 'Test Task',
-  status: 'not-started',
   projectId: 'proj-1',
+  agentId: null,
+  parentId: null,
+  dependencies: [],
+  title: 'Test Task',
+  description: '',
+  status: 'not-started',
+  priority: 'medium',
+  assignee: null,
+  dueDate: null,
+  agentRole: null,
+  provider: null,
+  model: null,
+  skills: [],
+  tools: null,
+  contextFiles: [],
+  workflowStage: null,
   createdAt: '2026-01-31T00:00:00Z',
   updatedAt: '2026-01-31T00:00:00Z',
+  startedAt: null,
+  completedAt: null,
   ...overrides,
 });
 

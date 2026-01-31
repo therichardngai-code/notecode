@@ -71,22 +71,7 @@ const quickActions = [
   { id: '4', icon: CheckCircle, label: 'Create a task tracker', prompt: 'Help me create a simple task tracker' },
 ];
 
-// Mock responses
-const mockResponses: Record<string, { content: string; steps: number }> = {
-  "What's new in NoteCode?": {
-    steps: 2,
-    content: `NoteCode has several exciting new features:\n\n1. **AI-powered chat** - Get help with coding tasks\n2. **Task management** - Kanban boards and task tracking\n3. **Source control** - Built-in git integration\n\nWould you like to know more about any specific feature?`,
-  },
-  'Help me write a meeting agenda for a team standup': {
-    steps: 1,
-    content: `**Daily Standup Agenda**\n\n1. **Roll Call** (2 min)\n2. **Yesterday's Progress** (5 min)\n3. **Today's Goals** (5 min)\n4. **Blockers & Help Needed** (5 min)\n5. **Quick Announcements** (3 min)\n\n*Total time: ~20 minutes*`,
-  },
-};
-
-const defaultResponse = {
-  steps: 1,
-  content: `I understand your question. Let me help you with that.\n\n1. **Analysis**: I've reviewed your request\n2. **Suggestions**: Based on your input, I recommend exploring the documentation\n3. **Next Steps**: Would you like me to elaborate?\n\nFeel free to ask follow-up questions!`,
-};
+// Mock responses removed - using real API via useChatSession hook
 
 // Group chats by date (works with Chat type from API)
 function groupChatsByDate(chats: Chat[]) {
@@ -201,7 +186,7 @@ interface AIChatViewProps {
 
 export function AIChatView({ initialChatId }: AIChatViewProps) {
   const [input, setInput] = useState('');
-  const [selectedMode, setSelectedMode] = useState('auto');
+  const [_selectedMode, _setSelectedMode] = useState('auto'); // TODO: Reserved for future mode selection
   const [showQuickActions, setShowQuickActions] = useState(true);
   const [chatTitle, setChatTitle] = useState('New chat');
   const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
@@ -211,7 +196,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
   const [chatHistory, setChatHistory] = useState<Chat[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // inputRef removed - not currently needed
   const dropdownRef = useRef<HTMLDivElement>(null);
   const historyPanelRef = useRef<HTMLDivElement>(null);
 
@@ -241,7 +226,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
 
   // Chat session hook (real API)
   const {
-    status: chatStatus,
+    status: _chatStatus, // Reserved for status indicator
     messages,
     isStreaming,
     startChat,
@@ -445,7 +430,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
     setAttachedFiles([]);
   };
 
-  const handleLoadChat = (chat: ChatHistoryItem) => {
+  const handleLoadChat = (chat: Chat) => {
     // Note: Loading historical chats would need backend support for resuming sessions
     // For now, we just display the history visually
     setIsAnimating(true);

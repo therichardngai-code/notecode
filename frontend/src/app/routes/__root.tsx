@@ -146,7 +146,7 @@ function RootLayout() {
                   onClose={handlePanelClose}
                   onFileClick={handleFileClick}
                   onOpenFileInNewTab={handleOpenFileInNewTab}
-                  projectId={activeProjectId}
+                  projectId={activeProjectId ?? undefined}
                 />
               )}
             </div>

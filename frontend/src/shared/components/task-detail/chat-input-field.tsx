@@ -15,8 +15,8 @@ interface ChatInputFieldProps {
   contextPickerIndex: number;
 
   // Refs
-  chatInputRef: React.RefObject<HTMLInputElement>;
-  contextPickerRef: React.RefObject<HTMLDivElement>;
+  chatInputRef: React.RefObject<HTMLInputElement | null>;
+  contextPickerRef: React.RefObject<HTMLDivElement | null>;
 
   // Callbacks
   onChatInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
