@@ -6,6 +6,7 @@
 // Tool command displayed in chat messages
 export interface ToolCommand {
   cmd: string;
+  name?: string; // Tool name (e.g., "Read", "Write", "Bash")
   status: 'success' | 'running' | 'pending';
   input?: Record<string, unknown>;
 }
@@ -15,6 +16,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  timestamp?: Date | string; // Message timestamp for sorting
   files?: { name: string; additions?: number; deletions?: number }[];
   commands?: ToolCommand[];
   todos?: { text: string; checked: boolean }[]; // Optional todos from assistant
