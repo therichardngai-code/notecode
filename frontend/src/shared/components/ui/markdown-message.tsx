@@ -1,8 +1,13 @@
 /**
  * Markdown Message Component
  * Renders markdown content with syntax highlighting and proper styling
+ *
+ * Performance optimizations:
+ * - Memoized component prevents re-render when props unchanged
+ * - Memoized preprocessing avoids repeated regex operations
  */
 
+import { memo, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/shared/lib/utils';
@@ -58,9 +63,9 @@ function fixNestedCodeFences(content: string): string {
   return result.join('\n');
 }
 
-export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
-  // Pre-process to fix nested code fence issues
-  const processedContent = fixNestedCodeFences(content);
+export const MarkdownMessage = memo(function MarkdownMessage({ content, className }: MarkdownMessageProps) {
+  // Pre-process to fix nested code fence issues (memoized to avoid repeated regex operations)
+  const processedContent = useMemo(() => fixNestedCodeFences(content), [content]);
 
   return (
     <div className={cn('max-w-none', className)}>
@@ -164,4 +169,4 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});

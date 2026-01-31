@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
   Folder, Bot, Sparkles, Zap,
@@ -211,6 +211,11 @@ function TaskDetailPage() {
 
   // Ref to ChatInputFooter imperative handle (rerender-defer-reads pattern)
   const chatInputFooterRef = useRef<ChatInputFooterHandle>(null);
+
+  // Tab change handler with startTransition (keeps UI responsive during heavy tab renders)
+  const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'sessions') => {
+    startTransition(() => setActiveInfoTab(tab));
+  }, [setActiveInfoTab]);
 
   // Real-time WebSocket chat state
   // Realtime state hook
@@ -424,7 +429,7 @@ function TaskDetailPage() {
               activeTab={activeInfoTab}
               latestSession={latestSession}
               sessionsCount={sessions.length}
-              onTabChange={setActiveInfoTab}
+              onTabChange={handleTabChange}
               onExpandToSubPanel={handleExpandToSubPanel}
             />
 
