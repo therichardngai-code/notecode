@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Bot, MessageSquare, Wrench, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ApprovalCard } from '../approval-card';
@@ -66,14 +66,32 @@ export const AISessionTab = memo(function AISessionTab({
   onSetContentModal,
   onOpenFileAsTab,
 }: AISessionTabProps) {
-  // Message Deduplication
-  const apiContentSet = new Set(chatMessages.map((m) => m.content));
-  const uniqueRealtimeMessages = realtimeMessages.filter((m) => !apiContentSet.has(m.content));
-  const allMessages = [...chatMessages, ...uniqueRealtimeMessages].sort((a, b) => {
-    const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
-    const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
-    return timeA - timeB;
-  });
+  // Message Deduplication + merge + stable sort (memoized for performance)
+  // Avoid rebuilding Set, filtering, and sorting on every render
+  const apiContentSet = useMemo(
+    () => new Set(chatMessages.map((m) => m.content)),
+    [chatMessages]
+  );
+
+  const uniqueRealtimeMessages = useMemo(
+    () => realtimeMessages.filter((m) => !apiContentSet.has(m.content)),
+    [realtimeMessages, apiContentSet]
+  );
+
+  const allMessages = useMemo(() => {
+    const merged = [...chatMessages, ...uniqueRealtimeMessages];
+
+    // Stable sort: use timestamp if present, otherwise keep original order (use index)
+    // NEVER use Date.now() - it's unstable and changes on every call!
+    return merged
+      .map((m, idx) => ({
+        m,
+        t: m.timestamp ? new Date(m.timestamp).getTime() : idx,
+      }))
+      .sort((a, b) => a.t - b.t)
+      .map((x) => x.m);
+  }, [chatMessages, uniqueRealtimeMessages]);
+
   const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
   // Scroll Management
