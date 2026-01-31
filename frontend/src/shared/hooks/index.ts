@@ -22,3 +22,6 @@ export { useFilteredSessionIds } from './use-filtered-session-ids';
 export { useDragDrop } from './use-drag-drop';
 export { useContextPicker } from './use-context-picker';
 export { useTaskUIState } from './use-task-ui-state';
+export { useScrollRestoration } from './use-scroll-restoration';
+export { useApprovalState } from './use-approval-state';
+export { useApprovalHandlers } from './use-approval-handlers';

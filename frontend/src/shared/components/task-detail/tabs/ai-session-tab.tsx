@@ -5,7 +5,7 @@ import { ApprovalCard } from '../approval-card';
 import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 import { ChatMessageItem } from './chat-message-item';
 import type { Session, ApprovalRequest } from '@/adapters/api/sessions-api';
-import type { ChatMessage, ToolCommand } from '@/shared/types/task-detail-types';
+import type { ChatMessage } from '@/shared/types/task-detail-types';
 import type { ToolUseBlock } from '@/shared/hooks';
 
 interface AISessionTabProps {
@@ -32,8 +32,8 @@ interface AISessionTabProps {
 
   // Scroll management
   aiSessionContainerRef: React.RefObject<HTMLDivElement | null>;
-  userScrolledUpRef: React.MutableRefObject<boolean>;
   isScrolledUpFromBottom: boolean;
+  onHandleScroll: (container: HTMLElement) => void;
 
   // Callbacks
   onApproveRequest: (id: string) => void;
@@ -41,7 +41,6 @@ interface AISessionTabProps {
   onToggleCommand: (cmdKey: string) => void;
   onSetContentModal: (data: { filePath: string; content: string }) => void;
   onOpenFileAsTab: (filePath: string, content: string) => void;
-  onSetScrolledUp: (scrolledUp: boolean) => void;
 }
 
 export const AISessionTab = memo(function AISessionTab({
@@ -59,14 +58,13 @@ export const AISessionTab = memo(function AISessionTab({
   pendingApprovals,
   processingApproval,
   aiSessionContainerRef,
-  userScrolledUpRef,
   isScrolledUpFromBottom,
+  onHandleScroll,
   onApproveRequest,
   onRejectRequest,
   onToggleCommand,
   onSetContentModal,
   onOpenFileAsTab,
-  onSetScrolledUp,
 }: AISessionTabProps) {
   // Message Deduplication
   const apiContentSet = new Set(chatMessages.map((m) => m.content));
@@ -91,10 +89,7 @@ export const AISessionTab = memo(function AISessionTab({
         ref={aiSessionContainerRef}
         className="space-y-4 max-h-[400px] overflow-y-auto"
         onScroll={(e) => {
-          const el = e.currentTarget;
-          const scrolledUp = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
-          userScrolledUpRef.current = scrolledUp;
-          onSetScrolledUp(scrolledUp);
+          onHandleScroll(e.currentTarget);
         }}
       >
         {/* Session Starting Indicator */}

@@ -1,17 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
   Folder, Bot, Sparkles, Zap,
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useChatHandlers, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useDragDrop, useContextPicker, useTaskUIState, type TaskDetailProperty } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useChatHandlers, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useDragDrop, useContextPicker, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, type TaskDetailProperty } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
-import type { ApprovalRequest, SessionResumeMode } from '@/adapters/api/sessions-api';
-import { sessionsApi } from '@/adapters/api/sessions-api';
-import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
+import type { SessionResumeMode } from '@/adapters/api/sessions-api';
 // Shared types and utilities
 import type { ChatMessage } from '@/shared/types';
 // Shared task-detail components
@@ -73,15 +71,16 @@ function TaskDetailPage() {
   // Track just-started session for immediate WebSocket connection (before query refetch)
   const [justStartedSession, setJustStartedSession] = useState<{ id: string; status: string } | null>(null);
 
-  // Clear justStartedSession once query has the same session (sync complete)
-  useEffect(() => {
+  // Derive active session: use query data once it catches up, otherwise use optimistic
+  const activeSession = useMemo(() => {
+    // Query caught up - use real session data
     if (justStartedSession && latestSession?.id === justStartedSession.id) {
-      setJustStartedSession(null);
+      return latestSession;
     }
-  }, [justStartedSession, latestSession?.id]);
+    // Use optimistic just-started OR fallback to latest
+    return justStartedSession || latestSession;
+  }, [justStartedSession, latestSession]);
 
-  // Use just-started session if available, otherwise use latest from query
-  const activeSession = justStartedSession || latestSession;
   const activeSessionId = activeSession?.id || '';
 
   // Track providerSessionId to maintain stable query during Resume
@@ -103,62 +102,14 @@ function TaskDetailPage() {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
 
-  // Pending approvals state
-  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
-  const [processingApproval, setProcessingApproval] = useState<string | null>(null);
-
-  // Git commit approvals for activity timeline
-  const [gitCommitApprovals, setGitCommitApprovals] = useState<GitCommitApproval[]>([]);
-
-  useEffect(() => {
-    if (!activeSessionId) return;
-    sessionsApi.getPendingApprovals(activeSessionId)
-      .then(res => setPendingApprovals(res.approvals))
-      .catch(() => setPendingApprovals([]));
-  }, [activeSessionId]);
-
-  // Fetch git commit approvals for activity timeline
-  useEffect(() => {
-    if (!taskId) return;
-    gitApi.getTaskApprovals(taskId)
-      .then(res => setGitCommitApprovals(res.approvals))
-      .catch(() => setGitCommitApprovals([]));
-  }, [taskId]);
-
-  // Handle approval/rejection - use WebSocket when connected, fallback to HTTP
-  const handleApproveRequest = async (approvalId: string) => {
-    setProcessingApproval(approvalId);
-    try {
-      if (isWsConnected && isSessionLive) {
-        sendApprovalResponse(approvalId, true);
-        setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
-      } else {
-        await sessionsApi.approveRequest(approvalId);
-        setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
-      }
-    } catch (err) {
-      console.error('Failed to approve:', err);
-    } finally {
-      setProcessingApproval(null);
-    }
-  };
-
-  const handleRejectRequest = async (approvalId: string) => {
-    setProcessingApproval(approvalId);
-    try {
-      if (isWsConnected && isSessionLive) {
-        sendApprovalResponse(approvalId, false);
-        setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
-      } else {
-        await sessionsApi.rejectRequest(approvalId);
-        setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
-      }
-    } catch (err) {
-      console.error('Failed to reject:', err);
-    } finally {
-      setProcessingApproval(null);
-    }
-  };
+  // Approval state hook (provides setPendingApprovals to WebSocket)
+  const {
+    pendingApprovals,
+    setPendingApprovals,
+    processingApproval,
+    setProcessingApproval,
+    gitCommitApprovals,
+  } = useApprovalState({ activeSessionId, taskId });
 
   // Start session with mode (retry/renew/fork)
   const handleStartSessionWithMode = async (mode: SessionResumeMode) => {
@@ -173,11 +124,11 @@ function TaskDetailPage() {
     // Only reset scroll tracking for 'renew' mode (fresh start)
     // For 'retry', preserve user's scroll position to avoid uncomfortable jump
     if (mode === 'renew') {
-      userScrolledUpRef.current = false;
+      resetScrollState(); // ✅ Encapsulated method
     }
     // Save scroll position for Resume (to restore after messages refetch)
-    if (mode === 'retry' && container) {
-      savedScrollPosition.current = container.scrollTop;
+    if (mode === 'retry') {
+      saveScrollPosition(); // ✅ Encapsulated method instead of direct ref mutation
     }
     // Clear chat state - ONLY for Renew mode
     // Resume mode keeps existing messages to prevent scroll jump
@@ -204,11 +155,16 @@ function TaskDetailPage() {
     // Add user message optimistically if there's a prompt (shows immediately in UI)
     if (newPrompt) {
       const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
+        id: `user-optimistic-${++messageCounterRef.current}`,
         role: 'user',
         content: newPrompt,
       };
-      setRealtimeMessages([userMessage]);
+      // APPEND for retry/resume (preserve history), REPLACE for renew (fresh start)
+      if (mode === 'renew') {
+        setRealtimeMessages([userMessage]);
+      } else {
+        setRealtimeMessages(prev => [...prev, userMessage]);
+      }
     }
     // Show "AI is thinking..." BEFORE async call (not after - race condition with WebSocket)
     setIsWaitingForResponse(true);
@@ -294,64 +250,24 @@ function TaskDetailPage() {
     processedMessageIds,
   } = useRealtimeState();
 
-  // Scroll restoration state (will be extracted in 2.4)
+  // Scroll container refs (parent-owned, passed to hooks and components)
   const aiSessionContainerRef = useRef<HTMLDivElement>(null);
-  const userScrolledUpRef = useRef(false);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
-  const savedScrollPosition = useRef<number | null>(null);
-  const isRestoringScroll = useRef(false);
-  const [isScrolledUpFromBottom, setIsScrolledUpFromBottom] = useState(false);
 
-  // Container lifecycle tracking removed (too noisy)
+  // Optimistic message ID counter (React purity compliant)
+  const messageCounterRef = useRef(0);
 
-  // Restore scroll position after Resume (when messages refetch)
-  // Use useLayoutEffect for synchronous execution before browser paint
-  useLayoutEffect(() => {
-    // Prevent duplicate restoration attempts (useLayoutEffect can trigger multiple times)
-    if (isRestoringScroll.current) {
-      return;
-    }
-
-    if (savedScrollPosition.current !== null && aiSessionContainerRef.current) {
-      const scrollPos = savedScrollPosition.current;
-      const container = aiSessionContainerRef.current;
-
-      // KEY FIX: Only restore if container is tall enough
-      // During Resume, messages are cleared first, causing scrollHeight to drop
-      // Wait until messages are loaded and scrollHeight >= saved position
-      if (container.scrollHeight >= scrollPos + container.clientHeight) {
-        isRestoringScroll.current = true;
-
-        // Wait for DOM to fully render before restoring
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (aiSessionContainerRef.current) {
-              aiSessionContainerRef.current.scrollTop = scrollPos;
-            }
-            savedScrollPosition.current = null;
-            // Keep restoration flag active briefly to prevent auto-scroll override
-            setTimeout(() => {
-              isRestoringScroll.current = false;
-            }, 100);
-          });
-        });
-      }
-      // Container too short - wait for more messages to load (will retry on next update)
-    }
-  }, [chatMessages]);
-
-  // Auto-scroll to bottom when streaming (only if user hasn't scrolled up)
-  useEffect(() => {
-    // Don't auto-scroll if currently restoring scroll position
-    if (isRestoringScroll.current) return;
-
-    const container = aiSessionContainerRef.current;
-    if (!container || !currentAssistantMessage) return;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (isNearBottom || !userScrolledUpRef.current) {
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [currentAssistantMessage]);
+  // Scroll restoration hook (encapsulated state mutations)
+  const {
+    isScrolledUpFromBottom,
+    resetScrollState,
+    handleScroll,
+    saveScrollPosition,
+  } = useScrollRestoration({
+    containerRef: aiSessionContainerRef,
+    chatMessages,
+    currentAssistantMessage,
+  });
 
   // Sample project files - in real implementation, fetch from API
 
@@ -379,6 +295,15 @@ function TaskDetailPage() {
     setWsSessionStatus,
     setPendingApprovals,
     setMessageBuffers,
+  });
+
+  // Approval handlers hook (uses sendApprovalResponse from WebSocket)
+  const { handleApproveRequest, handleRejectRequest } = useApprovalHandlers({
+    isWsConnected,
+    isSessionLive,
+    sendApprovalResponse,
+    setPendingApprovals,
+    setProcessingApproval,
   });
 
   // Close dropdown on click outside
@@ -602,14 +527,13 @@ function TaskDetailPage() {
                 pendingApprovals={pendingApprovals}
                 processingApproval={processingApproval}
                 aiSessionContainerRef={aiSessionContainerRef}
-                userScrolledUpRef={userScrolledUpRef}
                 isScrolledUpFromBottom={isScrolledUpFromBottom}
+                onHandleScroll={handleScroll}
                 onApproveRequest={handleApproveRequest}
                 onRejectRequest={handleRejectRequest}
                 onToggleCommand={toggleCommand}
                 onSetContentModal={setContentModalData}
                 onOpenFileAsTab={openFileAsTab}
-                onSetScrolledUp={setIsScrolledUpFromBottom}
               />
             )}
 
