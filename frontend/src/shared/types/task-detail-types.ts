@@ -20,6 +20,7 @@ export interface ChatMessage {
   files?: { name: string; additions?: number; deletions?: number }[];
   commands?: ToolCommand[];
   todos?: { text: string; checked: boolean }[]; // Optional todos from assistant
+  isStreaming?: boolean; // True for temporary streaming message (not yet persisted)
 }
 
 // Diff line type

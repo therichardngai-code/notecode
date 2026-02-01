@@ -34,6 +34,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   return (
     <div>
       <MarkdownMessage content={message.content} className="text-sm text-foreground" />
+      {/* Blinking cursor for streaming messages */}
+      {message.isStreaming && (
+        <span className="inline-block w-2 h-4 bg-primary animate-pulse mt-1" />
+      )}
 
       {/* File metadata display */}
       {message.files &&

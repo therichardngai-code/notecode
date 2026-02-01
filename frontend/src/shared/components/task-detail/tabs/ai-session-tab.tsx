@@ -3,7 +3,6 @@ import { List, useDynamicRowHeight, useListRef } from 'react-window';
 import { Bot, MessageSquare, Wrench, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ApprovalCard } from '../approval-card';
-import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 import { ChatMessageItem } from './chat-message-item';
 import type { Session, ApprovalRequest } from '@/adapters/api/sessions-api';
 import type { ChatMessage } from '@/shared/types/task-detail-types';
@@ -139,7 +138,21 @@ export const AISessionTab = memo(function AISessionTab({
     [chatMessages, uniqueRealtimeMessages]
   );
 
-  const hasMessages = allMessages.length > 0 || currentAssistantMessage;
+  // Merge streaming message into list as temporary last item (single scroll block UX)
+  const displayMessages = useMemo(() => {
+    if (!currentAssistantMessage) return allMessages;
+    return [
+      ...allMessages,
+      {
+        id: 'streaming-temp',
+        role: 'assistant' as const,
+        content: currentAssistantMessage,
+        isStreaming: true,
+      },
+    ];
+  }, [allMessages, currentAssistantMessage]);
+
+  const hasMessages = displayMessages.length > 0;
 
   // Virtualization state - react-window v2 API
   const listRef = useListRef();
@@ -148,16 +161,17 @@ export const AISessionTab = memo(function AISessionTab({
   const rowHeight = useDynamicRowHeight({ defaultRowHeight: 120 });
 
   // Shared row props - memoized to prevent Row re-renders (rerender-memo pattern)
+  // Uses displayMessages (includes streaming) for unified single-block rendering
   const rowProps = useMemo<MessageRowProps>(
     () => ({
-      allMessages,
+      allMessages: displayMessages,
       expandedCommands,
       onToggleCommand,
       onSetContentModal,
       onOpenFileAsTab,
       rowHeight,
     }),
-    [allMessages, expandedCommands, onToggleCommand, onSetContentModal, onOpenFileAsTab, rowHeight]
+    [displayMessages, expandedCommands, onToggleCommand, onSetContentModal, onOpenFileAsTab, rowHeight]
   );
 
   // Sync parent ref with List's scroll element for scroll restoration
@@ -167,14 +181,14 @@ export const AISessionTab = memo(function AISessionTab({
     if (el && aiSessionContainerRef && 'current' in aiSessionContainerRef) {
       Object.assign(aiSessionContainerRef, { current: el });
     }
-  }, [listRef, aiSessionContainerRef, allMessages.length]); // Re-sync when messages change
+  }, [listRef, aiSessionContainerRef, displayMessages.length]); // Re-sync when messages change
 
   // Scroll Management - use List v2 API for virtualized scrolling
   const scrollToBottom = useCallback(() => {
-    if (listRef.current && allMessages.length > 0) {
-      listRef.current.scrollToRow({ index: allMessages.length - 1, align: 'end' });
+    if (listRef.current && displayMessages.length > 0) {
+      listRef.current.scrollToRow({ index: displayMessages.length - 1, align: 'end' });
     }
-  }, [allMessages.length, listRef]);
+  }, [displayMessages.length, listRef]);
 
   return (
     <div className="relative">
@@ -217,7 +231,7 @@ export const AISessionTab = memo(function AISessionTab({
         <List
           listRef={listRef}
           style={{ height: 400, width: '100%' }}
-          rowCount={allMessages.length}
+          rowCount={displayMessages.length}
           rowHeight={rowHeight}
           rowComponent={MessageRow}
           rowProps={rowProps}
@@ -230,14 +244,6 @@ export const AISessionTab = memo(function AISessionTab({
             }
           }}
         />
-      )}
-
-      {/* Streaming assistant message BELOW virtualized list */}
-      {currentAssistantMessage && (
-        <div className="mt-2 py-2">
-          <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
-          <span className="inline-block w-2 h-4 bg-primary animate-pulse mt-1" />
-        </div>
       )}
 
       {/* Current tool in use BELOW virtualized list */}
@@ -287,7 +293,7 @@ export const AISessionTab = memo(function AISessionTab({
       )}
 
       {/* "New messages" indicator button */}
-      {isScrolledUpFromBottom && (allMessages.length > 0 || currentAssistantMessage) && (
+      {isScrolledUpFromBottom && displayMessages.length > 0 && (
         <button
           onClick={scrollToBottom}
           className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all text-sm font-medium z-10 animate-in fade-in slide-in-from-bottom-2"
