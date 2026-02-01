@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useEffect } from 'react';
+import { memo, useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { List, useDynamicRowHeight, useListRef } from 'react-window';
 import { Bot, MessageSquare, Wrench, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
@@ -157,6 +157,26 @@ export const AISessionTab = memo(function AISessionTab({
   // Virtualization state - react-window v2 API
   const listRef = useListRef();
 
+  // Container ref and width state for responsive List sizing
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(400);
+
+  // ResizeObserver to track container width for react-window List
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    // Set initial width
+    setContainerWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
+
   // Dynamic row height measurement (react-window v2 pattern)
   const rowHeight = useDynamicRowHeight({ defaultRowHeight: 120 });
 
@@ -191,7 +211,7 @@ export const AISessionTab = memo(function AISessionTab({
   }, [displayMessages.length, listRef]);
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative w-full overflow-hidden">
       {/* Non-scrolling indicators ABOVE virtualized list */}
       {isStartingSession && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs mb-2">
@@ -230,7 +250,7 @@ export const AISessionTab = memo(function AISessionTab({
       ) : (
         <List
           listRef={listRef}
-          style={{ height: 400, width: '100%' }}
+          style={{ height: 400, width: containerWidth }}
           rowCount={displayMessages.length}
           rowHeight={rowHeight}
           rowComponent={MessageRow}
