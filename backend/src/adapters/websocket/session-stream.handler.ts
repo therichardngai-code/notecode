@@ -63,6 +63,8 @@ export class SessionStreamHandler {
   private toolInterceptor: CliToolInterceptorService | null = null;
   // Track active streaming message ID per session (memory cache for quick lookup)
   private streamingMessageIds = new Map<string, string>();
+  // Track last assistant message usage per session (for accurate context window, not accumulated billing)
+  private lastAssistantUsage = new Map<string, Record<string, number>>();
 
   constructor(
     private wss: WebSocketServer,
@@ -347,6 +349,13 @@ export class SessionStreamHandler {
 
       // Handle final assistant message - mark streaming complete
       if (output.type === 'message') {
+        const msgContent = output.content as Record<string, unknown>;
+
+        // Track usage from assistant message (content.usage contains per-API-call data)
+        if (msgContent?.usage) {
+          this.lastAssistantUsage.set(sessionId, msgContent.usage as Record<string, number>);
+        }
+
         const streamingMsgId = this.streamingMessageIds.get(sessionId);
         if (streamingMsgId) {
           // Mark streaming message as complete (don't create new one)
@@ -385,32 +394,36 @@ export class SessionStreamHandler {
         // Update session in database
         const session = await this.sessionRepo.findById(sessionId);
         if (session) {
-          // Build token usage from result
-          const usage = result.usage as Record<string, number> | undefined;
+          // Use last assistant message's usage (actual context) instead of result's accumulated usage
+          const lastUsage = this.lastAssistantUsage.get(sessionId);
+          const resultUsage = result.usage as Record<string, number> | undefined;
+
+          // For token counts: use last assistant message (actual context state)
+          // For cost: use result event (accumulated billing total)
           const tokenUsage = {
-            input: usage?.input_tokens ?? 0,
-            output: usage?.output_tokens ?? 0,
-            cacheRead: usage?.cache_read_input_tokens ?? 0,
-            cacheCreation: usage?.cache_creation_input_tokens ?? 0,
-            total: (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0),
+            input: lastUsage?.input_tokens ?? 0,
+            output: resultUsage?.output_tokens ?? 0,  // Output is cumulative, use result
+            cacheRead: lastUsage?.cache_read_input_tokens ?? 0,
+            cacheCreation: lastUsage?.cache_creation_input_tokens ?? 0,
+            total: (lastUsage?.input_tokens ?? 0) + (resultUsage?.output_tokens ?? 0),
             estimatedCostUsd: (result.total_cost_usd as number) ?? 0,
           };
 
-          // Build model usage from result
+          // Build model usage from result (for billing purposes)
           const modelName = (result.model as string) ?? session.provider ?? 'unknown';
           const modelUsage = [{
             model: modelName,
-            inputTokens: usage?.input_tokens ?? 0,
-            outputTokens: usage?.output_tokens ?? 0,
+            inputTokens: lastUsage?.input_tokens ?? 0,
+            outputTokens: resultUsage?.output_tokens ?? 0,
             costUsd: (result.total_cost_usd as number) ?? 0,
           }];
 
-          // Compute context window from token usage
-          if (session.provider && usage) {
+          // Compute context window from last assistant message (actual context, not accumulated)
+          if (session.provider && lastUsage) {
             const contextWindow = this.computeContextWindow(
-              usage.input_tokens ?? 0,
-              usage.cache_creation_input_tokens ?? 0,
-              usage.cache_read_input_tokens ?? 0,
+              lastUsage.input_tokens ?? 0,
+              lastUsage.cache_creation_input_tokens ?? 0,
+              lastUsage.cache_read_input_tokens ?? 0,
               session.provider
             );
             session.updateContextWindow(contextWindow);
@@ -474,7 +487,9 @@ export class SessionStreamHandler {
         type: 'status',
         status: terminalStatus,
       });
+      // Cleanup session tracking data
       this.sessionProcessMap.delete(sessionId);
+      this.lastAssistantUsage.delete(sessionId);
     });
   }
 
