@@ -132,19 +132,12 @@ export const AISessionTab = memo(function AISessionTab({
     [realtimeMessages, apiContentSet]
   );
 
-  const allMessages = useMemo(() => {
-    const merged = [...chatMessages, ...uniqueRealtimeMessages];
-
-    // Stable sort: use timestamp if present, otherwise keep original order (use index)
-    // NEVER use Date.now() - it's unstable and changes on every call!
-    return merged
-      .map((m, idx) => ({
-        m,
-        t: m.timestamp ? new Date(m.timestamp).getTime() : idx,
-      }))
-      .sort((a, b) => a.t - b.t)
-      .map((x) => x.m);
-  }, [chatMessages, uniqueRealtimeMessages]);
+  // Backend returns messages sorted by timestamp ASC (chronological)
+  // Realtime messages are newer, so appending maintains order
+  const allMessages = useMemo(
+    () => [...chatMessages, ...uniqueRealtimeMessages],
+    [chatMessages, uniqueRealtimeMessages]
+  );
 
   const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 

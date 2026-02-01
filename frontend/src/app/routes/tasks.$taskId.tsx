@@ -56,11 +56,9 @@ function TaskDetailPage() {
     updateStatus,
   } = useTaskDetail({ taskId });
 
-  // Fetch sessions for this task - get LATEST session by createdAt
+  // Fetch sessions for this task - backend returns sorted by createdAt DESC (latest first)
   const { data: sessions = [] } = useSessions({ taskId });
-  const latestSession = [...sessions].sort((a, b) =>
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  )[0];
+  const latestSession = sessions[0];
 
   // Context window warning hook
   const { showWarning, dismissWarning } = useContextWarning(latestSession);

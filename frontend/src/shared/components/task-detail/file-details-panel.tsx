@@ -34,25 +34,16 @@ export function FileDetailsPanel({
   onApproveDiff,
   onRejectDiff,
 }: FileDetailsPanelProps) {
-  // Memoized message merge + dedupe + stable sort (same pattern as AISessionTab)
-  // NEVER use Date.now() - it's unstable and changes on every call!
+  // Backend returns messages sorted by timestamp ASC (chronological)
+  // Realtime messages are newer, so appending maintains order
   const { allChatMessages, hasChatMessages } = useMemo(() => {
     const apiContentSet = new Set(chatMessages.map((m) => m.content));
     const uniqueRealtimeMessages = realtimeMessages.filter((m) => !apiContentSet.has(m.content));
     const merged = [...chatMessages, ...uniqueRealtimeMessages];
 
-    // Stable sort: use timestamp if present, otherwise keep original order (use index)
-    const ordered = merged
-      .map((m, idx) => ({
-        m,
-        t: m.timestamp ? new Date(m.timestamp).getTime() : idx,
-      }))
-      .sort((a, b) => a.t - b.t)
-      .map((x) => x.m);
-
     return {
-      allChatMessages: ordered,
-      hasChatMessages: ordered.length > 0 || currentAssistantMessage,
+      allChatMessages: merged,
+      hasChatMessages: merged.length > 0 || currentAssistantMessage,
     };
   }, [chatMessages, realtimeMessages, currentAssistantMessage]);
 
