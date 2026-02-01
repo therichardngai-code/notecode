@@ -93,18 +93,16 @@ function RootLayout() {
     openNewTaskPanel,
   } = useFloatingPanels();
 
-  // Handle opening file in external editor (VS Code)
+  // Handle opening file in external editor (VS Code/Cursor)
   const handleOpenInExternalEditor = async (filePath: string | undefined) => {
     if (!filePath || !activeProjectId) return;
 
     try {
-      const response = await fetch('/api/files/open-external', {
+      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${baseUrl}/api/projects/${activeProjectId}/files/open-external`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: activeProjectId,
-          filePath
-        }),
+        body: JSON.stringify({ filePath }),
       });
 
       if (!response.ok) {

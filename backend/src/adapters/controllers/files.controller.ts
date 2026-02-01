@@ -4,8 +4,14 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs/promises';
 import { FileSystemService, PathTraversalError, FileLimitExceededError, BinaryFileError, FileTooLargeError } from '../../infrastructure/file-system/file-system.service.js';
+import { PathValidator } from '../../infrastructure/file-system/path-validator.js';
 import { SqliteProjectRepository } from '../repositories/sqlite-project.repository.js';
+
+const execAsync = promisify(exec);
 
 const fileSystemService = new FileSystemService();
 
@@ -201,6 +207,130 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         return reply.code(500).send({ error: 'Failed to read file content' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/projects/:projectId/files/open-external
+   * Open file in external editor (VS Code, Cursor, or system default)
+   */
+  fastify.post<{
+    Params: { projectId: string };
+    Body: { filePath: string; line?: number };
+  }>(
+    '/projects/:projectId/files/open-external',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['projectId'],
+          properties: {
+            projectId: { type: 'string', description: 'Project ID' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['filePath'],
+          properties: {
+            filePath: { type: 'string', description: 'File path relative to project' },
+            line: { type: 'number', description: 'Optional line number to jump to' }
+          }
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              message: { type: 'string' },
+              editor: { type: 'string' }
+            }
+          },
+          400: { type: 'object', properties: { error: { type: 'string' } } },
+          403: { type: 'object', properties: { error: { type: 'string' } } },
+          404: { type: 'object', properties: { error: { type: 'string' } } },
+          500: { type: 'object', properties: { error: { type: 'string' }, details: { type: 'string' } } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { projectId } = request.params;
+      const { filePath, line } = request.body;
+
+      try {
+        // Find project
+        const project = await projectRepo.findById(projectId);
+        if (!project) {
+          return reply.code(404).send({ error: 'Project not found' });
+        }
+
+        // Validate path (prevents traversal attacks)
+        const absolutePath = PathValidator.validate(project.path, filePath);
+
+        // Check file exists
+        const stats = await fs.stat(absolutePath);
+        if (!stats.isFile()) {
+          return reply.code(400).send({ error: 'Path is not a file' });
+        }
+
+        // Escape quotes for shell command safety
+        const safePath = absolutePath.replace(/"/g, '\\"');
+        const lineArg = line ? `:${line}` : '';
+
+        let editor = '';
+        let command = '';
+
+        // Try VS Code first
+        try {
+          await execAsync('code --version');
+          command = `code --goto "${safePath}${lineArg}"`;
+          editor = 'VS Code';
+        } catch {
+          // Try Cursor (VS Code fork)
+          try {
+            await execAsync('cursor --version');
+            command = `cursor --goto "${safePath}${lineArg}"`;
+            editor = 'Cursor';
+          } catch {
+            // Fallback to system default
+            if (process.platform === 'win32') {
+              command = `start "" "${safePath}"`;
+            } else if (process.platform === 'darwin') {
+              command = `open "${safePath}"`;
+            } else {
+              command = `xdg-open "${safePath}"`;
+            }
+            editor = 'System default';
+          }
+        }
+
+        // Execute command
+        await execAsync(command);
+
+        return reply.send({
+          success: true,
+          message: `File opened in ${editor}`,
+          editor
+        });
+      } catch (error: any) {
+        fastify.log.error('Open external editor error:', error);
+
+        if (error instanceof PathTraversalError) {
+          return reply.code(403).send({ error: 'Invalid path - access denied' });
+        }
+
+        if (error.code === 'ENOENT') {
+          return reply.code(404).send({ error: 'File not found' });
+        }
+
+        if (error.code === 'EACCES') {
+          return reply.code(403).send({ error: 'Permission denied' });
+        }
+
+        return reply.code(500).send({
+          error: 'Failed to open file in external editor',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        });
       }
     }
   );
