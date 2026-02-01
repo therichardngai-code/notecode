@@ -20,8 +20,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({
   onOpenFileAsTab,
 }: ChatMessageItemProps) {
   if (message.role === 'user') {
+    // Note: Spacing handled by parent container (virtualized list row wrapper)
     return (
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end">
         <div className="bg-muted border border-border rounded-full px-4 py-2 text-sm text-foreground max-w-[80%]">
           {message.content}
         </div>
@@ -29,9 +30,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({
     );
   }
 
-  // Assistant message
+  // Assistant message - spacing handled by parent container
   return (
-    <div className="mb-6">
+    <div>
       <MarkdownMessage content={message.content} className="text-sm text-foreground" />
 
       {/* File metadata display */}

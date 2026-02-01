@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { X, Bot, GitBranch, MessageSquare, FileCode, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
@@ -33,6 +34,28 @@ export function FileDetailsPanel({
   onApproveDiff,
   onRejectDiff,
 }: FileDetailsPanelProps) {
+  // Memoized message merge + dedupe + stable sort (same pattern as AISessionTab)
+  // NEVER use Date.now() - it's unstable and changes on every call!
+  const { allChatMessages, hasChatMessages } = useMemo(() => {
+    const apiContentSet = new Set(chatMessages.map((m) => m.content));
+    const uniqueRealtimeMessages = realtimeMessages.filter((m) => !apiContentSet.has(m.content));
+    const merged = [...chatMessages, ...uniqueRealtimeMessages];
+
+    // Stable sort: use timestamp if present, otherwise keep original order (use index)
+    const ordered = merged
+      .map((m, idx) => ({
+        m,
+        t: m.timestamp ? new Date(m.timestamp).getTime() : idx,
+      }))
+      .sort((a, b) => a.t - b.t)
+      .map((x) => x.m);
+
+    return {
+      allChatMessages: ordered,
+      hasChatMessages: ordered.length > 0 || currentAssistantMessage,
+    };
+  }, [chatMessages, realtimeMessages, currentAssistantMessage]);
+
   if (!selectedDiffFile && !isSubPanelOpen) return null;
 
   return (
@@ -58,50 +81,38 @@ export function FileDetailsPanel({
       {/* File Details Content */}
       <ScrollArea className="flex-1">
         <div className="p-4">
-          {subPanelTab === 'chat-session' && (() => {
-            // Combine API messages + realtime messages (same as main AI Session tab)
-            const apiContentSet = new Set(chatMessages.map(m => m.content));
-            const uniqueRealtimeMessages = realtimeMessages.filter(m => !apiContentSet.has(m.content));
-            const allMessages = [...chatMessages, ...uniqueRealtimeMessages].sort((a, b) => {
-              const timeA = a.timestamp ? new Date(a.timestamp).getTime() : Date.now();
-              const timeB = b.timestamp ? new Date(b.timestamp).getTime() : Date.now();
-              return timeA - timeB; // Oldest first (chronological order)
-            });
-            const hasMessages = allMessages.length > 0 || currentAssistantMessage;
-
-            return (
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
-                {!hasMessages ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                    <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                    <p className="text-sm">No messages yet</p>
-                  </div>
-                ) : (
-                  <>
-                    {allMessages.map((message) => (
-                      message.role === 'user' ? (
-                        <div key={message.id} className="flex justify-end mb-4">
-                          <div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
-                        </div>
-                      ) : (
-                        <div key={message.id} className="mb-6">
-                          <MarkdownMessage content={message.content} className="text-sm text-foreground" />
-                        </div>
-                      )
-                    ))}
-
-                    {/* Show streaming assistant message */}
-                    {currentAssistantMessage && (
-                      <div className="mb-6">
-                        <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+          {subPanelTab === 'chat-session' && (
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-foreground mb-3">AI Session Messages</h3>
+              {!hasChatMessages ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+                  <p className="text-sm">No messages yet</p>
+                </div>
+              ) : (
+                <>
+                  {allChatMessages.map((message) => (
+                    message.role === 'user' ? (
+                      <div key={message.id} className="flex justify-end py-2">
+                        <div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })()}
+                    ) : (
+                      <div key={message.id} className="py-2">
+                        <MarkdownMessage content={message.content} className="text-sm text-foreground" />
+                      </div>
+                    )
+                  ))}
+
+                  {/* Show streaming assistant message */}
+                  {currentAssistantMessage && (
+                    <div className="py-2">
+                      <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {subPanelTab === 'diffs' && (
             <div>

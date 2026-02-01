@@ -1,4 +1,5 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useRef, useEffect } from 'react';
+import { List, useDynamicRowHeight, useListRef } from 'react-window';
 import { Bot, MessageSquare, Wrench, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ApprovalCard } from '../approval-card';
@@ -7,6 +8,59 @@ import { ChatMessageItem } from './chat-message-item';
 import type { Session, ApprovalRequest } from '@/adapters/api/sessions-api';
 import type { ChatMessage } from '@/shared/types/task-detail-types';
 import type { ToolUseBlock } from '@/shared/hooks';
+
+/**
+ * Row props passed to virtualized row component (react-window v2 API)
+ */
+interface MessageRowProps {
+  allMessages: ChatMessage[];
+  expandedCommands: Set<string>;
+  onToggleCommand: (cmdKey: string) => void;
+  onSetContentModal: (data: { filePath: string; content: string }) => void;
+  onOpenFileAsTab: (filePath: string, content: string) => void;
+  rowHeight: ReturnType<typeof useDynamicRowHeight>;
+}
+
+/**
+ * Virtualized message row component for react-window v2
+ * Uses observeRowElements for dynamic height measurement
+ */
+const MessageRow = memo(function MessageRow({
+  index,
+  style,
+  allMessages,
+  expandedCommands,
+  onToggleCommand,
+  onSetContentModal,
+  onOpenFileAsTab,
+  rowHeight,
+}: MessageRowProps & { index: number; style: React.CSSProperties }) {
+  const message = allMessages[index];
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  // Use react-window v2's observeRowElements for height measurement
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    return rowHeight.observeRowElements([el]);
+  }, [rowHeight]);
+
+  return (
+    <div style={style}>
+      {/* Row wrapper with padding for spacing (replaces space-y-4) */}
+      {/* data-react-window-index required by useDynamicRowHeight */}
+      <div ref={rowRef} className="py-2" data-react-window-index={index}>
+        <ChatMessageItem
+          message={message}
+          expandedCommands={expandedCommands}
+          onToggleCommand={onToggleCommand}
+          onSetContentModal={onSetContentModal}
+          onOpenFileAsTab={onOpenFileAsTab}
+        />
+      </div>
+    </div>
+  );
+});
 
 interface AISessionTabProps {
   // Messages
@@ -94,120 +148,150 @@ export const AISessionTab = memo(function AISessionTab({
 
   const hasMessages = allMessages.length > 0 || currentAssistantMessage;
 
-  // Scroll Management
-  const scrollToBottom = useCallback(() => {
-    if (aiSessionContainerRef.current) {
-      aiSessionContainerRef.current.scrollTop = aiSessionContainerRef.current.scrollHeight;
+  // Virtualization state - react-window v2 API
+  const listRef = useListRef();
+
+  // Dynamic row height measurement (react-window v2 pattern)
+  const rowHeight = useDynamicRowHeight({ defaultRowHeight: 120 });
+
+  // Shared row props - memoized to prevent Row re-renders (rerender-memo pattern)
+  const rowProps = useMemo<MessageRowProps>(
+    () => ({
+      allMessages,
+      expandedCommands,
+      onToggleCommand,
+      onSetContentModal,
+      onOpenFileAsTab,
+      rowHeight,
+    }),
+    [allMessages, expandedCommands, onToggleCommand, onSetContentModal, onOpenFileAsTab, rowHeight]
+  );
+
+  // Sync parent ref with List's scroll element for scroll restoration
+  // Using Object.assign to bypass ESLint's immutability check on refs
+  useEffect(() => {
+    const el = listRef.current?.element;
+    if (el && aiSessionContainerRef && 'current' in aiSessionContainerRef) {
+      Object.assign(aiSessionContainerRef, { current: el });
     }
-  }, [aiSessionContainerRef]);
+  }, [listRef, aiSessionContainerRef, allMessages.length]); // Re-sync when messages change
+
+  // Scroll Management - use List v2 API for virtualized scrolling
+  const scrollToBottom = useCallback(() => {
+    if (listRef.current && allMessages.length > 0) {
+      listRef.current.scrollToRow({ index: allMessages.length - 1, align: 'end' });
+    }
+  }, [allMessages.length, listRef]);
 
   return (
     <div className="relative">
-      <div
-        ref={aiSessionContainerRef}
-        className="space-y-4 max-h-[400px] overflow-y-auto"
-        onScroll={(e) => {
-          onHandleScroll(e.currentTarget);
-        }}
-      >
-        {/* Session Starting Indicator */}
-        {isStartingSession && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>Starting session...</span>
-          </div>
-        )}
+      {/* Non-scrolling indicators ABOVE virtualized list */}
+      {isStartingSession && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary text-xs mb-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>Starting session...</span>
+        </div>
+      )}
 
-        {/* Pending Approval Requests */}
-        {pendingApprovals.map((approval) => (
-          <ApprovalCard
-            key={approval.id}
-            approval={approval}
-            onApprove={() => onApproveRequest(approval.id)}
-            onReject={() => onRejectRequest(approval.id)}
-            isProcessing={processingApproval === approval.id}
-          />
-        ))}
-
-        {/* Empty States */}
-        {!latestSession ? (
-          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-            <Bot className="w-8 h-8 mb-2 opacity-50" />
-            <p className="text-sm">No AI session for this task</p>
-            <p className="text-xs mt-1">Start the task to begin an AI session</p>
-          </div>
-        ) : !hasMessages && pendingApprovals.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-            <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-            <p className="text-sm">No messages yet</p>
-          </div>
-        ) : (
-          allMessages.map((message) => (
-            <ChatMessageItem
-              key={message.id}
-              message={message}
-              expandedCommands={expandedCommands}
-              onToggleCommand={onToggleCommand}
-              onSetContentModal={onSetContentModal}
-              onOpenFileAsTab={onOpenFileAsTab}
+      {/* Pending Approval Requests ABOVE virtualized list */}
+      {pendingApprovals.length > 0 && (
+        <div className="space-y-2 mb-2">
+          {pendingApprovals.map((approval) => (
+            <ApprovalCard
+              key={approval.id}
+              approval={approval}
+              onApprove={() => onApproveRequest(approval.id)}
+              onReject={() => onRejectRequest(approval.id)}
+              isProcessing={processingApproval === approval.id}
             />
-          ))
-        )}
+          ))}
+        </div>
+      )}
 
-        {/* Streaming assistant message */}
-        {currentAssistantMessage && (
-          <div className="mb-6">
-            <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
-            <span className="inline-block w-2 h-4 bg-primary animate-pulse mt-1" />
-          </div>
-        )}
+      {/* Empty States OR Virtualized Message List */}
+      {!latestSession ? (
+        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+          <Bot className="w-8 h-8 mb-2 opacity-50" />
+          <p className="text-sm">No AI session for this task</p>
+          <p className="text-xs mt-1">Start the task to begin an AI session</p>
+        </div>
+      ) : !hasMessages && pendingApprovals.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+          <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+          <p className="text-sm">No messages yet</p>
+        </div>
+      ) : (
+        <List
+          listRef={listRef}
+          style={{ height: 400, width: '100%' }}
+          rowCount={allMessages.length}
+          rowHeight={rowHeight}
+          rowComponent={MessageRow}
+          rowProps={rowProps}
+          overscanCount={3}
+          onScroll={() => {
+            // Get scroll element from list ref for parent scroll tracking
+            const el = listRef.current?.element;
+            if (el) {
+              onHandleScroll(el);
+            }
+          }}
+        />
+      )}
 
-        {/* Current tool in use */}
-        {currentToolUse && (
-          <div className="mb-4 bg-muted/30 rounded-lg p-3 border border-border/50">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-              <Wrench className="w-3.5 h-3.5 animate-pulse" />
-              <span className="font-medium">{currentToolUse.name}</span>
-            </div>
-            {currentToolUse.input && Object.keys(currentToolUse.input).length > 0 && (
-              <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
-                {JSON.stringify(currentToolUse.input, null, 2).slice(0, 500)}
-              </pre>
-            )}
-          </div>
-        )}
+      {/* Streaming assistant message BELOW virtualized list */}
+      {currentAssistantMessage && (
+        <div className="mt-2 py-2">
+          <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+          <span className="inline-block w-2 h-4 bg-primary animate-pulse mt-1" />
+        </div>
+      )}
 
-        {/* Waiting indicator */}
-        {isWaitingForResponse && !currentAssistantMessage && !currentToolUse && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>AI is thinking...</span>
+      {/* Current tool in use BELOW virtualized list */}
+      {currentToolUse && (
+        <div className="mt-2 bg-muted/30 rounded-lg p-3 border border-border/50">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+            <Wrench className="w-3.5 h-3.5 animate-pulse" />
+            <span className="font-medium">{currentToolUse.name}</span>
           </div>
-        )}
-        {isTyping && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Thinking...</span>
-          </div>
-        )}
+          {currentToolUse.input && Object.keys(currentToolUse.input).length > 0 && (
+            <pre className="text-[10px] text-muted-foreground/80 max-h-[80px] overflow-auto whitespace-pre-wrap">
+              {JSON.stringify(currentToolUse.input, null, 2).slice(0, 500)}
+            </pre>
+          )}
+        </div>
+      )}
 
-        {/* Connection indicator */}
-        {isSessionLive && !isStartingSession && (
-          <div
+      {/* Waiting indicator BELOW virtualized list */}
+      {isWaitingForResponse && !currentAssistantMessage && !currentToolUse && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>AI is thinking...</span>
+        </div>
+      )}
+      {isTyping && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+          <span>Thinking...</span>
+        </div>
+      )}
+
+      {/* Connection indicator BELOW virtualized list */}
+      {isSessionLive && !isStartingSession && (
+        <div
+          className={cn(
+            "flex items-center gap-2 px-2 py-1.5 rounded text-xs mt-2",
+            isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600"
+          )}
+        >
+          <span
             className={cn(
-              "flex items-center gap-2 px-2 py-1.5 rounded text-xs",
-              isWsConnected ? "bg-green-500/10 text-green-600" : "bg-yellow-500/10 text-yellow-600"
+              "w-2 h-2 rounded-full",
+              isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"
             )}
-          >
-            <span
-              className={cn(
-                "w-2 h-2 rounded-full",
-                isWsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"
-              )}
-            />
-            {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
-          </div>
-        )}
-      </div>
+          />
+          {isWsConnected ? "Connected - Ready for chat" : "Connecting to session..."}
+        </div>
+      )}
 
       {/* "New messages" indicator button */}
       {isScrolledUpFromBottom && (allMessages.length > 0 || currentAssistantMessage) && (
