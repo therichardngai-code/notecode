@@ -12,13 +12,13 @@ import {
 // Phase 4 Hooks
 import {
   useTaskDetail, useSessions, useTaskMessages, useSessionDiffs,
-  useStartSession, useTaskWebSocket, useRealtimeState,
+  useTaskWebSocket, useRealtimeState,
   useMessageConversion, useFilteredSessionIds, useTaskUIState,
   useScrollRestoration, useApprovalState, useApprovalHandlers,
+  useSessionStartHandler,
   type TaskDetailProperty,
 } from '@/shared/hooks';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
-import type { SessionResumeMode } from '@/adapters/api/sessions-api';
 // Shared types
 import type { ChatMessage } from '@/shared/types';
 // Phase 5 Tabs
@@ -80,8 +80,6 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // Context window warning hook
   const { showWarning, dismissWarning } = useContextWarning(latestSession);
 
-  // Start session mutation (invalidates queries automatically)
-  const startSessionMutation = useStartSession();
 
   // Track just-started session for immediate WebSocket connection (before query refetch)
   const [justStartedSession, setJustStartedSession] = useState<{ id: string; status: string } | null>(null);
@@ -212,7 +210,26 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     setProcessingApproval,
   });
 
-  const isStartingSession = startSessionMutation.isPending;
+  // Session start handler hook (shared with tasks.$taskId.tsx)
+  const { handleStartSessionWithMode, isStartingSession } = useSessionStartHandler({
+    taskId,
+    chatInputFooterRef,
+    aiSessionContainerRef,
+    streamingBufferRef,
+    processedMessageIds,
+    messageCounterRef,
+    setRealtimeMessages,
+    setCurrentAssistantMessage,
+    setStreamingToolUses,
+    setMessageBuffers,
+    setWsSessionStatus,
+    setJustStartedSession,
+    setIsWaitingForResponse,
+    setActiveInfoTab,
+    resetScrollState,
+    saveScrollPosition,
+    activeInfoTab,
+  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HANDLERS
@@ -223,75 +240,6 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     startTransition(() => setActiveInfoTab(tab));
   }, [setActiveInfoTab]);
 
-  // Start session with mode (retry/renew/fork)
-  const handleStartSessionWithMode = async (mode: SessionResumeMode) => {
-    if (!taskId) return;
-    // Read from ChatInputFooter ref (rerender-defer-reads pattern)
-    const newPrompt = chatInputFooterRef.current?.getChatInput() || undefined;
-    // Prevent height collapse
-    const container = aiSessionContainerRef.current;
-    if (container) {
-      container.style.minHeight = `${container.offsetHeight}px`;
-    }
-    // Reset scroll for renew, preserve for retry
-    if (mode === 'renew') {
-      resetScrollState();
-    }
-    if (mode === 'retry') {
-      saveScrollPosition();
-    }
-    // Clear chat state for renew, keep messages for retry
-    if (mode === 'renew') {
-      setRealtimeMessages([]);
-      setCurrentAssistantMessage('');
-      setStreamingToolUses([]);
-      setMessageBuffers({});
-      processedMessageIds.current.clear();
-    } else {
-      setStreamingToolUses([]);
-      setCurrentAssistantMessage('');
-      setMessageBuffers({});
-    }
-    // Clear chat input via ref
-    if (newPrompt) {
-      chatInputFooterRef.current?.clearChatInput();
-    }
-    setWsSessionStatus(null);
-    setJustStartedSession(null);
-    // Release height lock
-    setTimeout(() => {
-      if (container) container.style.minHeight = '';
-    }, 500);
-    // Add user message optimistically
-    if (newPrompt) {
-      const userMessage: ChatMessage = {
-        id: `user-optimistic-${++messageCounterRef.current}`,
-        role: 'user',
-        content: newPrompt,
-      };
-      if (mode === 'renew') {
-        setRealtimeMessages([userMessage]);
-      } else {
-        setRealtimeMessages(prev => [...prev, userMessage]);
-      }
-    }
-    setIsWaitingForResponse(true);
-    try {
-      const response = await startSessionMutation.mutateAsync({
-        taskId,
-        mode,
-        initialPrompt: newPrompt,
-      });
-      console.log('Session started:', response.session.id, 'wsUrl:', response.wsUrl);
-      setJustStartedSession({ id: response.session.id, status: 'running' });
-      if (activeInfoTab !== 'ai-session') {
-        setActiveInfoTab('ai-session');
-      }
-    } catch (err) {
-      setIsWaitingForResponse(false);
-      console.error('Failed to start session:', err);
-    }
-  };
 
   // Task action handlers
   const handleStartTask = async () => {

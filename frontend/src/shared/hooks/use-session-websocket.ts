@@ -270,6 +270,9 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
 
+  // Track messageIds received via delta streaming to prevent duplicate 'message' events
+  const streamedMessageIds = useRef<Set<string>>(new Set());
+
   // Store callbacks in refs to avoid dependency issues (prevent reconnection loops)
   const callbacksRef = useRef({
     onOutput,
@@ -354,6 +357,8 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
           case 'output':
             // Handle delta streaming (new backend format)
             if (message.data.type === 'delta' && message.data.messageId && message.data.text !== undefined) {
+              // Track streamed messageId to prevent duplicate 'message' events
+              streamedMessageIds.current.add(message.data.messageId);
               cbs.onDelta?.(message.data.messageId, message.data.text, message.data.offset ?? 0);
               cbs.onOutput?.(message.data);
               return;
@@ -373,6 +378,8 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
             // Handle message_complete (streaming finished, content already received via deltas)
             if (message.data.type === 'message_complete' && message.data.messageId) {
               cbs.onMessage?.('', true, message.data.messageId as string);
+              // Cleanup: remove from tracking after completion
+              streamedMessageIds.current.delete(message.data.messageId);
               cbs.onOutput?.(message.data);
               return;
             }
@@ -391,6 +398,12 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
             // 3. Direct array: { type:'message', content: [{type:'text',text:'...'}] }
             // 4. Legacy no-role format: { type:'message', content: {...} }
             if (message.data.type === 'message') {
+              // Skip if this message was already received via delta streaming
+              const msgId = message.data.messageId;
+              if (msgId && streamedMessageIds.current.has(msgId)) {
+                return; // Already processed via delta + message_complete
+              }
+
               const data = message.data as Record<string, unknown>;
               let text = '';
               let processed = false;

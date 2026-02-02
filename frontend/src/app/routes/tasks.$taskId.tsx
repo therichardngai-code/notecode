@@ -6,10 +6,9 @@ import {
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useStartSession, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, type TaskDetailProperty } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, useSessionStartHandler, type TaskDetailProperty } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
-import type { SessionResumeMode } from '@/adapters/api/sessions-api';
 // Shared types and utilities
 import type { ChatMessage } from '@/shared/types';
 // Shared task-detail components
@@ -63,9 +62,6 @@ function TaskDetailPage() {
   // Context window warning hook
   const { showWarning, dismissWarning } = useContextWarning(latestSession);
 
-  // Start session mutation (invalidates queries automatically)
-  const startSessionMutation = useStartSession();
-
   // Track just-started session for immediate WebSocket connection (before query refetch)
   const [justStartedSession, setJustStartedSession] = useState<{ id: string; status: string } | null>(null);
 
@@ -109,94 +105,11 @@ function TaskDetailPage() {
     gitCommitApprovals,
   } = useApprovalState({ activeSessionId, taskId });
 
-  // Start session with mode (retry/renew/fork)
-  const handleStartSessionWithMode = async (mode: SessionResumeMode) => {
-    if (!taskId) return;
-    // Capture chat input BEFORE clearing state - pass as initialPrompt to backend
-    // Read from ChatInputFooter ref (no subscription - rerender-defer-reads pattern)
-    const newPrompt = chatInputFooterRef.current?.getChatInput() || undefined;
-    // Prevent height collapse: lock container height before clearing state
-    const container = aiSessionContainerRef.current;
-    if (container) {
-      container.style.minHeight = `${container.offsetHeight}px`;
-    }
-    // Only reset scroll tracking for 'renew' mode (fresh start)
-    // For 'retry', preserve user's scroll position to avoid uncomfortable jump
-    if (mode === 'renew') {
-      resetScrollState(); // ✅ Encapsulated method
-    }
-    // Save scroll position for Resume (to restore after messages refetch)
-    if (mode === 'retry') {
-      saveScrollPosition(); // ✅ Encapsulated method instead of direct ref mutation
-    }
-    // Clear chat state - ONLY for Renew mode
-    // Resume mode keeps existing messages to prevent scroll jump
-    if (mode === 'renew') {
-      setRealtimeMessages([]);
-      setCurrentAssistantMessage('');
-      setStreamingToolUses([]);
-      setMessageBuffers({}); // Clear delta streaming buffers
-      processedMessageIds.current.clear(); // Clear processed message IDs for new session
-      streamingBufferRef.current = ''; // Clear streaming buffer to prevent stale content leak
-    } else {
-      // Only clear streaming state, keep messages
-      setStreamingToolUses([]);
-      setCurrentAssistantMessage('');
-      setMessageBuffers({}); // Clear delta streaming buffers
-      streamingBufferRef.current = ''; // Clear streaming buffer to prevent stale content leak
-    }
-    // Clear chat input and attached files via ref (encapsulated in ChatInputFooter)
-    if (newPrompt) {
-      chatInputFooterRef.current?.clearChatInput();
-    }
-    setWsSessionStatus(null); // Reset WebSocket status for new session
-    setJustStartedSession(null); // Clear previous
-    // Release height lock after a short delay
-    setTimeout(() => {
-      if (container) container.style.minHeight = '';
-    }, 500);
-    // Add user message optimistically if there's a prompt (shows immediately in UI)
-    if (newPrompt) {
-      const userMessage: ChatMessage = {
-        id: `user-optimistic-${++messageCounterRef.current}`,
-        role: 'user',
-        content: newPrompt,
-      };
-      // APPEND for retry/resume (preserve history), REPLACE for renew (fresh start)
-      if (mode === 'renew') {
-        setRealtimeMessages([userMessage]);
-      } else {
-        setRealtimeMessages(prev => [...prev, userMessage]);
-      }
-    }
-    // Show "AI is thinking..." BEFORE async call (not after - race condition with WebSocket)
-    setIsWaitingForResponse(true);
-    try {
-      const response = await startSessionMutation.mutateAsync({
-        taskId,
-        mode,
-        initialPrompt: newPrompt, // Pass chat input as new instruction
-      });
-      console.log('Session started:', response.session.id, 'wsUrl:', response.wsUrl);
-      // Set just-started session for immediate WebSocket connection
-      // Always use 'running' status to ensure WebSocket connects (actual status comes via WebSocket)
-      setJustStartedSession({ id: response.session.id, status: 'running' });
-      // Switch to AI Session tab only if not already there (prevents unnecessary re-render)
-      if (activeInfoTab !== 'ai-session') {
-        setActiveInfoTab('ai-session');
-      }
-    } catch (err) {
-      setIsWaitingForResponse(false);
-      console.error('Failed to start session:', err);
-    }
-  };
-  const isStartingSession = startSessionMutation.isPending;
-
   // UI state hook (chat state moved to ChatInputFooter for performance)
   const {
     isDescriptionExpanded, setIsDescriptionExpanded,
     activeInfoTab, setActiveInfoTab,
-    isTyping, setIsTyping, // Keep at parent - displayed in AISessionTab
+    isTyping, setIsTyping,
     diffApprovals, setDiffApprovals,
     showAddProperty, setShowAddProperty,
     expandedCommands, setExpandedCommands,
@@ -208,16 +121,8 @@ function TaskDetailPage() {
 
   const addPropertyRef = useRef<HTMLDivElement>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
-
-  // Ref to ChatInputFooter imperative handle (rerender-defer-reads pattern)
   const chatInputFooterRef = useRef<ChatInputFooterHandle>(null);
 
-  // Tab change handler with startTransition (keeps UI responsive during heavy tab renders)
-  const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'sessions') => {
-    startTransition(() => setActiveInfoTab(tab));
-  }, [setActiveInfoTab]);
-
-  // Real-time WebSocket chat state
   // Realtime state hook
   const {
     realtimeMessages,
@@ -236,14 +141,12 @@ function TaskDetailPage() {
     processedMessageIds,
   } = useRealtimeState();
 
-  // Scroll container refs (parent-owned, passed to hooks and components)
+  // Scroll container refs
   const aiSessionContainerRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
-
-  // Optimistic message ID counter (React purity compliant)
   const messageCounterRef = useRef(0);
 
-  // Scroll restoration hook (encapsulated state mutations)
+  // Scroll restoration hook
   const {
     isScrolledUpFromBottom,
     resetScrollState,
@@ -255,7 +158,31 @@ function TaskDetailPage() {
     currentAssistantMessage,
   });
 
-  // Sample project files - in real implementation, fetch from API
+  // Session start handler hook (shared with FloatingTaskDetailPanel)
+  const { handleStartSessionWithMode, isStartingSession } = useSessionStartHandler({
+    taskId,
+    chatInputFooterRef,
+    aiSessionContainerRef,
+    streamingBufferRef,
+    processedMessageIds,
+    messageCounterRef,
+    setRealtimeMessages,
+    setCurrentAssistantMessage,
+    setStreamingToolUses,
+    setMessageBuffers,
+    setWsSessionStatus,
+    setJustStartedSession,
+    setIsWaitingForResponse,
+    setActiveInfoTab,
+    resetScrollState,
+    saveScrollPosition,
+    activeInfoTab,
+  });
+
+  // Tab change handler
+  const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'sessions') => {
+    startTransition(() => setActiveInfoTab(tab));
+  }, [setActiveInfoTab]);
 
   // Check if session is running (use activeSession AND wsSessionStatus for immediate updates)
   // wsSessionStatus provides immediate feedback from WebSocket before React Query refetches

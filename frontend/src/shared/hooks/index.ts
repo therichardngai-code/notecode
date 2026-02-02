@@ -26,3 +26,4 @@ export { useChatInputState } from './use-chat-input-state';
 export { useScrollRestoration } from './use-scroll-restoration';
 export { useApprovalState } from './use-approval-state';
 export { useApprovalHandlers } from './use-approval-handlers';
+export { useSessionStartHandler } from './use-session-start-handler';
