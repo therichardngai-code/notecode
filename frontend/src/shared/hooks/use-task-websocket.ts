@@ -118,12 +118,23 @@ export function useTaskWebSocket({
       setCurrentToolUse(null);
       setIsWaitingForResponse(false);
     },
-    onDelta: (messageId, text) => {
+    onDelta: (messageId, text, offset) => {
+      // Reset buffer on new message (offset 0 indicates start of new message)
+      if (offset === 0) {
+        streamingBufferRef.current = '';
+      }
+
+      // Append to streaming buffer (single source of truth)
+      streamingBufferRef.current += text;
+
+      // Update display immediately
+      setCurrentAssistantMessage(streamingBufferRef.current);
+
+      // Track per-message content for dedup
       setMessageBuffers(prev => ({
         ...prev,
-        [messageId]: (prev[messageId] || '') + text,
+        [messageId]: streamingBufferRef.current,
       }));
-      setCurrentAssistantMessage((prev) => prev + text);
     },
     onStreamingBuffer: (messageId, content) => {
       setMessageBuffers(prev => ({

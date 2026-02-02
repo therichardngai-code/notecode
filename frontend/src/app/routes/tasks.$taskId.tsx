@@ -137,11 +137,13 @@ function TaskDetailPage() {
       setStreamingToolUses([]);
       setMessageBuffers({}); // Clear delta streaming buffers
       processedMessageIds.current.clear(); // Clear processed message IDs for new session
+      streamingBufferRef.current = ''; // Clear streaming buffer to prevent stale content leak
     } else {
       // Only clear streaming state, keep messages
       setStreamingToolUses([]);
       setCurrentAssistantMessage('');
       setMessageBuffers({}); // Clear delta streaming buffers
+      streamingBufferRef.current = ''; // Clear streaming buffer to prevent stale content leak
     }
     // Clear chat input and attached files via ref (encapsulated in ChatInputFooter)
     if (newPrompt) {

@@ -35,7 +35,7 @@ export interface OutputMessage {
     // Backend sends: 'message' (assistant text), 'tool_use', 'tool_result', 'thinking', 'result', 'system'
     // Also handle: 'text' (legacy), 'tool_blocked', 'usage', 'stream_event' (real-time streaming)
     // New: 'delta' (streaming chunk), 'streaming_buffer' (reconnect catch-up)
-    type: 'text' | 'message' | 'tool_use' | 'tool_result' | 'thinking' | 'usage' | 'tool_blocked' | 'result' | 'system' | 'stream_event' | 'delta' | 'streaming_buffer' | 'user_message_saved';
+    type: 'text' | 'message' | 'tool_use' | 'tool_result' | 'thinking' | 'usage' | 'tool_blocked' | 'result' | 'system' | 'stream_event' | 'delta' | 'streaming_buffer' | 'user_message_saved' | 'message_complete';
     content?: string | Record<string, unknown>;
     tool?: { name: string; input: Record<string, unknown> };
     result?: string;
@@ -367,6 +367,12 @@ export function useSessionWebSocket(options: UseSessionWebSocketOptions): UseSes
             // Handle user_message_saved (Option B - no optimistic, wait for confirmation)
             if (message.data.type === 'user_message_saved' && message.data.messageId && typeof message.data.content === 'string') {
               cbs.onUserMessageSaved?.(message.data.messageId, message.data.content);
+              cbs.onOutput?.(message.data);
+              return;
+            }
+            // Handle message_complete (streaming finished, content already received via deltas)
+            if (message.data.type === 'message_complete' && message.data.messageId) {
+              cbs.onMessage?.('', true, message.data.messageId as string);
               cbs.onOutput?.(message.data);
               return;
             }

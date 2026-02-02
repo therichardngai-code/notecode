@@ -328,11 +328,28 @@ export class SessionStreamHandler {
         return; // Don't broadcast raw stream_event, we send delta instead
       }
 
-      // For non-streaming outputs, broadcast as usual
-      this.broadcast(sessionId, {
-        type: 'output',
-        data: output,
-      });
+      // Check if we streamed deltas for this session (to avoid double emission)
+      const hadStreamingDeltas = this.streamingMessageIds.has(sessionId);
+
+      // Skip raw message broadcast if deltas were sent (prevents duplicate content)
+      if (output.type === 'message' && hadStreamingDeltas) {
+        // Send completion signal only - frontend already has content via deltas
+        const streamingMsgId = this.streamingMessageIds.get(sessionId);
+        this.broadcast(sessionId, {
+          type: 'output',
+          data: {
+            type: 'message_complete',
+            messageId: streamingMsgId,
+            status: 'complete',
+          },
+        });
+      } else {
+        // Non-streamed outputs OR non-message types - broadcast as usual
+        this.broadcast(sessionId, {
+          type: 'output',
+          data: output,
+        });
+      }
 
       // Handle final assistant message - mark streaming complete
       if (output.type === 'message') {
