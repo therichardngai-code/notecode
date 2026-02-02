@@ -23,7 +23,7 @@ export const ApprovalCard = memo(function ApprovalCard({
 }: ApprovalCardProps) {
   const [timeLeft, setTimeLeft] = useState(0);
   const isDangerous = approval.toolCategory === 'dangerous';
-  const { toolName, toolInput } = approval.payload;
+  const { toolName, toolInput, matchedPattern, matchType } = approval.payload;
 
   useEffect(() => {
     const updateTimer = () => {
@@ -76,6 +76,16 @@ export const ApprovalCard = memo(function ApprovalCard({
             {toolInput.content.slice(0, 500)}
             {toolInput.content.length > 500 ? '...' : ''}
           </pre>
+        )}
+        {/* Show matched pattern that triggered this approval */}
+        {matchedPattern && (
+          <div className="flex items-center gap-1.5 mt-2 text-xs">
+            <span className="text-red-500 font-medium">Matched:</span>
+            <code className="px-1.5 py-0.5 bg-red-500/10 rounded font-mono text-red-600 dark:text-red-400">
+              {matchedPattern}
+            </code>
+            <span className="text-muted-foreground">({matchType === 'command' ? 'command pattern' : 'file pattern'})</span>
+          </div>
         )}
       </div>
 

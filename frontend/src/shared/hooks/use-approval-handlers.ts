@@ -43,15 +43,18 @@ export function useApprovalHandlers({
   ): Promise<void> => {
     setProcessingApproval(approvalId);
     try {
-      // Use WebSocket if connected and session live, fallback to HTTP
+      // ALWAYS call HTTP API first to update approval status in DB
+      // (Backend hook polls this for decision - WS alone doesn't update DB)
+      await (approved
+        ? sessionsApi.approveRequest(approvalId)
+        : sessionsApi.rejectRequest(approvalId)
+      );
+
+      // Optionally notify via WebSocket for faster UI update
       if (isWsConnected && isSessionLive) {
         sendApprovalResponse(approvalId, approved);
-      } else {
-        await (approved
-          ? sessionsApi.approveRequest(approvalId)
-          : sessionsApi.rejectRequest(approvalId)
-        );
       }
+
       // Optimistically remove from pending list
       setPendingApprovals(prev => prev.filter(a => a.id !== approvalId));
     } catch (err) {

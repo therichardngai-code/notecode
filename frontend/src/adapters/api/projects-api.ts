@@ -6,16 +6,25 @@
 import { apiClient } from './api-client';
 import type { Session } from './sessions-api';
 
-// Project-level approval gate configuration
-export interface ApprovalGateRule {
-  pattern: string;
+// Tool-level approval rule (e.g., Bash → ask)
+export interface ToolRule {
+  tool: string;  // Tool name: Bash, Write, Edit, Read, Glob, etc.
   action: 'approve' | 'deny' | 'ask';
 }
 
+// Project/Global approval gate configuration
 export interface ApprovalGateConfig {
   enabled: boolean;
-  rules?: ApprovalGateRule[];
+  // Tool-level rules
+  toolRules?: ToolRule[];
+  // Custom dangerous command patterns (regex, e.g., rm\s+-rf)
+  dangerousCommands?: string[];
+  // Custom dangerous file patterns (regex, e.g., \.env$)
+  dangerousFiles?: string[];
 }
+
+// Backward compatibility alias
+export type ApprovalGateRule = ToolRule;
 
 // Types matching backend entities
 export interface Project {

@@ -147,8 +147,8 @@ export function registerApprovalController(
     const body = hookApprovalRequestSchema.parse(request.body);
     const { sessionId, toolName, toolInput, toolUseId } = body;
 
-    // Determine tool category
-    const category = determineToolCategory(toolName, toolInput, config);
+    // Determine tool category (now returns matchedPattern for dangerous ops)
+    const { category, matchedPattern, matchType } = determineToolCategory(toolName, toolInput, config);
 
     // If auto-allowed, return immediately
     if (category === 'safe') {
@@ -182,13 +182,13 @@ export function registerApprovalController(
     const requestId = randomUUID();
     const timeoutAt = new Date(Date.now() + config.timeoutSeconds * 1000);
 
-    // Create approval record with toolUseId in payload for deduplication
+    // Create approval record with matchedPattern for UI feedback
     const approvalType = isFileOperation(toolName) ? 'diff' : 'tool';
     const approval = Approval.create(
       requestId,
       sessionId,
       approvalType,
-      { type: approvalType, toolName, toolInput, toolUseId },
+      { type: approvalType, toolName, toolInput, toolUseId, matchedPattern, matchType },
       category,
       config.timeoutSeconds,
       config.defaultOnTimeout
@@ -201,7 +201,7 @@ export function registerApprovalController(
       new ApprovalPendingEvent(requestId, sessionId, toolName, timeoutAt),
     ]);
 
-    app.log.info({ requestId, sessionId, toolName, category, toolUseId }, 'Approval request created from hook');
+    app.log.info({ requestId, sessionId, toolName, category, matchedPattern, toolUseId }, 'Approval request created from hook');
 
     return reply.send({
       requestId,
@@ -282,15 +282,22 @@ export function registerApprovalController(
   });
 }
 
+// Result from category check - includes matched pattern for UI feedback
+interface CategoryResult {
+  category: ToolCategory;
+  matchedPattern?: string;  // The pattern that triggered dangerous category
+  matchType?: 'command' | 'file';  // What type of pattern matched
+}
+
 // Helper: Determine tool category based on config
 function determineToolCategory(
   toolName: string,
   toolInput: Record<string, unknown>,
   config: ApprovalGateConfig
-): ToolCategory {
+): CategoryResult {
   // Auto-allow safe tools
   if (config.autoAllowTools.includes(toolName)) {
-    return 'safe';
+    return { category: 'safe' };
   }
 
   // Check dangerous patterns for Bash
@@ -298,7 +305,7 @@ function determineToolCategory(
     const command = String(toolInput.command ?? '');
     for (const pattern of config.dangerousPatterns.commands) {
       if (new RegExp(pattern, 'i').test(command)) {
-        return 'dangerous';
+        return { category: 'dangerous', matchedPattern: pattern, matchType: 'command' };
       }
     }
   }
@@ -310,17 +317,17 @@ function determineToolCategory(
     );
     for (const pattern of config.dangerousPatterns.files) {
       if (new RegExp(pattern, 'i').test(filePath)) {
-        return 'dangerous';
+        return { category: 'dangerous', matchedPattern: pattern, matchType: 'file' };
       }
     }
   }
 
   // Tools that require approval
   if (config.requireApprovalTools.includes(toolName)) {
-    return 'requires-approval';
+    return { category: 'requires-approval' };
   }
 
-  return 'safe';
+  return { category: 'safe' };
 }
 
 // Helper: Check if tool is a file operation
@@ -331,10 +338,11 @@ function isFileOperation(toolName: string): boolean {
 /**
  * Merge user-defined approval gate configs with defaults
  * Priority: project > global > defaults
- * User rules map to internal config:
- * - 'deny' pattern → NOT USED (tool names only now)
- * - 'approve' tool → add to autoAllowTools
- * - 'ask' tool → add to requireApprovalTools
+ *
+ * User config has 3 sections:
+ * - toolRules: Tool-level actions (Bash → ask, Write → approve)
+ * - dangerousCommands: Custom command patterns (regex)
+ * - dangerousFiles: Custom file patterns (regex)
  */
 function mergeApprovalGateConfigs(
   defaults: ApprovalGateConfig,
@@ -354,14 +362,14 @@ function mergeApprovalGateConfigs(
     },
   };
 
-  // Apply global settings rules
-  if (globalGate?.enabled && globalGate.rules) {
-    applyUserRules(merged, globalGate.rules);
+  // Apply global settings
+  if (globalGate?.enabled) {
+    applyUserConfig(merged, globalGate);
   }
 
-  // Apply project settings rules (override global)
-  if (projectGate?.enabled && projectGate.rules) {
-    applyUserRules(merged, projectGate.rules);
+  // Apply project settings (override global)
+  if (projectGate?.enabled) {
+    applyUserConfig(merged, projectGate);
   }
 
   // If either gate is disabled, disable the whole thing
@@ -373,43 +381,56 @@ function mergeApprovalGateConfigs(
 }
 
 /**
- * Apply user-defined rules to config
- * Tool names only: 'approve' → autoAllow, 'ask' → requireApproval, 'deny' → remove from autoAllow
+ * Apply user-defined config to merged config
+ * Handles all 3 sections: toolRules, dangerousCommands, dangerousFiles
  */
-function applyUserRules(
+function applyUserConfig(
   config: ApprovalGateConfig,
-  rules: Array<{ pattern: string; action: 'approve' | 'deny' | 'ask' }>
+  userConfig: UserApprovalGateConfig
 ): void {
-  for (const rule of rules) {
-    const toolName = rule.pattern; // Scope is tool names only
+  // 1. Apply tool rules
+  if (userConfig.toolRules) {
+    for (const rule of userConfig.toolRules) {
+      const toolName = rule.tool;
 
-    switch (rule.action) {
-      case 'approve':
-        // Add to auto-allow if not already there
-        if (!config.autoAllowTools.includes(toolName)) {
-          config.autoAllowTools.push(toolName);
-        }
-        // Remove from require-approval if present
-        config.requireApprovalTools = config.requireApprovalTools.filter(t => t !== toolName);
-        break;
+      switch (rule.action) {
+        case 'approve':
+          // Add to auto-allow if not already there
+          if (!config.autoAllowTools.includes(toolName)) {
+            config.autoAllowTools.push(toolName);
+          }
+          // Remove from require-approval if present
+          config.requireApprovalTools = config.requireApprovalTools.filter(t => t !== toolName);
+          break;
 
-      case 'deny':
-        // Remove from auto-allow
-        config.autoAllowTools = config.autoAllowTools.filter(t => t !== toolName);
-        // Add to require-approval (will be denied by default)
-        if (!config.requireApprovalTools.includes(toolName)) {
-          config.requireApprovalTools.push(toolName);
-        }
-        break;
+        case 'deny':
+        case 'ask':
+          // Remove from auto-allow
+          config.autoAllowTools = config.autoAllowTools.filter(t => t !== toolName);
+          // Add to require-approval
+          if (!config.requireApprovalTools.includes(toolName)) {
+            config.requireApprovalTools.push(toolName);
+          }
+          break;
+      }
+    }
+  }
 
-      case 'ask':
-        // Remove from auto-allow
-        config.autoAllowTools = config.autoAllowTools.filter(t => t !== toolName);
-        // Add to require-approval
-        if (!config.requireApprovalTools.includes(toolName)) {
-          config.requireApprovalTools.push(toolName);
-        }
-        break;
+  // 2. Add custom dangerous command patterns
+  if (userConfig.dangerousCommands) {
+    for (const pattern of userConfig.dangerousCommands) {
+      if (pattern && !config.dangerousPatterns.commands.includes(pattern)) {
+        config.dangerousPatterns.commands.push(pattern);
+      }
+    }
+  }
+
+  // 3. Add custom dangerous file patterns
+  if (userConfig.dangerousFiles) {
+    for (const pattern of userConfig.dangerousFiles) {
+      if (pattern && !config.dangerousPatterns.files.includes(pattern)) {
+        config.dangerousPatterns.files.push(pattern);
+      }
     }
   }
 }

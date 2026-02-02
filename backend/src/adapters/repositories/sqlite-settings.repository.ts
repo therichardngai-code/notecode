@@ -8,12 +8,21 @@ import { settings } from '../../infrastructure/database/schema.js';
 import { getDatabase } from '../../infrastructure/database/connection.js';
 import { encrypt, decrypt, isEncryptionConfigured } from '../../infrastructure/crypto/index.js';
 
+/**
+ * User-configurable Approval Gate settings
+ * Separates tool rules from dangerous patterns for clarity
+ */
 export interface ApprovalGateConfig {
   enabled: boolean;
-  rules?: Array<{
-    pattern: string;
+  // Tool-level rules (e.g., Bash → ask, Write → approve)
+  toolRules?: Array<{
+    tool: string;  // Tool name: Bash, Write, Edit, Read, Glob, etc.
     action: 'approve' | 'deny' | 'ask';
   }>;
+  // Custom dangerous command patterns (regex, e.g., rm\s+-rf)
+  dangerousCommands?: string[];
+  // Custom dangerous file patterns (regex, e.g., \.env$)
+  dangerousFiles?: string[];
 }
 
 export interface GlobalSettings {

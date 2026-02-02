@@ -28,6 +28,8 @@ export interface ApprovalPayload {
   toolUseId?: string; // For deduplication of parallel hooks
   filePath?: string;
   hunks?: DiffHunk[];
+  matchedPattern?: string; // The pattern that triggered dangerous category
+  matchType?: 'command' | 'file'; // What type of pattern matched
 }
 
 export class Approval {

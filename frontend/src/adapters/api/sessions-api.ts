@@ -154,6 +154,10 @@ export interface ApprovalRequest {
       new_string?: string;
       [key: string]: unknown;
     };
+    /** Pattern that triggered approval (from dangerous commands/files config) */
+    matchedPattern?: string;
+    /** Type of pattern match: command regex or file regex */
+    matchType?: 'command' | 'file';
   };
   toolCategory: ToolCategory;
   status: ApprovalStatus;

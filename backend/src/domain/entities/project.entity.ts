@@ -5,10 +5,12 @@
 
 export interface ApprovalGateConfig {
   enabled: boolean;
-  rules?: Array<{
-    pattern: string;
+  toolRules?: Array<{
+    tool: string;
     action: 'approve' | 'deny' | 'ask';
   }>;
+  dangerousCommands?: string[];
+  dangerousFiles?: string[];
 }
 
 export class Project {

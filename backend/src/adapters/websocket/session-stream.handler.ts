@@ -245,23 +245,10 @@ export class SessionStreamHandler {
         break;
 
       case 'approval_response':
-        if (!session.processId || !this.cliExecutor.isRunning(session.processId)) {
-          this.broadcast(sessionId, {
-            type: 'error',
-            message: 'No running process to approve',
-          });
-          break;
-        }
-        if (msg.approved !== undefined) {
-          try {
-            await this.cliExecutor.sendApprovalResponse(session.processId, msg.approved);
-          } catch (error) {
-            this.broadcast(sessionId, {
-              type: 'error',
-              message: 'Failed to send approval response',
-            });
-          }
-        }
+        // Hook-based approval: Don't send stdin response
+        // The hook polls /api/approvals/:id/status for the decision
+        // Sending y/n to stdin corrupts Claude CLI's JSON streaming mode
+        console.log(`[WS] Approval response received for session ${sessionId} - hook handles via API polling`);
         break;
     }
   }

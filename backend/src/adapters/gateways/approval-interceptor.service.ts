@@ -52,7 +52,7 @@ export class ApprovalInterceptorService {
         sessionId,
         allowedTools: new Set(),
         permissionMode: 'default',
-        useHookApproval: true, // Default to hook-based approval
+        useHookApproval: false, // Use interceptor-based approval (creates approvals directly)
       });
     }
     return this.sessionStates.get(sessionId)!;

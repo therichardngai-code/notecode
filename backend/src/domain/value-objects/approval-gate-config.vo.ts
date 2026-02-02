@@ -27,7 +27,7 @@ export interface ApprovalGateConfig {
  */
 export const DEFAULT_APPROVAL_GATE: ApprovalGateConfig = {
   enabled: true,
-  timeoutSeconds: 30,
+  timeoutSeconds: 120, // 2 minutes for user to respond
   defaultOnTimeout: 'deny',
 
   autoAllowTools: [

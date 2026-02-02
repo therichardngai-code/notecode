@@ -19,11 +19,18 @@ import {
   Loader2,
   FolderOpen,
   Plus,
-  Info,
+  Terminal,
+  FileWarning,
+  Wrench,
+  Lock,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useSettings, useUpdateSettings, useSetApiKey } from '@/shared/hooks/use-settings';
 import { useProjects } from '@/shared/hooks/use-projects-query';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/shared/components/ui/collapsible';
+import { BUILTIN_PATTERNS, AVAILABLE_TOOLS } from '@/shared/constants/approval-gate-constants';
+import { isValidRegex } from '@/shared/lib/regex-utils';
+import type { ToolRule } from '@/adapters/api/settings-api';
 
 interface FloatingSettingsPanelProps {
   isOpen: boolean;
@@ -388,44 +395,83 @@ function ApiKeysContent({ settings }: ContentProps) {
   );
 }
 
-interface ApprovalRule {
-  pattern: string;
-  action: 'approve' | 'deny' | 'ask';
+/** Compact built-in patterns display for floating panel */
+function CompactBuiltinDisplay({ patterns }: { type: 'commands' | 'files'; patterns: readonly string[] }) {
+  return (
+    <Collapsible defaultOpen={false}>
+      <CollapsibleTrigger className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground w-full py-1">
+        <Lock className="w-2.5 h-2.5" />
+        <span>Built-in ({patterns.length})</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="space-y-0.5 pl-3 text-[10px] font-mono text-muted-foreground/70 max-h-20 overflow-y-auto">
+          {patterns.map((p, i) => <div key={i}>{p}</div>)}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 function AdvancedContent({ settings, updateSettings, isPending }: ContentProps) {
   const [autoExtract, setAutoExtract] = useState(settings?.autoExtractSummary || false);
   const [approvalEnabled, setApprovalEnabled] = useState(settings?.approvalGate?.enabled || false);
-  const [approvalRules, setApprovalRules] = useState<ApprovalRule[]>(settings?.approvalGate?.rules || []);
+  const [toolRules, setToolRules] = useState<ToolRule[]>(settings?.approvalGate?.toolRules || []);
+  const [dangerousCommands, setDangerousCommands] = useState<string[]>(settings?.approvalGate?.dangerousCommands || []);
+  const [dangerousFiles, setDangerousFiles] = useState<string[]>(settings?.approvalGate?.dangerousFiles || []);
+
+  const hasInvalidPatterns = [...dangerousCommands, ...dangerousFiles].some(p => !isValidRegex(p));
 
   const hasChanges = autoExtract !== (settings?.autoExtractSummary || false) ||
     approvalEnabled !== (settings?.approvalGate?.enabled || false) ||
-    JSON.stringify(approvalRules) !== JSON.stringify(settings?.approvalGate?.rules || []);
+    JSON.stringify(toolRules) !== JSON.stringify(settings?.approvalGate?.toolRules || []) ||
+    JSON.stringify(dangerousCommands) !== JSON.stringify(settings?.approvalGate?.dangerousCommands || []) ||
+    JSON.stringify(dangerousFiles) !== JSON.stringify(settings?.approvalGate?.dangerousFiles || []);
 
   useEffect(() => {
     setAutoExtract(settings?.autoExtractSummary || false);
     setApprovalEnabled(settings?.approvalGate?.enabled || false);
-    setApprovalRules(settings?.approvalGate?.rules || []);
+    setToolRules(settings?.approvalGate?.toolRules || []);
+    setDangerousCommands(settings?.approvalGate?.dangerousCommands || []);
+    setDangerousFiles(settings?.approvalGate?.dangerousFiles || []);
   }, [settings?.autoExtractSummary, settings?.approvalGate]);
 
-  const addRule = () => {
-    setApprovalRules([...approvalRules, { pattern: '', action: 'ask' }]);
-  };
-
-  const updateRule = (index: number, field: keyof ApprovalRule, value: string) => {
-    const updated = [...approvalRules];
+  // Tool rules handlers
+  const addToolRule = () => setToolRules([...toolRules, { tool: 'Bash', action: 'ask' }]);
+  const updateToolRule = (index: number, field: keyof ToolRule, value: string) => {
+    const updated = [...toolRules];
     updated[index] = { ...updated[index], [field]: value };
-    setApprovalRules(updated);
+    setToolRules(updated);
   };
+  const removeToolRule = (index: number) => setToolRules(toolRules.filter((_, i) => i !== index));
 
-  const removeRule = (index: number) => {
-    setApprovalRules(approvalRules.filter((_, i) => i !== index));
+  // Pattern handlers
+  const addCommand = () => setDangerousCommands([...dangerousCommands, '']);
+  const updateCommand = (index: number, value: string) => {
+    const updated = [...dangerousCommands];
+    updated[index] = value;
+    setDangerousCommands(updated);
   };
+  const removeCommand = (index: number) => setDangerousCommands(dangerousCommands.filter((_, i) => i !== index));
+
+  const addFile = () => setDangerousFiles([...dangerousFiles, '']);
+  const updateFile = (index: number, value: string) => {
+    const updated = [...dangerousFiles];
+    updated[index] = value;
+    setDangerousFiles(updated);
+  };
+  const removeFile = (index: number) => setDangerousFiles(dangerousFiles.filter((_, i) => i !== index));
 
   const handleSave = () => {
+    const validCommands = dangerousCommands.filter(p => p.trim() && isValidRegex(p));
+    const validFiles = dangerousFiles.filter(p => p.trim() && isValidRegex(p));
     updateSettings({
       autoExtractSummary: autoExtract,
-      approvalGate: approvalEnabled ? { enabled: true, rules: approvalRules } : null,
+      approvalGate: approvalEnabled ? {
+        enabled: true,
+        toolRules: toolRules.length > 0 ? toolRules : undefined,
+        dangerousCommands: validCommands.length > 0 ? validCommands : undefined,
+        dangerousFiles: validFiles.length > 0 ? validFiles : undefined,
+      } : null,
     });
   };
 
@@ -437,56 +483,100 @@ function AdvancedContent({ settings, updateSettings, isPending }: ContentProps) 
         <Toggle value={autoExtract} onChange={(v) => setAutoExtract(v)} disabled={isPending} />
       </SettingRow>
 
-      {/* Global Approval Gate */}
+      {/* Global Approval Gate - 3 Section Structure */}
       <div className="border-t border-border dark:border-white/10 mt-4 pt-4">
         <div className="flex items-center gap-2 mb-2">
           <Shield className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium text-foreground">Global Approval Gate</span>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Define rules for AI actions. Project settings override global.</p>
+        <p className="text-xs text-muted-foreground mb-3">Configure approval rules. Project settings override global.</p>
 
         <SettingRow label="Enable" description="">
           <Toggle value={approvalEnabled} onChange={(v) => setApprovalEnabled(v)} disabled={isPending} />
         </SettingRow>
 
         {approvalEnabled && (
-          <div className="space-y-2 mt-3">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Info className="w-3 h-3" />
-              <span>Pattern matching for commands</span>
-            </div>
-            {approvalRules.map((rule, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={rule.pattern}
-                  onChange={(e) => updateRule(index, 'pattern', e.target.value)}
-                  placeholder="Pattern"
-                  className="flex-1 px-3 py-1.5 text-sm rounded-lg glass text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <select
-                  value={rule.action}
-                  onChange={(e) => updateRule(index, 'action', e.target.value as ApprovalRule['action'])}
-                  className="px-3 py-1.5 text-sm rounded-lg glass text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="ask">Ask</option>
-                  <option value="approve">Approve</option>
-                  <option value="deny">Deny</option>
-                </select>
-                <button onClick={() => removeRule(index)} className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
+          <div className="space-y-4 mt-3 pl-2 border-l-2 border-primary/20">
+            {/* Section 1: Tool Rules */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <Wrench className="w-3 h-3 text-blue-500" />
+                <span>Tool Rules</span>
               </div>
-            ))}
-            <button onClick={addRule} className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 px-2 py-1.5 rounded-lg hover:bg-primary/10 transition-colors">
-              <Plus className="w-3 h-3" />
-              Add Rule
-            </button>
+              {toolRules.map((rule, index) => (
+                <div key={index} className="flex items-center gap-1.5">
+                  <select value={rule.tool} onChange={(e) => updateToolRule(index, 'tool', e.target.value)}
+                    className="flex-1 px-2 py-1 text-xs rounded glass text-foreground">
+                    {AVAILABLE_TOOLS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <select value={rule.action} onChange={(e) => updateToolRule(index, 'action', e.target.value)}
+                    className="px-2 py-1 text-xs rounded glass text-foreground">
+                    <option value="ask">Ask</option>
+                    <option value="approve">Auto</option>
+                    <option value="deny">Deny</option>
+                  </select>
+                  <button onClick={() => removeToolRule(index)} className="p-0.5 text-muted-foreground hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              <button onClick={addToolRule} className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80">
+                <Plus className="w-2.5 h-2.5" /> Add Tool
+              </button>
+            </div>
+
+            {/* Section 2: Dangerous Commands */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <Terminal className="w-3 h-3 text-orange-500" />
+                <span>Dangerous Commands</span>
+              </div>
+              <CompactBuiltinDisplay type="commands" patterns={BUILTIN_PATTERNS.commands} />
+              {dangerousCommands.map((pattern, index) => (
+                <div key={index} className="flex items-center gap-1.5">
+                  <input type="text" value={pattern} onChange={(e) => updateCommand(index, e.target.value)}
+                    placeholder="rm\s+-rf" className={cn('flex-1 px-2 py-1 text-xs rounded glass font-mono',
+                    !isValidRegex(pattern) && 'ring-1 ring-red-500')} />
+                  <button onClick={() => removeCommand(index)} className="p-0.5 text-muted-foreground hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              <button onClick={addCommand} className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80">
+                <Plus className="w-2.5 h-2.5" /> Add Pattern
+              </button>
+            </div>
+
+            {/* Section 3: Dangerous Files */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <FileWarning className="w-3 h-3 text-red-500" />
+                <span>Dangerous Files</span>
+              </div>
+              <CompactBuiltinDisplay type="files" patterns={BUILTIN_PATTERNS.files} />
+              {dangerousFiles.map((pattern, index) => (
+                <div key={index} className="flex items-center gap-1.5">
+                  <input type="text" value={pattern} onChange={(e) => updateFile(index, e.target.value)}
+                    placeholder="\.env$" className={cn('flex-1 px-2 py-1 text-xs rounded glass font-mono',
+                    !isValidRegex(pattern) && 'ring-1 ring-red-500')} />
+                  <button onClick={() => removeFile(index)} className="p-0.5 text-muted-foreground hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              <button onClick={addFile} className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80">
+                <Plus className="w-2.5 h-2.5" /> Add Pattern
+              </button>
+            </div>
+
+            {hasInvalidPatterns && (
+              <p className="text-[10px] text-red-500">Fix invalid regex patterns before saving</p>
+            )}
           </div>
         )}
       </div>
 
-      <SaveButton onClick={handleSave} isPending={isPending} hasChanges={hasChanges} />
+      <SaveButton onClick={handleSave} isPending={isPending} hasChanges={hasChanges && !hasInvalidPatterns} />
     </div>
   );
 }

@@ -10,10 +10,15 @@ import { isEncryptionConfigured } from '../../infrastructure/crypto/index.js';
 
 const approvalGateSchema = z.object({
   enabled: z.boolean(),
-  rules: z.array(z.object({
-    pattern: z.string(),
+  // Tool-level rules (e.g., Bash → ask)
+  toolRules: z.array(z.object({
+    tool: z.string(),
     action: z.enum(['approve', 'deny', 'ask']),
   })).optional(),
+  // Custom dangerous command patterns (regex)
+  dangerousCommands: z.array(z.string()).optional(),
+  // Custom dangerous file patterns (regex)
+  dangerousFiles: z.array(z.string()).optional(),
 });
 
 const updateSettingsSchema = z.object({
