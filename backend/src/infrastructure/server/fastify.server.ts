@@ -227,8 +227,11 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Store for later wiring with interceptor
   (app as unknown as { resolveApprovalUseCase: ResolveApprovalUseCase }).resolveApprovalUseCase = resolveApprovalUseCase;
 
+  // Initialize CLI provider hooks service (needed for approval gate auto-provision)
+  const cliProviderHooksService = new CliProviderHooksService();
+
   // Register controllers
-  registerProjectController(app, projectRepo);
+  registerProjectController(app, projectRepo, cliProviderHooksService);
   registerTaskController(app, taskRepo, {
     projectRepo,
     gitApprovalRepo,
@@ -287,7 +290,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   registerHookController(app, hookRepo, hookExecutor);
 
   // Register CLI provider hooks controller (Claude, Gemini, Codex hooks management)
-  const cliProviderHooksService = new CliProviderHooksService();
   registerCliProviderHooksController(app, cliProviderHooksService);
 
   // Register system controller (folder picker, path validation)
@@ -299,8 +301,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Register analytics controller (token usage, session stats)
   await app.register(registerAnalyticsController, { prefix: '/api' });
 
-  // Register settings controller
-  registerSettingsController(app, settingsRepo);
+  // Register settings controller (pass cliProviderHooksService for approval gate auto-provision)
+  registerSettingsController(app, settingsRepo, cliProviderHooksService);
 
   // Initialize and register version check
   const versionService = new VersionCheckService();

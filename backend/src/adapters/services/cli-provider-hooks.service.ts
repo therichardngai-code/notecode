@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { eq, and, isNull } from 'drizzle-orm';
 import { getDatabase } from '../../infrastructure/database/connection.js';
 import { cliProviderHooks, cliProviderSettings, projects } from '../../infrastructure/database/schema.js';
+import { ApprovalGateConfig, DEFAULT_APPROVAL_GATE, mergeApprovalGateConfig } from '../../domain/value-objects/approval-gate-config.vo.js';
 
 // Supported CLI providers
 export type CliProvider = 'claude' | 'gemini' | 'codex';
@@ -782,6 +783,504 @@ module.exports = async ({ tool_name, tool_input, tool_result }) => {
   // Add your logging logic here
 };
 `;
+  }
+
+  // ============ APPROVAL GATE AUTO-PROVISION ============
+
+  /**
+   * Get approval-gate hook script (exact copy of working production script)
+   */
+  private getApprovalGateHookScript(): string {
+    return `#!/usr/bin/env node
+/**
+ * approval-gate.cjs - Interactive Tool Approval Hook for Claude CLI
+ *
+ * PreToolUse hook that checks if tool needs approval and communicates
+ * with the notecode backend to get user decision.
+ *
+ * Environment variables (set by ClaudeCliAdapter):
+ *   - NOTECODE_SESSION_ID: Session ID for approval tracking
+ *   - NOTECODE_BACKEND_URL: Backend URL for API calls
+ *
+ * Exit Codes:
+ *   - 0: Success (returns JSON with permissionDecision)
+ *   - 2: Hard block (stderr shown to Claude)
+ */
+
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
+
+// Default Configuration (used as fallback)
+const DEFAULT_CONFIG = {
+  enabled: true,
+  timeoutSeconds: 120, // 2 minutes for user to respond
+  hookTimeoutSeconds: 1800, // 30 minutes for testing
+  defaultOnTimeout: 'deny',
+  pollIntervalMs: 500, // Slower polling for long waits
+
+  // Tools that never require approval
+  autoAllowTools: [
+    'Read',
+    'Glob',
+    'Grep',
+    'WebSearch',
+    'WebFetch',
+    'TaskList',
+    'TaskGet',
+  ],
+
+  // Tools that always require approval
+  requireApprovalTools: [
+    'Write',
+    'Edit',
+    'NotebookEdit',
+    'Bash',
+    'TaskCreate',
+    'TaskUpdate',
+  ],
+
+  // Dangerous patterns - these get special handling
+  dangerousPatterns: {
+    commands: [
+      'rm\\\\s+-rf',
+      'rm\\\\s+-r',
+      'rmdir',
+      'del\\\\s+/s',
+      'DROP\\\\s+TABLE',
+      'DELETE\\\\s+FROM.*WHERE.*1.*=.*1',
+      'git\\\\s+push.*--force',
+      'git\\\\s+reset.*--hard',
+      'chmod\\\\s+777',
+      'curl.*\\\\|.*sh',
+      'wget.*\\\\|.*sh',
+    ],
+    files: [
+      '\\\\.env$',
+      '\\\\.env\\\\.',
+      'credentials',
+      'secrets?\\\\.json',
+      'password',
+      '\\\\.pem$',
+      '\\\\.key$',
+      'id_rsa',
+      '\\\\.ssh/',
+      '\\\\.aws/',
+      '\\\\.npmrc',
+      '\\\\.pypirc',
+    ],
+  },
+};
+
+// Session config cache (to avoid fetching every tool call)
+let cachedConfig = null;
+let cachedSessionId = null;
+
+/**
+ * Fetch dynamic config from backend for session/project
+ */
+async function fetchConfig(sessionId, backendUrl) {
+  // Return cached config if same session
+  if (cachedConfig && cachedSessionId === sessionId) {
+    return cachedConfig;
+  }
+
+  try {
+    const url = \`\${backendUrl}/api/approvals/config/\${sessionId}\`;
+    const response = await httpRequest(url, { method: 'GET' });
+
+    if (response.status === 200 && response.data) {
+      cachedConfig = { ...DEFAULT_CONFIG, ...response.data };
+      cachedSessionId = sessionId;
+      console.error(\`[ApprovalGate] Loaded config for session \${sessionId.slice(0, 8)}\`);
+      return cachedConfig;
+    }
+  } catch (err) {
+    console.error(\`[ApprovalGate] Failed to fetch config: \${err.message}\`);
+  }
+
+  // Fallback to defaults
+  return DEFAULT_CONFIG;
+}
+
+/**
+ * Check if tool needs approval
+ */
+function needsApproval(toolName, toolInput, config) {
+  // If approval gate disabled, allow all
+  if (!config.enabled) {
+    return { required: false };
+  }
+
+  // Auto-allow safe tools
+  if (config.autoAllowTools.includes(toolName)) {
+    return { required: false };
+  }
+
+  // Check dangerous command patterns for Bash
+  if (toolName === 'Bash') {
+    const command = toolInput.command || '';
+    for (const pattern of config.dangerousPatterns.commands) {
+      if (new RegExp(pattern, 'i').test(command)) {
+        return { required: true, reason: 'dangerous', details: command };
+      }
+    }
+  }
+
+  // Check sensitive file patterns for file operations
+  if (['Write', 'Edit', 'NotebookEdit'].includes(toolName)) {
+    const filePath = toolInput.file_path || toolInput.filePath || '';
+    for (const pattern of config.dangerousPatterns.files) {
+      if (new RegExp(pattern, 'i').test(filePath)) {
+        return { required: true, reason: 'sensitive-file', details: filePath };
+      }
+    }
+  }
+
+  // Tools in requireApprovalTools need approval
+  if (config.requireApprovalTools.includes(toolName)) {
+    return { required: true, reason: 'requires-approval', details: toolName };
+  }
+
+  return { required: false };
+}
+
+/**
+ * Make HTTP request (supports http and https)
+ */
+function httpRequest(url, options, body) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const client = urlObj.protocol === 'https:' ? https : http;
+
+    const req = client.request(url, options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, data: JSON.parse(data) });
+        } catch {
+          resolve({ status: res.statusCode, data });
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(5000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+
+    if (body) {
+      req.write(JSON.stringify(body));
+    }
+    req.end();
+  });
+}
+
+/**
+ * Request approval from backend
+ */
+async function requestApproval(sessionId, toolName, toolInput, toolUseId, backendUrl) {
+  const url = \`\${backendUrl}/api/approvals/request\`;
+
+  const response = await httpRequest(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }, { sessionId, toolName, toolInput, toolUseId });
+
+  return response.data;
+}
+
+/**
+ * Poll approval status from backend
+ */
+async function pollApprovalStatus(requestId, backendUrl) {
+  const url = \`\${backendUrl}/api/approvals/\${requestId}/status\`;
+  const response = await httpRequest(url, { method: 'GET' });
+  return response.data;
+}
+
+/**
+ * Wait for approval with timeout
+ * @param {string} requestId - Approval request ID
+ * @param {string} backendUrl - Backend URL
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {object} config - Configuration object
+ */
+async function waitForApproval(requestId, backendUrl, timeoutMs, config) {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const status = await pollApprovalStatus(requestId, backendUrl);
+
+      if (status.decision !== 'pending') {
+        return status;
+      }
+    } catch (err) {
+      console.error(\`[ApprovalGate] Poll error: \${err.message}\`);
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, config.pollIntervalMs));
+  }
+
+  // Timeout - return default decision
+  return {
+    decision: config.defaultOnTimeout === 'approve' ? 'allow' : 'deny',
+    reason: 'Hook timeout',
+  };
+}
+
+/**
+ * Output Claude hook response
+ */
+function outputResponse(decision, reason) {
+  const response = {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: decision,
+      permissionDecisionReason: reason || '',
+    },
+  };
+  console.log(JSON.stringify(response));
+}
+
+async function main() {
+  try {
+    // Read stdin
+    const stdin = fs.readFileSync(0, 'utf-8').trim();
+    if (!stdin) {
+      outputResponse('allow', 'No input');
+      process.exit(0);
+    }
+
+    const payload = JSON.parse(stdin);
+    const toolName = payload.tool_name || '';
+    const toolInput = payload.tool_input || {};
+    const toolUseId = payload.tool_use_id || '';
+    // Use env var first (our backend session), fallback to CLI's session_id
+    const sessionId = process.env.NOTECODE_SESSION_ID || payload.session_id || '';
+    const backendUrl = process.env.NOTECODE_BACKEND_URL || 'http://localhost:3001';
+
+    // Skip if not in notecode context (no env vars = standalone CLI usage)
+    if (!process.env.NOTECODE_SESSION_ID && !process.env.NOTECODE_BACKEND_URL) {
+      outputResponse('allow', 'Not in notecode context');
+      process.exit(0);
+    }
+
+    // Fetch dynamic config from backend (cached per session)
+    const config = await fetchConfig(sessionId, backendUrl);
+
+    // Skip if not enabled
+    if (!config.enabled) {
+      outputResponse('allow', 'Approval gate disabled');
+      process.exit(0);
+    }
+
+    // Check if approval needed (pass config)
+    const check = needsApproval(toolName, toolInput, config);
+
+    if (!check.required) {
+      outputResponse('allow', 'Auto-allowed tool');
+      process.exit(0);
+    }
+
+    console.error(\`[ApprovalGate] Requesting approval for \${toolName} (\${check.reason})\`);
+
+    // Request approval from backend
+    let approvalResponse;
+    try {
+      approvalResponse = await requestApproval(sessionId, toolName, toolInput, toolUseId, backendUrl);
+    } catch (err) {
+      console.error(\`[ApprovalGate] Backend error: \${err.message}\`);
+      // On backend error, use default decision
+      outputResponse(
+        DEFAULT_CONFIG.defaultOnTimeout === 'approve' ? 'allow' : 'deny',
+        \`Backend unreachable: \${err.message}\`
+      );
+      process.exit(0);
+    }
+
+    // If backend auto-allowed (safe tool check on backend)
+    if (approvalResponse.decision === 'allow') {
+      outputResponse('allow', approvalResponse.reason || 'Backend auto-allowed');
+      process.exit(0);
+    }
+
+    // Wait for user decision
+    const requestId = approvalResponse.requestId;
+    console.error(\`[ApprovalGate] Waiting for user decision (requestId: \${requestId})\`);
+
+    const result = await waitForApproval(
+      requestId,
+      backendUrl,
+      config.hookTimeoutSeconds * 1000,
+      config
+    );
+
+    console.error(\`[ApprovalGate] Decision: \${result.decision}\`);
+    outputResponse(result.decision, result.reason || \`User \${result.decision === 'allow' ? 'approved' : 'denied'}\`);
+    process.exit(0);
+
+  } catch (error) {
+    console.error(\`[ApprovalGate] Error: \${error.message}\`);
+    // On error, default to deny for safety
+    outputResponse('deny', \`Hook error: \${error.message}\`);
+    process.exit(0);
+  }
+}
+
+main();
+`;
+  }
+
+  /**
+   * Remove hook from settings.json without deleting the file
+   */
+  private async removeHookFromSettings(
+    hookName: string,
+    hookType: string,
+    projectPath?: string
+  ): Promise<void> {
+    const settingsPath = this.getSettingsPath('claude', projectPath);
+
+    if (!existsSync(settingsPath)) {
+      return; // Nothing to remove
+    }
+
+    try {
+      const content = await readFile(settingsPath, 'utf-8');
+      const settings: ClaudeSettings = JSON.parse(content);
+
+      if (!settings.hooks || !settings.hooks[hookType]) {
+        return; // Hook type not registered
+      }
+
+      // Filter out hooks that reference this hook name
+      settings.hooks[hookType] = settings.hooks[hookType].filter(config => {
+        return !config.hooks?.some(h => h.command?.includes(`${hookName}.`));
+      });
+
+      // Clean up empty hook type array
+      if (settings.hooks[hookType].length === 0) {
+        delete settings.hooks[hookType];
+      }
+
+      // Clean up empty hooks object
+      if (Object.keys(settings.hooks).length === 0) {
+        delete settings.hooks;
+      }
+
+      await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+      console.log(`[CLI Hooks] Removed "${hookName}" from settings.json`);
+    } catch (error) {
+      console.error(`[CLI Hooks] Failed to remove hook from settings:`, error);
+    }
+  }
+
+  /**
+   * Provision approval-gate hook based on ApprovalGateConfig
+   * Creates hook in DB if not exists, syncs script with injected config
+   */
+  async provisionApprovalGateHook(
+    scope: 'global' | 'project',
+    projectId?: string,
+    config?: ApprovalGateConfig
+  ): Promise<CliHook> {
+    // Merge partial config with defaults to ensure all fields exist
+    const effectiveConfig = config ? mergeApprovalGateConfig(config) : DEFAULT_APPROVAL_GATE;
+
+    // Get project path if project-scoped
+    let projectPath: string | undefined;
+    if (projectId) {
+      const db = getDatabase();
+      const rows = await db.select().from(projects).where(eq(projects.id, projectId));
+      projectPath = rows[0]?.path;
+      if (scope === 'project' && !projectPath) {
+        throw new Error('Project not found for approval gate provision');
+      }
+    }
+
+    // Check if approval-gate hook already exists
+    const existingHooks = await this.listHooks({
+      projectId: scope === 'project' ? projectId : null,
+      provider: 'claude',
+      scope,
+    });
+
+    let hook = existingHooks.find(h => h.name === 'approval-gate');
+
+    // Get the production approval-gate script (exact copy)
+    const script = this.getApprovalGateHookScript();
+    const matcher = effectiveConfig.requireApprovalTools.join('|');
+
+    if (hook) {
+      // Update existing hook with new config
+      hook = await this.updateHook(hook.id, {
+        script,
+        matcher,
+        enabled: true,
+      }) as CliHook;
+      console.log(`[CLI Hooks] Updated approval-gate hook with new config`);
+    } else {
+      // Create new hook
+      hook = await this.createHook({
+        projectId: scope === 'project' ? projectId : undefined,
+        provider: 'claude',
+        name: 'approval-gate',
+        hookType: 'PreToolUse',
+        script,
+        enabled: true,
+        scope,
+        matcher,
+        timeout: effectiveConfig.timeoutSeconds,
+      });
+      console.log(`[CLI Hooks] Created approval-gate hook`);
+    }
+
+    // Sync to filesystem
+    await this.syncHookToFilesystem(hook.id);
+    console.log(`[CLI Hooks] Approval-gate hook synced to filesystem`);
+
+    return hook;
+  }
+
+  /**
+   * Unprovision approval-gate hook
+   * Removes from settings.json but keeps file in filesystem
+   */
+  async unprovisionApprovalGateHook(
+    scope: 'global' | 'project',
+    projectId?: string
+  ): Promise<void> {
+    // Get project path if project-scoped
+    let projectPath: string | undefined;
+    if (projectId) {
+      const db = getDatabase();
+      const rows = await db.select().from(projects).where(eq(projects.id, projectId));
+      projectPath = rows[0]?.path;
+    }
+
+    const basePath = scope === 'global' ? undefined : projectPath;
+
+    // Remove from settings.json
+    await this.removeHookFromSettings('approval-gate', 'PreToolUse', basePath);
+    console.log(`[CLI Hooks] Approval-gate hook unprovisioned (removed from settings.json)`);
+
+    // Optionally disable the hook in DB (keep record but mark disabled)
+    const existingHooks = await this.listHooks({
+      projectId: scope === 'project' ? projectId : null,
+      provider: 'claude',
+      scope,
+    });
+
+    const hook = existingHooks.find(h => h.name === 'approval-gate');
+    if (hook) {
+      await this.updateHook(hook.id, { enabled: false });
+      console.log(`[CLI Hooks] Approval-gate hook disabled in database`);
+    }
   }
 
   // ============ HELPERS ============

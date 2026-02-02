@@ -7,18 +7,20 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ISettingsRepository } from '../repositories/sqlite-settings.repository.js';
 import { isEncryptionConfigured } from '../../infrastructure/crypto/index.js';
+import { CliProviderHooksService } from '../services/cli-provider-hooks.service.js';
+import { ApprovalGateConfig } from '../../domain/value-objects/approval-gate-config.vo.js';
 
+// ApprovalGateConfig schema (matches domain VO)
 const approvalGateSchema = z.object({
   enabled: z.boolean(),
-  // Tool-level rules (e.g., Bash → ask)
-  toolRules: z.array(z.object({
-    tool: z.string(),
-    action: z.enum(['approve', 'deny', 'ask']),
-  })).optional(),
-  // Custom dangerous command patterns (regex)
-  dangerousCommands: z.array(z.string()).optional(),
-  // Custom dangerous file patterns (regex)
-  dangerousFiles: z.array(z.string()).optional(),
+  timeoutSeconds: z.number().int().positive().optional(),
+  defaultOnTimeout: z.enum(['approve', 'deny']).optional(),
+  autoAllowTools: z.array(z.string()).optional(),
+  requireApprovalTools: z.array(z.string()).optional(),
+  dangerousPatterns: z.object({
+    commands: z.array(z.string()).optional(),
+    files: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 const updateSettingsSchema = z.object({
@@ -43,7 +45,8 @@ const updateApiKeySchema = z.object({
 
 export function registerSettingsController(
   app: FastifyInstance,
-  settingsRepo: ISettingsRepository
+  settingsRepo: ISettingsRepository,
+  cliHooksService?: CliProviderHooksService
 ): void {
   /**
    * GET /api/settings
@@ -72,7 +75,43 @@ export function registerSettingsController(
    */
   app.patch('/api/settings', async (request, reply) => {
     const body = updateSettingsSchema.parse(request.body);
+
+    // Get current settings for comparison (for approval gate auto-provision)
+    const current = await settingsRepo.getGlobal();
     const updated = await settingsRepo.updateGlobal(body);
+
+    // Handle approvalGate changes - auto-provision/unprovision CLI hook
+    if (body.approvalGate !== undefined && cliHooksService) {
+      const wasEnabled = current.approvalGate?.enabled ?? false;
+      const isEnabled = body.approvalGate?.enabled ?? false;
+
+      try {
+        if (!wasEnabled && isEnabled) {
+          // Turning ON: provision hook
+          await cliHooksService.provisionApprovalGateHook(
+            'global',
+            undefined,
+            body.approvalGate as ApprovalGateConfig
+          );
+          console.log('[Settings] Approval gate enabled - hook provisioned');
+        } else if (wasEnabled && !isEnabled) {
+          // Turning OFF: unprovision hook
+          await cliHooksService.unprovisionApprovalGateHook('global');
+          console.log('[Settings] Approval gate disabled - hook unprovisioned');
+        } else if (isEnabled) {
+          // Config changed while enabled: re-sync
+          await cliHooksService.provisionApprovalGateHook(
+            'global',
+            undefined,
+            body.approvalGate as ApprovalGateConfig
+          );
+          console.log('[Settings] Approval gate config updated - hook re-synced');
+        }
+      } catch (error) {
+        console.error('[Settings] Failed to provision/unprovision approval gate hook:', error);
+        // Don't fail the settings update, just log the error
+      }
+    }
 
     // Mask API keys in response
     const apiKeysStatus = {

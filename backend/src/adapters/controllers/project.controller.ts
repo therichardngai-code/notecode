@@ -8,6 +8,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
 import { Project } from '../../domain/entities/project.entity.js';
+import { CliProviderHooksService } from '../services/cli-provider-hooks.service.js';
+import { ApprovalGateConfig } from '../../domain/value-objects/approval-gate-config.vo.js';
 
 const createProjectSchema = z.object({
   name: z.string().min(1),
@@ -15,17 +17,17 @@ const createProjectSchema = z.object({
   isFavorite: z.boolean().optional().default(false),
 });
 
+// ApprovalGateConfig schema (matches domain VO)
 const approvalGateSchema = z.object({
   enabled: z.boolean(),
-  // Tool-level rules (e.g., Bash → ask)
-  toolRules: z.array(z.object({
-    tool: z.string(),
-    action: z.enum(['approve', 'deny', 'ask']),
-  })).optional(),
-  // Custom dangerous command patterns (regex)
-  dangerousCommands: z.array(z.string()).optional(),
-  // Custom dangerous file patterns (regex)
-  dangerousFiles: z.array(z.string()).optional(),
+  timeoutSeconds: z.number().int().positive().optional(),
+  defaultOnTimeout: z.enum(['approve', 'deny']).optional(),
+  autoAllowTools: z.array(z.string()).optional(),
+  requireApprovalTools: z.array(z.string()).optional(),
+  dangerousPatterns: z.object({
+    commands: z.array(z.string()).optional(),
+    files: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 const updateProjectSchema = z.object({
@@ -37,7 +39,8 @@ const updateProjectSchema = z.object({
 
 export function registerProjectController(
   app: FastifyInstance,
-  projectRepo: IProjectRepository
+  projectRepo: IProjectRepository,
+  cliHooksService?: CliProviderHooksService
 ): void {
   // GET /api/projects - List all projects
   app.get('/api/projects', async (request, reply) => {
@@ -131,6 +134,9 @@ export function registerProjectController(
       return reply.status(404).send({ error: 'Project not found' });
     }
 
+    // Capture current state for approval gate comparison
+    const wasEnabled = project.approvalGate?.enabled ?? false;
+
     if (body.name) {
       project.updateName(body.name);
     }
@@ -149,6 +155,41 @@ export function registerProjectController(
     }
 
     await projectRepo.save(project);
+
+    // Handle approvalGate changes - auto-provision/unprovision CLI hook
+    console.log(`[Project] approvalGate check: body.approvalGate=${JSON.stringify(body.approvalGate)}, cliHooksService=${!!cliHooksService}`);
+    if (body.approvalGate !== undefined && cliHooksService) {
+      const isEnabled = body.approvalGate?.enabled ?? false;
+      console.log(`[Project] wasEnabled=${wasEnabled}, isEnabled=${isEnabled}`);
+
+      try {
+        if (!wasEnabled && isEnabled) {
+          // Turning ON: provision hook
+          await cliHooksService.provisionApprovalGateHook(
+            'project',
+            id,
+            body.approvalGate as ApprovalGateConfig
+          );
+          console.log(`[Project] Approval gate enabled for project ${id} - hook provisioned`);
+        } else if (wasEnabled && !isEnabled) {
+          // Turning OFF: unprovision hook
+          await cliHooksService.unprovisionApprovalGateHook('project', id);
+          console.log(`[Project] Approval gate disabled for project ${id} - hook unprovisioned`);
+        } else if (isEnabled) {
+          // Config changed while enabled: re-sync
+          await cliHooksService.provisionApprovalGateHook(
+            'project',
+            id,
+            body.approvalGate as ApprovalGateConfig
+          );
+          console.log(`[Project] Approval gate config updated for project ${id} - hook re-synced`);
+        }
+      } catch (error) {
+        console.error(`[Project] Failed to provision/unprovision approval gate hook for project ${id}:`, error);
+        // Don't fail the project update, just log the error
+      }
+    }
+
     return reply.send({ project });
   });
 
