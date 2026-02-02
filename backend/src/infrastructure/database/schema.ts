@@ -254,6 +254,8 @@ export const cliProviderHooks = sqliteTable('cli_provider_hooks', {
   script: text('script').notNull(), // The actual JS/CJS code
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
   scope: text('scope').default('project'), // 'project' | 'global'
+  matcher: text('matcher'), // Optional: tool matcher (e.g., 'Write|Edit|Bash')
+  timeout: integer('timeout'), // Optional: timeout in seconds
   syncedAt: text('synced_at'), // When last written to filesystem
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text('updated_at').default(sql`CURRENT_TIMESTAMP`),

@@ -9,6 +9,8 @@ import {
   CliProviderHooksService,
   CliProvider,
   PROVIDER_HOOK_TYPES,
+  ScannedHook,
+  ImportResult,
 } from '../services/cli-provider-hooks.service.js';
 
 // Validation schemas
@@ -22,6 +24,8 @@ const createHookSchema = z.object({
   script: z.string().min(1),
   enabled: z.boolean().optional().default(true),
   scope: z.enum(['project', 'global']).optional().default('project'),
+  matcher: z.string().optional(),  // e.g., "Write|Edit|Bash"
+  timeout: z.number().int().positive().optional(),  // timeout in seconds
 });
 
 const updateHookSchema = z.object({
@@ -29,12 +33,21 @@ const updateHookSchema = z.object({
   hookType: z.string().min(1).optional(),
   script: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
+  matcher: z.string().nullable().optional(),  // null to clear
+  timeout: z.number().int().positive().nullable().optional(),  // null to clear
 });
 
 const saveSettingsSchema = z.object({
   provider: providerSchema,
   projectId: z.string().uuid().optional(),
   settings: z.record(z.unknown()),
+});
+
+const importHooksSchema = z.object({
+  provider: providerSchema,
+  projectPath: z.string().optional(),
+  projectId: z.string().uuid().optional(),
+  updateExisting: z.boolean().optional().default(true),
 });
 
 export function registerCliProviderHooksController(
@@ -140,8 +153,26 @@ export function registerCliProviderHooksController(
       await service.syncHookToFilesystem(id);
       return reply.send({ success: true, message: 'Hook synced to filesystem' });
     } catch (error) {
+      console.error(`[CLI Hooks] Sync failed for ${id}:`, error);
       return reply.status(400).send({
         error: error instanceof Error ? error.message : 'Failed to sync hook',
+        details: error instanceof Error ? error.stack : undefined,
+      });
+    }
+  });
+
+  // GET /api/cli-hooks/:id/sync - Also support GET for sync (frontend compatibility)
+  app.get('/api/cli-hooks/:id/sync', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    try {
+      await service.syncHookToFilesystem(id);
+      return reply.send({ success: true, message: 'Hook synced to filesystem' });
+    } catch (error) {
+      console.error(`[CLI Hooks] Sync failed for ${id}:`, error);
+      return reply.status(400).send({
+        error: error instanceof Error ? error.message : 'Failed to sync hook',
+        details: error instanceof Error ? error.stack : undefined,
       });
     }
   });
@@ -156,6 +187,70 @@ export function registerCliProviderHooksController(
     } catch (error) {
       return reply.status(400).send({
         error: error instanceof Error ? error.message : 'Failed to sync hooks',
+      });
+    }
+  });
+
+  // ============ FILESYSTEM IMPORT ENDPOINTS ============
+
+  // GET /api/cli-hooks/scan - Scan filesystem for hooks (preview before import)
+  app.get('/api/cli-hooks/scan', async (request, reply) => {
+    const { provider, projectPath, projectId } = request.query as {
+      provider?: string;
+      projectPath?: string;
+      projectId?: string;
+    };
+
+    if (!provider || !['claude', 'gemini', 'codex'].includes(provider)) {
+      return reply.status(400).send({ error: 'Valid provider required (claude, gemini, codex)' });
+    }
+
+    try {
+      const hooks: ScannedHook[] = await service.scanFilesystem(
+        provider as CliProvider,
+        projectPath,
+        projectId
+      );
+      return reply.send({ hooks, total: hooks.length });
+    } catch (error) {
+      return reply.status(500).send({
+        error: error instanceof Error ? error.message : 'Failed to scan filesystem',
+      });
+    }
+  });
+
+  // POST /api/cli-hooks/import - Import hooks from filesystem to DB
+  app.post('/api/cli-hooks/import', async (request, reply) => {
+    const body = importHooksSchema.parse(request.body);
+
+    try {
+      const result: ImportResult = await service.importHooksFromFilesystem(
+        body.provider,
+        body.projectPath,
+        body.projectId,
+        body.updateExisting
+      );
+      return reply.send(result);
+    } catch (error) {
+      return reply.status(500).send({
+        error: error instanceof Error ? error.message : 'Failed to import hooks',
+      });
+    }
+  });
+
+  // GET /api/cli-hooks/diff/:id - Compare DB hook vs filesystem
+  app.get('/api/cli-hooks/diff/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    try {
+      const diff = await service.getHookDiff(id);
+      if (!diff) {
+        return reply.status(404).send({ error: 'Hook not found' });
+      }
+      return reply.send(diff);
+    } catch (error) {
+      return reply.status(500).send({
+        error: error instanceof Error ? error.message : 'Failed to get diff',
       });
     }
   });

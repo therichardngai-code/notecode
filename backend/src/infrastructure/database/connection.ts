@@ -311,6 +311,10 @@ function runSchemaMigrations(): void {
   addColumnIfNotExists('messages', 'approval_id', 'TEXT');
   addColumnIfNotExists('messages', 'status', "TEXT DEFAULT 'complete'");
   addColumnIfNotExists('messages', 'stream_offset', 'INTEGER DEFAULT 0');
+
+  // CLI provider hooks table migrations
+  addColumnIfNotExists('cli_provider_hooks', 'matcher', 'TEXT');
+  addColumnIfNotExists('cli_provider_hooks', 'timeout', 'INTEGER');
 }
 
 export async function closeDatabase(): Promise<void> {

@@ -84,6 +84,16 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     } : false,
   });
 
+  // Custom JSON parser that handles empty body (for endpoints like /sync that don't need body)
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    try {
+      const json = body && (body as string).trim() ? JSON.parse(body as string) : {};
+      done(null, json);
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
+
   // Register CORS
   await app.register(cors, {
     origin: true,

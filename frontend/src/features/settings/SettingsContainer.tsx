@@ -15,8 +15,9 @@ import { DataRetentionSection } from './DataRetentionSection';
 import { BackupSection } from './BackupSection';
 import { ProjectManagementSection } from './ProjectManagementSection';
 import { GlobalApprovalGateSection } from './GlobalApprovalGateSection';
+import { CliHooksSection } from './CliHooksSection';
 
-type TabId = 'general' | 'api-keys' | 'prompts' | 'projects' | 'advanced';
+type TabId = 'general' | 'api-keys' | 'prompts' | 'projects' | 'cli-hooks' | 'advanced';
 
 interface Tab {
   id: TabId;
@@ -28,6 +29,7 @@ const tabs: Tab[] = [
   { id: 'api-keys', label: 'API Keys' },
   { id: 'prompts', label: 'Prompts' },
   { id: 'projects', label: 'Projects' },
+  { id: 'cli-hooks', label: 'CLI Hooks' },
   { id: 'advanced', label: 'Advanced' },
 ];
 
@@ -80,6 +82,8 @@ export function SettingsContainer() {
           )}
 
           {activeTab === 'projects' && <ProjectManagementSection />}
+
+          {activeTab === 'cli-hooks' && <CliHooksSection />}
 
           {activeTab === 'advanced' && (
             <div className="space-y-8">
