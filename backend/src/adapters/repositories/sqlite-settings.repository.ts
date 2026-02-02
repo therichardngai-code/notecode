@@ -28,6 +28,7 @@ export interface ApprovalGateConfig {
 export interface GlobalSettings {
   id: string;
   userName?: string;
+  userEmail?: string;
   theme: string;
   defaultProvider?: string;
   defaultModel?: string;
@@ -87,6 +88,7 @@ export class SqliteSettingsRepository implements ISettingsRepository {
     return {
       id: row.id,
       userName: row.userName ?? undefined,
+      userEmail: row.userEmail ?? undefined,
       theme: row.theme ?? 'system',
       defaultProvider: row.defaultProvider ?? undefined,
       defaultModel: row.defaultModel ?? undefined,
@@ -107,6 +109,7 @@ export class SqliteSettingsRepository implements ISettingsRepository {
     const data: Record<string, unknown> = {};
 
     if (updates.userName !== undefined) data.userName = updates.userName;
+    if (updates.userEmail !== undefined) data.userEmail = updates.userEmail;
     if (updates.theme !== undefined) data.theme = updates.theme;
     if (updates.defaultProvider !== undefined) data.defaultProvider = updates.defaultProvider;
     if (updates.defaultModel !== undefined) data.defaultModel = updates.defaultModel;

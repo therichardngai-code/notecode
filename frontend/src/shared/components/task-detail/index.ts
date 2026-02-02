@@ -28,4 +28,5 @@ export { ContentPreviewModal } from './content-preview-modal';
 export { TaskInfoTabsNav } from './task-info-tabs-nav';
 export { FileDetailsPanel } from './file-details-panel';
 export { TaskEditPanel } from './task-edit-panel';
+export { GitInitDialog } from './git-init-dialog';
 export * from './tabs';

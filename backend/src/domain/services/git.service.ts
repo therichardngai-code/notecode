@@ -5,6 +5,67 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { writeFile, readFile } from 'fs/promises';
+import { join } from 'path';
+
+// Default .gitignore template for new projects
+const DEFAULT_GITIGNORE = `# Windows reserved filenames
+nul
+NUL
+con
+CON
+prn
+PRN
+aux
+AUX
+
+# AI Agent configs
+.claude/
+.gemini/
+.agent/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+
+# Temp
+tmp/
+
+# Dependencies
+node_modules/
+**/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+`;
 
 const execAsync = promisify(exec);
 
@@ -77,10 +138,23 @@ export class GitService {
 
   /**
    * Get current branch name
+   * Uses symbolic-ref for empty repos (no commits yet)
    */
   async getCurrentBranch(workingDir: string): Promise<string> {
-    const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: workingDir });
-    return stdout.trim();
+    try {
+      // Try symbolic-ref first (works for empty repos with no commits)
+      const { stdout } = await execAsync('git symbolic-ref --short HEAD', { cwd: workingDir });
+      return stdout.trim();
+    } catch {
+      // Fallback to rev-parse for detached HEAD state
+      try {
+        const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: workingDir });
+        return stdout.trim();
+      } catch {
+        // Default to 'main' if all else fails
+        return 'main';
+      }
+    }
   }
 
   /**
@@ -246,6 +320,86 @@ export class GitService {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Initialize a new git repository
+   */
+  async initRepo(workingDir: string): Promise<void> {
+    await execAsync('git init', { cwd: workingDir });
+  }
+
+  /**
+   * Check if repository has any commits
+   */
+  async hasCommits(workingDir: string): Promise<boolean> {
+    try {
+      await execAsync('git rev-parse HEAD', { cwd: workingDir });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Create initial commit (for empty repos)
+   * Creates .gitkeep if no files exist, then commits
+   * Flow: Try global git config → fallback to settings → error with instructions
+   */
+  async createInitialCommit(
+    workingDir: string,
+    userConfig?: { name?: string; email?: string }
+  ): Promise<void> {
+    // Ensure .gitignore exists with default patterns (handles Windows reserved filenames)
+    const gitignorePath = join(workingDir, '.gitignore');
+    try {
+      const existing = await readFile(gitignorePath, 'utf-8');
+      // Append default patterns if 'nul' not already ignored
+      if (!existing.includes('nul')) {
+        await writeFile(gitignorePath, existing + '\n' + DEFAULT_GITIGNORE);
+      }
+    } catch {
+      // .gitignore doesn't exist - create with default template
+      await writeFile(gitignorePath, DEFAULT_GITIGNORE);
+    }
+
+    // Check if there are any files to commit
+    const { stdout: statusOutput } = await execAsync('git status --porcelain', { cwd: workingDir });
+
+    if (!statusOutput.trim()) {
+      // No files at all - create .gitkeep (cross-platform using Node.js)
+      await writeFile(join(workingDir, '.gitkeep'), '');
+    }
+
+    // Stage all files
+    await execAsync('git add -A', { cwd: workingDir });
+
+    // Try commit with user's global git config first
+    try {
+      await execAsync('git commit -m "Initial commit"', { cwd: workingDir });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+
+      // Check if error is due to missing git config
+      if (errorMsg.includes('user.name') || errorMsg.includes('user.email') || errorMsg.includes('tell me who you are')) {
+        // Try settings fallback if available
+        if (userConfig?.name && userConfig?.email) {
+          await execAsync(
+            `git -c user.name="${userConfig.name}" -c user.email="${userConfig.email}" commit -m "Initial commit"`,
+            { cwd: workingDir }
+          );
+        } else {
+          // No fallback available - throw clear error
+          throw new Error(
+            'Git user not configured. Please set git config or update Settings with your name and email.\n' +
+            'Run: git config --global user.name "Your Name"\n' +
+            'Run: git config --global user.email "your@email.com"'
+          );
+        }
+      } else {
+        throw error;
+      }
     }
   }
 

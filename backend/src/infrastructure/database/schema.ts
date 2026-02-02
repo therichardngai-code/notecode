@@ -148,6 +148,7 @@ export const messages = sqliteTable('messages', {
 export const settings = sqliteTable('settings', {
   id: text('id').primaryKey().default('global'),
   userName: text('user_name'),
+  userEmail: text('user_email'),
   theme: text('theme').default('system'),
   defaultProvider: text('default_provider'),
   defaultModel: text('default_model'),

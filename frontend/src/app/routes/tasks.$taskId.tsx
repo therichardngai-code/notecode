@@ -14,8 +14,10 @@ import type { ChatMessage } from '@/shared/types';
 // Shared task-detail components
 import {
   ContextWarningDialog, ChatInputFooter, type ChatInputFooterHandle, ContentPreviewModal, TaskInfoTabsNav,
-  FileDetailsPanel, TaskEditPanel,
+  FileDetailsPanel, TaskEditPanel, GitInitDialog,
 } from '@/shared/components/task-detail';
+import { projectsApi } from '@/adapters/api/projects-api';
+import type { SessionResumeMode } from '@/adapters/api/sessions-api';
 // Phase 5 Tabs
 import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
@@ -61,6 +63,12 @@ function TaskDetailPage() {
 
   // Context window warning hook
   const { showWarning, dismissWarning } = useContextWarning(latestSession);
+
+  // Git init dialog state
+  const [gitInitDialogOpen, setGitInitDialogOpen] = useState(false);
+  const [pendingGitInitMode, setPendingGitInitMode] = useState<SessionResumeMode | null>(null);
+  const [pendingGitInitPrompt, setPendingGitInitPrompt] = useState<string | undefined>();
+  const [isInitializingGit, setIsInitializingGit] = useState(false);
 
   // Track just-started session for immediate WebSocket connection (before query refetch)
   const [justStartedSession, setJustStartedSession] = useState<{ id: string; status: string } | null>(null);
@@ -158,7 +166,15 @@ function TaskDetailPage() {
     currentAssistantMessage,
   });
 
+  // Git init dialog callback (passed to useSessionStartHandler)
+  const handleGitInitRequired = useCallback((mode: SessionResumeMode, prompt?: string) => {
+    setPendingGitInitMode(mode);
+    setPendingGitInitPrompt(prompt);
+    setGitInitDialogOpen(true);
+  }, []);
+
   // Session start handler hook (shared with FloatingTaskDetailPanel)
+  // NOTE: Must be defined before handleGitInitConfirm which uses handleStartSessionWithMode
   const { handleStartSessionWithMode, isStartingSession } = useSessionStartHandler({
     taskId,
     chatInputFooterRef,
@@ -177,7 +193,36 @@ function TaskDetailPage() {
     resetScrollState,
     saveScrollPosition,
     activeInfoTab,
+    onGitInitRequired: handleGitInitRequired,
   });
+
+  // Git init dialog confirm/cancel handlers (must be after useSessionStartHandler)
+  const handleGitInitConfirm = useCallback(async () => {
+    if (!task?.projectId) return;
+    setIsInitializingGit(true);
+    try {
+      await projectsApi.initGit(task.projectId);
+      setGitInitDialogOpen(false);
+      // Retry the task start with same mode
+      if (pendingGitInitMode) {
+        handleStartSessionWithMode(pendingGitInitMode);
+      }
+    } catch (error) {
+      console.error('Failed to initialize git:', error);
+      alert('Failed to initialize git. Please try again or initialize manually.');
+      setGitInitDialogOpen(false);
+    } finally {
+      setIsInitializingGit(false);
+      setPendingGitInitMode(null);
+      setPendingGitInitPrompt(undefined);
+    }
+  }, [task?.projectId, pendingGitInitMode, handleStartSessionWithMode]);
+
+  const handleGitInitCancel = useCallback(() => {
+    setGitInitDialogOpen(false);
+    setPendingGitInitMode(null);
+    setPendingGitInitPrompt(undefined);
+  }, []);
 
   // Tab change handler
   const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'sessions') => {
@@ -484,6 +529,15 @@ function TaskDetailPage() {
           dismissWarning();
           handleStartSessionWithMode('renew');
         }}
+      />
+
+      {/* Git Init Confirmation Dialog */}
+      <GitInitDialog
+        open={gitInitDialogOpen}
+        projectName={projectName || 'Unknown'}
+        onConfirm={handleGitInitConfirm}
+        onCancel={handleGitInitCancel}
+        isLoading={isInitializingGit}
       />
     </div>
   );

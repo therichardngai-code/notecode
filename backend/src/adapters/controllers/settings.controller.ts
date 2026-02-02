@@ -25,6 +25,7 @@ const approvalGateSchema = z.object({
 
 const updateSettingsSchema = z.object({
   userName: z.string().optional(),
+  userEmail: z.string().email().optional(),
   theme: z.enum(['light', 'dark', 'system']).optional(),
   defaultProvider: z.enum(['anthropic', 'google', 'openai']).optional(),
   defaultModel: z.string().optional(),

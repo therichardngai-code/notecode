@@ -213,4 +213,24 @@ export const projectsApi = {
 
     return response.json();
   },
+
+  // ============================================
+  // GIT APIs
+  // ============================================
+
+  /**
+   * Check if project is a git repository
+   */
+  getGitStatus: (projectId: string) =>
+    apiClient.get<{ isGitRepo: boolean; currentBranch: string | null }>(
+      `/api/projects/${projectId}/git/status`
+    ),
+
+  /**
+   * Initialize git in project directory
+   */
+  initGit: (projectId: string) =>
+    apiClient.post<{ success: boolean; message: string; alreadyInitialized: boolean }>(
+      `/api/projects/${projectId}/git/init`
+    ),
 };

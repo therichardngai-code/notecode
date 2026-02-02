@@ -32,6 +32,8 @@ interface UseSessionStartHandlerParams {
   saveScrollPosition: () => void;
   // Current tab
   activeInfoTab: 'activity' | 'ai-session' | 'diffs' | 'sessions';
+  // Git init callback (optional - for autoBranch warning)
+  onGitInitRequired?: (mode: SessionResumeMode, prompt?: string) => void;
 }
 
 interface UseSessionStartHandlerReturn {
@@ -61,10 +63,12 @@ export function useSessionStartHandler({
   resetScrollState,
   saveScrollPosition,
   activeInfoTab,
+  onGitInitRequired,
 }: UseSessionStartHandlerParams): UseSessionStartHandlerReturn {
   const startSessionMutation = useStartSession();
 
   const handleStartSessionWithMode = useCallback(async (mode: SessionResumeMode) => {
+    console.log('[useSessionStartHandler] handleStartSessionWithMode called with mode:', mode, 'taskId:', taskId);
     if (!taskId) return;
 
     // Capture chat input BEFORE clearing state
@@ -103,10 +107,8 @@ export function useSessionStartHandler({
       streamingBufferRef.current = '';
     }
 
-    // Clear chat input via ref
-    if (newPrompt) {
-      chatInputFooterRef.current?.clearChatInput();
-    }
+    // NOTE: Don't clear chat input here - wait until session starts successfully
+    // This preserves the prompt for retry on git init dialog flow
 
     setWsSessionStatus(null);
     setJustStartedSession(null);
@@ -139,12 +141,29 @@ export function useSessionStartHandler({
 
       setJustStartedSession({ id: response.session.id, status: 'running' });
 
+      // Clear chat input AFTER successful session start (preserves prompt for retry on error)
+      if (newPrompt) {
+        chatInputFooterRef.current?.clearChatInput();
+      }
+
       // Switch to AI Session tab if not already there
       if (activeInfoTab !== 'ai-session') {
         setActiveInfoTab('ai-session');
       }
-    } catch (err) {
+    } catch (err: unknown) {
       setIsWaitingForResponse(false);
+
+      // Check for GIT_INIT_REQUIRED warning in error response (400 status)
+      // ApiError stores full response in 'details' (see api-client.ts)
+      const apiError = err as { details?: { warnings?: Array<{ code: string }> } };
+      const warnings = apiError.details?.warnings;
+      const gitWarning = warnings?.find(w => w.code === 'GIT_INIT_REQUIRED');
+
+      if (gitWarning) {
+        onGitInitRequired?.(mode, newPrompt);
+        return; // Show dialog instead of error
+      }
+
       console.error('Failed to start session:', err);
     }
   }, [
@@ -166,6 +185,7 @@ export function useSessionStartHandler({
     saveScrollPosition,
     activeInfoTab,
     startSessionMutation,
+    onGitInitRequired,
   ]);
 
   return {

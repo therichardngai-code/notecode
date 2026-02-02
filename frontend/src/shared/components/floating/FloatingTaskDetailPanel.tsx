@@ -26,9 +26,11 @@ import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/compo
 // Phase 6 + Shared Components
 import {
   ChatInputFooter, type ChatInputFooterHandle, TaskInfoTabsNav,
-  TaskEditPanel, ContentPreviewModal, ContextWarningDialog,
+  TaskEditPanel, ContentPreviewModal, ContextWarningDialog, GitInitDialog,
 } from '@/shared/components/task-detail';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
+import { projectsApi } from '@/adapters/api/projects-api';
+import type { SessionResumeMode } from '@/adapters/api/sessions-api';
 import { useUIStore } from '@/shared/stores';
 
 interface FloatingTaskDetailPanelProps {
@@ -80,6 +82,11 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // Context window warning hook
   const { showWarning, dismissWarning } = useContextWarning(latestSession);
 
+  // Git init dialog state
+  const [gitInitDialogOpen, setGitInitDialogOpen] = useState(false);
+  const [pendingGitInitMode, setPendingGitInitMode] = useState<SessionResumeMode | null>(null);
+  const [pendingGitInitPrompt, setPendingGitInitPrompt] = useState<string | undefined>();
+  const [isInitializingGit, setIsInitializingGit] = useState(false);
 
   // Track just-started session for immediate WebSocket connection (before query refetch)
   const [justStartedSession, setJustStartedSession] = useState<{ id: string; status: string } | null>(null);
@@ -210,7 +217,15 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     setProcessingApproval,
   });
 
+  // Git init dialog callback (passed to useSessionStartHandler)
+  const handleGitInitRequired = useCallback((mode: SessionResumeMode, prompt?: string) => {
+    setPendingGitInitMode(mode);
+    setPendingGitInitPrompt(prompt);
+    setGitInitDialogOpen(true);
+  }, []);
+
   // Session start handler hook (shared with tasks.$taskId.tsx)
+  // NOTE: Must be defined before handleGitInitConfirm which uses handleStartSessionWithMode
   const { handleStartSessionWithMode, isStartingSession } = useSessionStartHandler({
     taskId,
     chatInputFooterRef,
@@ -229,7 +244,35 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     resetScrollState,
     saveScrollPosition,
     activeInfoTab,
+    onGitInitRequired: handleGitInitRequired,
   });
+
+  // Git init dialog confirm/cancel handlers (must be after useSessionStartHandler)
+  const handleGitInitConfirm = useCallback(async () => {
+    if (!task?.projectId) return;
+    setIsInitializingGit(true);
+    try {
+      await projectsApi.initGit(task.projectId);
+      setGitInitDialogOpen(false);
+      if (pendingGitInitMode) {
+        handleStartSessionWithMode(pendingGitInitMode);
+      }
+    } catch (error) {
+      console.error('Failed to initialize git:', error);
+      alert('Failed to initialize git. Please try again or initialize manually.');
+      setGitInitDialogOpen(false);
+    } finally {
+      setIsInitializingGit(false);
+      setPendingGitInitMode(null);
+      setPendingGitInitPrompt(undefined);
+    }
+  }, [task?.projectId, pendingGitInitMode, handleStartSessionWithMode]);
+
+  const handleGitInitCancel = useCallback(() => {
+    setGitInitDialogOpen(false);
+    setPendingGitInitMode(null);
+    setPendingGitInitPrompt(undefined);
+  }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HANDLERS
@@ -594,6 +637,15 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
             dismissWarning();
             handleStartSessionWithMode('renew');
           }}
+        />
+
+        {/* Git Init Confirmation Dialog */}
+        <GitInitDialog
+          open={gitInitDialogOpen}
+          projectName={projectName || 'Unknown'}
+          onConfirm={handleGitInitConfirm}
+          onCancel={handleGitInitCancel}
+          isLoading={isInitializingGit}
         />
       </div>
     </>

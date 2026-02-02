@@ -70,7 +70,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new ApiError(response.status, error.error || 'Request failed', error.details);
+    // Pass entire error response as details to preserve warnings array
+    throw new ApiError(response.status, error.error || 'Request failed', error);
   }
 
   // Handle 204 No Content

@@ -8,6 +8,13 @@ import { apiClient } from './api-client';
 // Task status and priority types
 export type TaskStatus = 'not-started' | 'in-progress' | 'review' | 'done' | 'cancelled' | 'archived';
 export type TaskPriority = 'high' | 'medium' | 'low';
+
+// Warning returned by backend when action has issues but can proceed
+export interface TaskWarning {
+  code: string;  // e.g., 'GIT_INIT_REQUIRED'
+  message: string;
+  action?: string;  // Suggested action
+}
 export type AgentRole = 'researcher' | 'planner' | 'coder' | 'reviewer' | 'tester';
 export type ProviderType = 'anthropic' | 'google' | 'openai';
 

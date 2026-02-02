@@ -198,11 +198,13 @@ function SaveButton({ onClick, isPending, hasChanges }: { onClick: () => void; i
 // Content sections
 function ProfileContent({ settings, updateSettings, isPending }: ContentProps) {
   const [userName, setUserName] = useState(settings?.userName || '');
-  const hasChanges = userName !== (settings?.userName || '');
+  const [userEmail, setUserEmail] = useState(settings?.userEmail || '');
+  const hasChanges = userName !== (settings?.userName || '') || userEmail !== (settings?.userEmail || '');
 
   useEffect(() => {
     setUserName(settings?.userName || '');
-  }, [settings?.userName]);
+    setUserEmail(settings?.userEmail || '');
+  }, [settings?.userName, settings?.userEmail]);
 
   return (
     <div>
@@ -217,7 +219,17 @@ function ProfileContent({ settings, updateSettings, isPending }: ContentProps) {
           placeholder="Enter name"
         />
       </SettingRow>
-      <SaveButton onClick={() => updateSettings({ userName })} isPending={isPending} hasChanges={hasChanges} />
+      <SettingRow label="Email" description="Fallback for git commits when global config not set">
+        <input
+          type="email"
+          value={userEmail}
+          onChange={(e) => setUserEmail(e.target.value)}
+          disabled={isPending}
+          className="w-40 px-3 py-1.5 text-sm rounded-lg glass text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder="your@email.com"
+        />
+      </SettingRow>
+      <SaveButton onClick={() => updateSettings({ userName, userEmail })} isPending={isPending} hasChanges={hasChanges} />
     </div>
   );
 }

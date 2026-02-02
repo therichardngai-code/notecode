@@ -306,6 +306,7 @@ function runSchemaMigrations(): void {
   addColumnIfNotExists('settings', 'current_active_project_id', 'TEXT');
   addColumnIfNotExists('settings', 'data_retention_enabled', 'INTEGER DEFAULT 0');
   addColumnIfNotExists('settings', 'data_retention_days', 'INTEGER DEFAULT 90');
+  addColumnIfNotExists('settings', 'user_email', 'TEXT');
 
   // Messages table migrations
   addColumnIfNotExists('messages', 'approval_id', 'TEXT');

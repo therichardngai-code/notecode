@@ -126,6 +126,7 @@ interface SessionsResponse {
 interface SessionResponse {
   session: Session;
   wsUrl?: string;
+  warnings?: Array<{ code: string; message: string; action?: string }>;
 }
 
 interface MessagesResponse {

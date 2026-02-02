@@ -13,6 +13,7 @@ export type { ApprovalGateConfig, ToolRule, ApprovalGateRule };
 export interface GlobalSettings {
   id: string;
   userName?: string;
+  userEmail?: string; // Used as fallback for git commits when global git config not set
   theme: 'light' | 'dark' | 'system';
   defaultProvider?: 'anthropic' | 'google' | 'openai';
   defaultModel?: string;

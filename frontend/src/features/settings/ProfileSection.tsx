@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Loader2, User, Sun, Moon, Monitor } from 'lucide-react';
+import { Loader2, User, Mail, Sun, Moon, Monitor } from 'lucide-react';
 import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -14,6 +14,7 @@ export function ProfileSection() {
   const updateSettings = useUpdateSettings();
 
   const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const [theme, setTheme] = useState<Theme>('system');
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -21,6 +22,7 @@ export function ProfileSection() {
   useEffect(() => {
     if (settings) {
       setUserName(settings.userName || '');
+      setUserEmail(settings.userEmail || '');
       setTheme((settings.theme as Theme) || 'system');
     }
   }, [settings]);
@@ -28,6 +30,7 @@ export function ProfileSection() {
   const handleSave = () => {
     updateSettings.mutate({
       userName: userName || undefined,
+      userEmail: userEmail || undefined,
       theme,
     });
     setHasChanges(false);
@@ -75,6 +78,28 @@ export function ProfileSection() {
         />
         <p className="text-xs text-muted-foreground mt-1">
           Used for identifying your actions in sessions.
+        </p>
+      </div>
+
+      {/* User Email */}
+      <div>
+        <label htmlFor="userEmail" className="block text-sm font-medium text-foreground mb-1">
+          <Mail className="w-4 h-4 inline mr-1" />
+          Email
+        </label>
+        <input
+          id="userEmail"
+          type="email"
+          value={userEmail}
+          onChange={(e) => {
+            setUserEmail(e.target.value);
+            setHasChanges(true);
+          }}
+          placeholder="your@email.com"
+          className="w-full max-w-md px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          Used as fallback for git commits when global git config not set.
         </p>
       </div>
 

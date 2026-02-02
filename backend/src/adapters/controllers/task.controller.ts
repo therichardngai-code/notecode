@@ -318,12 +318,26 @@ export function registerTaskController(
 
     await taskRepo.save(task);
 
+    // Track warnings for response
+    const warnings: Array<{ code: string; message: string; action?: string; projectId?: string }> = [];
+
     // Git hooks on status change (async, non-blocking)
     if (newStatus && oldStatus !== newStatus && projectRepo && gitApprovalRepo && gitService && eventBus) {
       const project = await projectRepo.findById(task.projectId);
       if (project?.path) {
         try {
           const isRepo = await gitService.isGitRepo(project.path);
+
+          // Check for git init required warning
+          if (newStatus === TaskStatus.IN_PROGRESS && task.autoBranch && !isRepo) {
+            warnings.push({
+              code: 'GIT_INIT_REQUIRED',
+              message: 'Project is not a git repository. Auto-branch requires git to be initialized.',
+              action: 'git_init',
+              projectId: task.projectId,
+            });
+          }
+
           if (isRepo) {
             // Task started → create branch
             if (newStatus === TaskStatus.IN_PROGRESS && task.autoBranch) {
@@ -365,7 +379,7 @@ export function registerTaskController(
       }
     }
 
-    return reply.send({ task });
+    return reply.send({ task, warnings: warnings.length > 0 ? warnings : undefined });
   });
 
   // POST /api/tasks/:id/move - Move task (drag & drop)
@@ -385,12 +399,26 @@ export function registerTaskController(
       task.updateStatus(newStatus);
       await taskRepo.save(task);
 
+      // Track warnings for response
+      const warnings: Array<{ code: string; message: string; action?: string; projectId?: string }> = [];
+
       // Git hooks on status change (async, non-blocking)
       if (oldStatus !== newStatus && projectRepo && gitApprovalRepo && gitService && eventBus) {
         const project = await projectRepo.findById(task.projectId);
         if (project?.path) {
           try {
             const isRepo = await gitService.isGitRepo(project.path);
+
+            // Check for git init required warning
+            if (newStatus === TaskStatus.IN_PROGRESS && task.autoBranch && !isRepo) {
+              warnings.push({
+                code: 'GIT_INIT_REQUIRED',
+                message: 'Project is not a git repository. Auto-branch requires git to be initialized.',
+                action: 'git_init',
+                projectId: task.projectId,
+              });
+            }
+
             if (isRepo) {
               // Task started → create branch
               if (newStatus === TaskStatus.IN_PROGRESS && task.autoBranch) {
@@ -431,7 +459,7 @@ export function registerTaskController(
         }
       }
 
-      return reply.send({ task });
+      return reply.send({ task, warnings: warnings.length > 0 ? warnings : undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid status transition';
       return reply.status(400).send({ error: message });

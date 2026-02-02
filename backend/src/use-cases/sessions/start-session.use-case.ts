@@ -20,6 +20,7 @@ import { Session } from '../../domain/entities/session.entity.js';
 import { Message } from '../../domain/entities/message.entity.js';
 import { SessionStatus, TaskStatus, ProviderType } from '../../domain/value-objects/task-status.vo.js';
 import { createEmptyTokenUsage, createEmptyToolStats } from '../../domain/value-objects/token-usage.vo.js';
+import { GitService } from '../../domain/services/git.service.js';
 
 export interface StartSessionRequest {
   taskId: string;
@@ -42,10 +43,18 @@ export interface StartSessionRequest {
   disableWebTools?: boolean;  // Disable WebSearch/WebFetch
 }
 
+export interface StartSessionWarning {
+  code: string;
+  message: string;
+  action?: string;
+  projectId?: string;
+}
+
 export interface StartSessionResponse {
   success: boolean;
   session?: Session;
   error?: string;
+  warnings?: StartSessionWarning[];
 }
 
 export class StartSessionUseCase {
@@ -57,7 +66,8 @@ export class StartSessionUseCase {
     private messageRepo: IMessageRepository,
     private settingsRepo: ISettingsRepository,
     private cliExecutor: ICliExecutor,
-    private eventBus: IEventBus
+    private eventBus: IEventBus,
+    private gitService?: GitService
   ) {}
 
   async execute(request: StartSessionRequest): Promise<StartSessionResponse> {
@@ -71,6 +81,50 @@ export class StartSessionUseCase {
     const project = await this.projectRepo.findById(task.projectId);
     if (!project) {
       return { success: false, error: 'Project not found' };
+    }
+
+    // Track warnings for response
+    const warnings: StartSessionWarning[] = [];
+
+    // 2a. Check git status (autoBranch enabled)
+    // Block session and show dialog for user consent in BOTH cases:
+    // - No git repo → need consent to init
+    // - Git exists but no commits → need consent to create initial commit
+    if (task.autoBranch && this.gitService && project.path) {
+      const isGitRepo = await this.gitService.isGitRepo(project.path);
+
+      if (!isGitRepo) {
+        // No git repo - needs user consent
+        warnings.push({
+          code: 'GIT_INIT_REQUIRED',
+          message: 'Project is not a git repository. Initialize git to enable auto-branch.',
+          action: 'git_init',
+          projectId: project.id,
+        });
+
+        return {
+          success: false,
+          error: 'Git initialization required',
+          warnings
+        };
+      }
+
+      // Git repo exists but no commits - needs user consent
+      const hasCommits = await this.gitService.hasCommits(project.path);
+      if (!hasCommits) {
+        warnings.push({
+          code: 'GIT_INIT_REQUIRED',
+          message: 'Git repository has no commits. Create initial commit to enable auto-branch.',
+          action: 'git_init',
+          projectId: project.id,
+        });
+
+        return {
+          success: false,
+          error: 'Git initial commit required',
+          warnings
+        };
+      }
     }
 
     // 3. Check task status - must be IN_PROGRESS to start session
@@ -292,7 +346,7 @@ export class StartSessionUseCase {
         new SessionStartedEvent(session.id, task.id, session.provider)
       ]);
 
-      return { success: true, session };
+      return { success: true, session, warnings: warnings.length > 0 ? warnings : undefined };
 
     } catch (error) {
       // Session failed to spawn

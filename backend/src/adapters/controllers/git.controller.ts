@@ -18,6 +18,7 @@ import {
   GitBranchCreatedEvent,
   GitBranchDeletedEvent,
 } from '../../domain/events/event-bus.js';
+import { SqliteSettingsRepository } from '../repositories/sqlite-settings.repository.js';
 
 const approveCommitSchema = z.object({
   commitMessage: z.string().optional(),
@@ -385,6 +386,65 @@ export function registerGitController(
     } catch (error) {
       return reply.status(500).send({
         error: 'Failed to reject',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  // POST /api/projects/:id/git/init - Initialize git repository in project
+  app.post('/api/projects/:id/git/init', async (request, reply) => {
+    const { id } = request.params as { id: string };
+
+    const project = await projectRepo.findById(id);
+    if (!project) {
+      return reply.status(404).send({ error: 'Project not found' });
+    }
+
+    if (!project.path) {
+      return reply.status(400).send({ error: 'Project path not configured' });
+    }
+
+    try {
+      // Check if already a git repo
+      const isRepo = await gitService.isGitRepo(project.path);
+      let wasInitialized = false;
+
+      if (!isRepo) {
+        // Initialize git
+        await gitService.initRepo(project.path);
+        wasInitialized = true;
+      }
+
+      // Check if repo has commits (empty repos cause branch issues)
+      const hasCommits = await gitService.hasCommits(project.path);
+      let initialCommitCreated = false;
+
+      if (!hasCommits) {
+        // Fetch settings for user config fallback
+        const settingsRepo = new SqliteSettingsRepository();
+        const globalSettings = await settingsRepo.getGlobal();
+
+        // Create initial commit with settings fallback
+        await gitService.createInitialCommit(project.path, {
+          name: globalSettings.userName,
+          email: globalSettings.userEmail,
+        });
+        initialCommitCreated = true;
+      }
+
+      return reply.status(200).send({
+        success: true,
+        message: wasInitialized
+          ? 'Git repository initialized with initial commit'
+          : initialCommitCreated
+            ? 'Initial commit created'
+            : 'Already a git repository with commits',
+        initialized: wasInitialized,
+        initialCommitCreated,
+      });
+    } catch (error) {
+      return reply.status(500).send({
+        error: 'Failed to initialize git',
         details: error instanceof Error ? error.message : 'Unknown error',
       });
     }

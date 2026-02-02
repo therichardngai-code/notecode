@@ -212,7 +212,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     messageRepo,
     settingsRepo,
     cliExecutor,
-    eventBus
+    eventBus,
+    gitService
   );
   const stopSessionUseCase = new StopSessionUseCase(
     sessionRepo,

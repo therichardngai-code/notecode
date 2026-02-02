@@ -100,12 +100,16 @@ export function registerSessionController(
       const result = await startSessionUseCase.execute(body);
 
       if (!result.success) {
-        return reply.status(400).send({ error: result.error });
+        return reply.status(400).send({
+          error: result.error,
+          warnings: result.warnings
+        });
       }
 
       return reply.status(201).send({
         session: result.session,
         wsUrl: `/ws/session/${result.session!.id}`,
+        warnings: result.warnings,
       });
     }
 
