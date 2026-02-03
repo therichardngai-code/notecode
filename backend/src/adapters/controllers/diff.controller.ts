@@ -15,6 +15,13 @@ export function registerDiffController(
   sessionRepo: ISessionRepository
 ): void {
 
+  // GET /api/tasks/:taskId/diffs - Get all diffs for task (across all sessions)
+  app.get('/api/tasks/:taskId/diffs', async (request, reply) => {
+    const { taskId } = request.params as { taskId: string };
+    const diffs = await diffRepo.findByTaskId(taskId);
+    return reply.send({ diffs });
+  });
+
   // GET /api/sessions/:sessionId/diffs - Get all diffs for session
   app.get('/api/sessions/:sessionId/diffs', async (request, reply) => {
     const { sessionId } = request.params as { sessionId: string };

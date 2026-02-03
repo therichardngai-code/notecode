@@ -6,7 +6,7 @@
 import { eq, and, asc } from 'drizzle-orm';
 import { IDiffRepository } from '../../domain/ports/repositories/diff.repository.port.js';
 import { Diff, DiffOperation, DiffStatus, DiffHunk } from '../../domain/entities/diff.entity.js';
-import { diffs, DiffRow } from '../../infrastructure/database/schema.js';
+import { diffs, sessions, DiffRow } from '../../infrastructure/database/schema.js';
 import { getDatabase } from '../../infrastructure/database/connection.js';
 
 export class SqliteDiffRepository implements IDiffRepository {
@@ -25,6 +25,36 @@ export class SqliteDiffRepository implements IDiffRepository {
       orderBy: [asc(diffs.createdAt)],
     });
     return rows.map(row => this.toEntity(row));
+  }
+
+  async findByTaskId(taskId: string): Promise<Diff[]> {
+    const db = getDatabase();
+    // JOIN diffs with sessions to get all diffs for a task
+    const rows = await db
+      .select({
+        id: diffs.id,
+        sessionId: diffs.sessionId,
+        messageId: diffs.messageId,
+        toolUseId: diffs.toolUseId,
+        approvalId: diffs.approvalId,
+        filePath: diffs.filePath,
+        operation: diffs.operation,
+        oldContent: diffs.oldContent,
+        newContent: diffs.newContent,
+        fullContent: diffs.fullContent,
+        lineStart: diffs.lineStart,
+        lineEnd: diffs.lineEnd,
+        hunks: diffs.hunks,
+        status: diffs.status,
+        appliedAt: diffs.appliedAt,
+        createdAt: diffs.createdAt,
+      })
+      .from(diffs)
+      .innerJoin(sessions, eq(diffs.sessionId, sessions.id))
+      .where(eq(sessions.taskId, taskId))
+      .orderBy(asc(diffs.createdAt));
+
+    return rows.map(row => this.toEntity(row as DiffRow));
   }
 
   async findByApprovalId(approvalId: string): Promise<Diff[]> {

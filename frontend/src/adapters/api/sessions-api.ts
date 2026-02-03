@@ -236,10 +236,16 @@ export const sessionsApi = {
     apiClient.delete<{ success: boolean }>(`/api/sessions/${id}`),
 
   /**
-   * Get session diffs (file changes)
+   * Get session diffs (file changes for a specific session)
    */
   getDiffs: (sessionId: string) =>
     apiClient.get<DiffsResponse>(`/api/diffs/session/${sessionId}`),
+
+  /**
+   * Get all diffs for a task (across all sessions)
+   */
+  getDiffsByTaskId: (taskId: string) =>
+    apiClient.get<DiffsResponse>(`/api/tasks/${taskId}/diffs`),
 
   /**
    * Approve individual diff

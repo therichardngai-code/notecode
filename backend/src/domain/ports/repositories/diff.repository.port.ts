@@ -14,6 +14,7 @@ export interface DiffFilters {
 export interface IDiffRepository {
   findById(id: string): Promise<Diff | null>;
   findBySessionId(sessionId: string): Promise<Diff[]>;
+  findByTaskId(taskId: string): Promise<Diff[]>;
   findByApprovalId(approvalId: string): Promise<Diff[]>;
   findByToolUseId(toolUseId: string): Promise<Diff | null>;
   findPending(): Promise<Diff[]>;
