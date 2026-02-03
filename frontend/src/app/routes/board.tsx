@@ -62,13 +62,14 @@ function formatRelativeTime(dateStr?: string): string | null {
 interface TaskCardProps {
   task: Task;
   isRunning?: boolean;
+  canArchive?: boolean;
   onClick?: () => void;
   onOpenInNewTab?: () => void;
   onMoveToArchived?: () => void;
   onDelete?: () => void;
 }
 
-function TaskCard({ task, isRunning, onClick, onOpenInNewTab, onMoveToArchived, onDelete }: TaskCardProps) {
+function TaskCard({ task, isRunning, canArchive, onClick, onOpenInNewTab, onMoveToArchived, onDelete }: TaskCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLDivElement>(null);
@@ -136,17 +137,19 @@ function TaskCard({ task, isRunning, onClick, onOpenInNewTab, onMoveToArchived, 
                 <ExternalLink className="w-4 h-4" />
                 Open in new tab
               </div>
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMoveToArchived?.();
-                  setShowMenu(false);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left cursor-pointer"
-              >
-                <Archive className="w-4 h-4" />
-                Move to archived
-              </div>
+              {canArchive && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveToArchived?.();
+                    setShowMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left cursor-pointer"
+                >
+                  <Archive className="w-4 h-4" />
+                  Move to archived
+                </div>
+              )}
               <div className="border-t border-white/20 dark:border-white/10 my-1" />
               <div
                 onClick={(e) => {
@@ -216,7 +219,7 @@ interface Column {
   tasks: Task[];
 }
 
-function BoardColumn({ column, sessions, onTaskClick, onOpenInNewTab, onMoveToArchived, onDelete }: { column: Column; sessions?: SessionRef[]; onTaskClick?: (id: string) => void; onOpenInNewTab?: (id: string) => void; onMoveToArchived?: (id: string) => void; onDelete?: (id: string) => void }) {
+function BoardColumn({ column, sessions, onTaskClick, onOpenInNewTab, onMoveToArchived, onDelete, canArchiveTask }: { column: Column; sessions?: SessionRef[]; onTaskClick?: (id: string) => void; onOpenInNewTab?: (id: string) => void; onMoveToArchived?: (id: string) => void; onDelete?: (id: string) => void; canArchiveTask?: (id: string) => boolean }) {
   // Check if task has a running session
   const isTaskRunning = (taskId: string) =>
     sessions?.some(s => s.taskId === taskId && s.status === 'in-progress') ?? false;
@@ -230,7 +233,7 @@ function BoardColumn({ column, sessions, onTaskClick, onOpenInNewTab, onMoveToAr
       </div>
       <div className="space-y-2">
         {column.tasks.map((task) => (
-          <TaskCard key={task.id} task={task} isRunning={isTaskRunning(task.id)} onClick={() => onTaskClick?.(task.id)} onOpenInNewTab={() => onOpenInNewTab?.(task.id)} onMoveToArchived={() => onMoveToArchived?.(task.id)} onDelete={() => onDelete?.(task.id)} />
+          <TaskCard key={task.id} task={task} isRunning={isTaskRunning(task.id)} canArchive={canArchiveTask?.(task.id) ?? false} onClick={() => onTaskClick?.(task.id)} onOpenInNewTab={() => onOpenInNewTab?.(task.id)} onMoveToArchived={() => onMoveToArchived?.(task.id)} onDelete={() => onDelete?.(task.id)} />
         ))}
       </div>
     </div>
@@ -274,9 +277,10 @@ export interface BoardViewProps {
   onOpenInNewTab?: (taskId: string) => void;
   onMoveToArchived?: (taskId: string) => void;
   onDelete?: (taskId: string) => void;
+  canArchiveTask?: (taskId: string) => boolean;
 }
 
-export function BoardView({ hideHeader, filters = {}, searchQuery = '', tasks: propTasks, sessions = [], isLoading: _isLoading, onTaskClick, onOpenInNewTab, onMoveToArchived, onDelete }: BoardViewProps) {
+export function BoardView({ hideHeader, filters = {}, searchQuery = '', tasks: propTasks, sessions = [], isLoading: _isLoading, onTaskClick, onOpenInNewTab, onMoveToArchived, onDelete, canArchiveTask }: BoardViewProps) {
   const tasksRecord = useTaskStore((state) => state.tasks);
   const storeTasks = Object.values(tasksRecord);
   // Use prop tasks if provided, else fall back to store
@@ -345,6 +349,7 @@ export function BoardView({ hideHeader, filters = {}, searchQuery = '', tasks: p
               onOpenInNewTab={(taskId) => onOpenInNewTab?.(taskId)}
               onMoveToArchived={(taskId) => onMoveToArchived?.(taskId)}
               onDelete={(taskId) => onDelete?.(taskId)}
+              canArchiveTask={canArchiveTask}
             />
           ))}
         </div>

@@ -9,9 +9,10 @@ import { filterOptions } from '@/shared/config/task-config';
 import { BoardView } from './board';
 import { SessionsView, mapApiSessionToUI } from './sessions';
 import { useProjects } from '@/shared/hooks/use-projects-query';
-import { useTasks } from '@/shared/hooks/use-tasks-query';
+import { useTasks, useUpdateTask, useDeleteTask } from '@/shared/hooks/use-tasks-query';
 import { useSessions, useStopSession, useDeleteSession } from '@/shared/hooks/use-sessions-query';
 import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
+import { DeleteConfirmationDialog } from '@/shared/components/dialogs';
 
 // Search params for handling ?id=taskId, ?session=sessionId, ?projectId=projectId
 type TasksSearch = { id?: string; session?: string; projectId?: string };
@@ -122,6 +123,9 @@ function TasksIndexPage() {
   const projectSearchRef = useRef<HTMLInputElement>(null);
   const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
   const [pendingProject, setPendingProject] = useState<{ id: string; name: string } | null>(null);
+
+  // Delete confirmation dialog state
+  const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
 
   // Get active project from settings & mutation to update it
   const { data: settings, isLoading: settingsLoading } = useSettings();
@@ -250,9 +254,18 @@ function TasksIndexPage() {
     }
   };
 
-  // Get store actions and tasks data
-  const { updateTask, deleteTask } = useTaskStore();
+  // Get tasks data from store (for openTaskAsTab lookup)
   const tasks = useTaskStore((state) => state.tasks);
+
+  // API mutations for task updates and deletions
+  const updateTaskMutation = useUpdateTask();
+  const deleteTaskMutation = useDeleteTask();
+
+  // Check if task can be archived (only from 'done' or 'cancelled' status)
+  const canArchiveTask = (taskId: string): boolean => {
+    const task = mappedTasks?.find(t => t.id === taskId);
+    return task?.columnId === 'done' || task?.columnId === 'cancelled';
+  };
 
   // Handle open in new tab (Tab Block, not browser tab)
   const handleOpenInNewTab = (taskId: string) => {
@@ -260,15 +273,29 @@ function TasksIndexPage() {
     openTaskAsTab(taskId, task?.title || 'Task');
   };
 
-  // Handle move to archived
+  // Handle move to archived - calls API to update task status
   const handleMoveToArchived = (taskId: string) => {
-    updateTask(taskId, { columnId: 'archived' });
+    if (!canArchiveTask(taskId)) {
+      alert('Task can only be archived from "Done" or "Cancelled" status.');
+      return;
+    }
+    updateTaskMutation.mutate({ id: taskId, data: { status: 'archived' } });
   };
 
-  // Handle delete task
+  // Handle delete task - shows confirmation dialog
   const handleDeleteTask = (taskId: string) => {
-    if (confirm('Are you sure you want to delete this task?')) {
-      deleteTask(taskId);
+    const task = mappedTasks?.find(t => t.id === taskId);
+    setTaskToDelete({ id: taskId, title: task?.title || 'this task' });
+  };
+
+  // Confirm delete task - calls API to delete task
+  const confirmDeleteTask = () => {
+    if (taskToDelete) {
+      const task = mappedTasks?.find(t => t.id === taskToDelete.id);
+      deleteTaskMutation.mutate(
+        { id: taskToDelete.id, projectId: task?.projectId || '' },
+        { onSettled: () => setTaskToDelete(null) }
+      );
     }
   };
 
@@ -537,6 +564,7 @@ function TasksIndexPage() {
             onOpenInNewTab={handleOpenInNewTab}
             onMoveToArchived={handleMoveToArchived}
             onDelete={handleDeleteTask}
+            canArchiveTask={canArchiveTask}
           />
         ) : (
           <SessionsView
@@ -593,6 +621,17 @@ function TasksIndexPage() {
         </>,
         document.body
       )}
+
+      {/* Delete Task Confirmation Dialog */}
+      <DeleteConfirmationDialog
+        open={!!taskToDelete}
+        title="Delete Task"
+        itemName={taskToDelete?.title}
+        description="This will permanently delete the task and all associated data. This action cannot be undone."
+        onConfirm={confirmDeleteTask}
+        onCancel={() => setTaskToDelete(null)}
+        isLoading={deleteTaskMutation.isPending}
+      />
     </div>
   );
 }
