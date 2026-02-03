@@ -1,12 +1,15 @@
-import { Bot, MessageSquare, GitBranch, Clock, Maximize2 } from 'lucide-react';
+import { Bot, MessageSquare, GitBranch, GitCommit, Clock, Maximize2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { Session } from '@/adapters/api/sessions-api';
 
+export type InfoTabType = 'activity' | 'ai-session' | 'diffs' | 'git' | 'sessions';
+
 interface TaskInfoTabsNavProps {
-  activeTab: 'activity' | 'ai-session' | 'diffs' | 'sessions';
+  activeTab: InfoTabType;
   latestSession?: Session;
   sessionsCount: number;
-  onTabChange: (tab: 'activity' | 'ai-session' | 'diffs' | 'sessions') => void;
+  hasPendingApproval?: boolean;
+  onTabChange: (tab: InfoTabType) => void;
   onExpandToSubPanel?: () => void;
 }
 
@@ -14,6 +17,7 @@ export function TaskInfoTabsNav({
   activeTab,
   latestSession,
   sessionsCount,
+  hasPendingApproval,
   onTabChange,
   onExpandToSubPanel,
 }: TaskInfoTabsNavProps) {
@@ -27,6 +31,11 @@ export function TaskInfoTabsNav({
       </button>
       <button onClick={() => onTabChange('diffs')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeTab === 'diffs' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
         <GitBranch className="w-4 h-4" />Diffs
+      </button>
+      {/* Git Tab with pending approval indicator */}
+      <button onClick={() => onTabChange('git')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeTab === 'git' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>
+        {hasPendingApproval && <span className="w-2 h-2 rounded-full bg-yellow-500 mr-1" />}
+        <GitCommit className="w-4 h-4" />Git
       </button>
       {/* Sessions Tab with status indicator */}
       <button onClick={() => onTabChange('sessions')} className={cn("flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", activeTab === 'sessions' ? "text-foreground border-primary" : "text-muted-foreground border-transparent hover:text-foreground")}>

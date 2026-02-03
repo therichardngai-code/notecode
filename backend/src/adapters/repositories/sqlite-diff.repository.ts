@@ -88,6 +88,26 @@ export class SqliteDiffRepository implements IDiffRepository {
     return result.changes > 0;
   }
 
+  async findByStatus(status: DiffStatus): Promise<Diff[]> {
+    const db = getDatabase();
+    const rows = await db.query.diffs.findMany({
+      where: eq(diffs.status, status),
+      orderBy: [asc(diffs.createdAt)],
+    });
+    return rows.map(row => this.toEntity(row));
+  }
+
+  async clearContent(id: string): Promise<void> {
+    const db = getDatabase();
+    await db.update(diffs)
+      .set({
+        oldContent: null,
+        newContent: null,
+        fullContent: null,
+      })
+      .where(eq(diffs.id, id));
+  }
+
   private toEntity(row: DiffRow): Diff {
     const hunks: DiffHunk[] = row.hunks ? JSON.parse(row.hunks) : [];
 

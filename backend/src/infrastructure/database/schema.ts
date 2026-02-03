@@ -234,6 +234,7 @@ export const gitCommitApprovals = sqliteTable('git_commit_approvals', {
   id: text('id').primaryKey(),
   taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
   projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  sessionId: text('session_id').references(() => sessions.id, { onDelete: 'set null' }), // Link to session for batch diff operations
   attemptNumber: integer('attempt_number').default(1),
   status: text('status').default('pending'), // 'pending' | 'approved' | 'rejected'
   commitMessage: text('commit_message'),

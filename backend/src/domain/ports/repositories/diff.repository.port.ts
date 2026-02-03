@@ -17,7 +17,10 @@ export interface IDiffRepository {
   findByApprovalId(approvalId: string): Promise<Diff[]>;
   findByToolUseId(toolUseId: string): Promise<Diff | null>;
   findPending(): Promise<Diff[]>;
+  findByStatus(status: DiffStatus): Promise<Diff[]>;
   findByFilePath(sessionId: string, filePath: string): Promise<Diff[]>;
   save(diff: Diff): Promise<Diff>;
   delete(id: string): Promise<boolean>;
+  /** Clear content fields (keep metadata for audit) */
+  clearContent(id: string): Promise<void>;
 }

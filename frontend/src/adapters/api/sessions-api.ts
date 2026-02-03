@@ -242,6 +242,18 @@ export const sessionsApi = {
     apiClient.get<DiffsResponse>(`/api/diffs/session/${sessionId}`),
 
   /**
+   * Approve individual diff
+   */
+  approveDiff: (diffId: string) =>
+    apiClient.post<{ success: boolean; diff: Diff }>(`/api/diffs/${diffId}/approve`, {}),
+
+  /**
+   * Reject individual diff (reverts file)
+   */
+  rejectDiff: (diffId: string) =>
+    apiClient.post<{ success: boolean; result: { reverted: boolean; filePath: string } }>(`/api/diffs/${diffId}/reject`, {}),
+
+  /**
    * Get pending approvals for session
    */
   getPendingApprovals: (sessionId: string) =>

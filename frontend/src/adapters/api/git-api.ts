@@ -106,6 +106,17 @@ interface RejectResponse {
   success: boolean;
   approval: GitCommitApproval;
   changesDiscarded: boolean;
+  revertResult?: {
+    total: number;
+    reverted: number;
+    failed: number;
+    results: Array<{
+      diffId: string;
+      success: boolean;
+      filePath: string;
+      operation: string;
+    }>;
+  };
 }
 
 // Task approvals response

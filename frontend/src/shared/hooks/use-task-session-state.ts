@@ -70,6 +70,9 @@ export interface UseTaskSessionStateReturn {
   isSessionLive: boolean;
   isTyping: boolean;
   setIsTyping: React.Dispatch<React.SetStateAction<boolean>>;
+
+  // Realtime diffs from WebSocket
+  realtimeDiffs: Array<{ id: string; filePath: string; operation: string; status: string }>;
 }
 
 export function useTaskSessionState({
@@ -91,6 +94,7 @@ export function useTaskSessionState({
   const [streamingToolUses, setStreamingToolUses] = useState<StreamingToolCommand[]>([]);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [, setMessageBuffers] = useState<Record<string, string>>({});
+  const [realtimeDiffs, setRealtimeDiffs] = useState<Array<{ id: string; filePath: string; operation: string; status: string }>>([]);
 
   // Refs for streaming state (prevent stale closures)
   const streamingBufferRef = useRef<string>('');
@@ -140,6 +144,17 @@ export function useTaskSessionState({
       if (status === 'completed' || status === 'failed' || status === 'cancelled') {
         setIsWaitingForResponse(false);
       }
+    }, []),
+    onDiffPreview: useCallback((data: { id: string; filePath: string; operation: string; status: string }) => {
+      setRealtimeDiffs(prev => {
+        const idx = prev.findIndex(d => d.id === data.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = data;
+          return updated;
+        }
+        return [...prev, data];
+      });
     }, []),
   });
 
@@ -197,5 +212,6 @@ export function useTaskSessionState({
     isSessionLive,
     isTyping,
     setIsTyping,
+    realtimeDiffs,
   };
 }

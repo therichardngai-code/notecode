@@ -25,7 +25,11 @@ import {
   registerCliProviderHooksController,
   registerFilesController,
   registerAnalyticsController,
+  registerDiffController,
 } from '../../adapters/controllers/index.js';
+import { DiffRevertService } from '../../domain/services/diff-revert.service.js';
+import { TaskStatusTransitionService } from '../../domain/services/task-status-transition.service.js';
+import { DiffExtractorService } from '../../adapters/gateways/diff-extractor.service.js';
 import { CliProviderHooksService } from '../../adapters/services/cli-provider-hooks.service.js';
 import { registerNotificationSSE } from '../../adapters/sse/notification-sse.handler.js';
 import { SessionStreamHandler } from '../../adapters/websocket/session-stream.handler.js';
@@ -277,18 +281,34 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     startSessionUseCase,
   });
 
-  // Register git controller
+  // Register hook controller
+  registerHookController(app, hookRepo, hookExecutor);
+
+  // Initialize diff revert service (for combined approval integration)
+  const diffRevertService = new DiffRevertService(diffRepo);
+
+  // Register diff controller (diff revert, batch operations)
+  registerDiffController(app, diffRevertService, diffRepo, sessionRepo);
+
+  // Register git controller (with diff integration for combined approval)
   registerGitController(
     app,
     taskRepo,
     projectRepo,
     gitApprovalRepo,
     gitService,
-    eventBus
+    eventBus,
+    diffRevertService, // For combined approval (batch diff operations)
+    sessionRepo // For getting session working dir
   );
 
-  // Register hook controller
-  registerHookController(app, hookRepo, hookExecutor);
+  // Task status transition service (auto IN_PROGRESS → REVIEW → DONE)
+  const taskTransitionService = new TaskStatusTransitionService(
+    taskRepo,
+    sessionRepo,
+    gitService,
+    eventBus
+  );
 
   // Register CLI provider hooks controller (Claude, Gemini, Codex hooks management)
   registerCliProviderHooksController(app, cliProviderHooksService);
@@ -318,8 +338,16 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   );
   registerBackupController(app, exportDataUseCase);
 
-  // Wire hooks to event bus
-  wireHooksToEventBus(eventBus, hookExecutor, taskRepo, sessionRepo);
+  // Wire hooks to event bus (including task status transitions)
+  wireHooksToEventBus(
+    eventBus,
+    hookExecutor,
+    taskRepo,
+    sessionRepo,
+    projectRepo,
+    gitApprovalRepo,
+    taskTransitionService
+  );
 
   // Register SSE notifications
   if (options.enableSSE !== false) {
@@ -354,7 +382,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Setup WebSocket after server is ready
   if (options.enableWebSocket !== false) {
     app.addHook('onReady', () => {
-      setupWebSocket(app, cliExecutor, sessionRepo, messageRepo, approvalRepo, eventBus, settingsRepo, taskRepo, hookExecutor);
+      setupWebSocket(app, cliExecutor, sessionRepo, messageRepo, approvalRepo, eventBus, settingsRepo, taskRepo, hookExecutor, diffRepo);
     });
   }
 
@@ -373,7 +401,8 @@ function setupWebSocket(
   eventBus: ReturnType<typeof getEventBus>,
   settingsRepo: SqliteSettingsRepository,
   taskRepo: SqliteTaskRepository,
-  hookExecutor: HookExecutorService
+  hookExecutor: HookExecutorService,
+  diffRepo: SqliteDiffRepository
 ): void {
   // Create WebSocket server in noServer mode
   const wss = new WebSocketServer({ noServer: true });
@@ -401,6 +430,11 @@ function setupWebSocket(
   const toolInterceptor = new CliToolInterceptorService(hookExecutor);
   wsHandler.setToolInterceptor(toolInterceptor);
   app.log.info('CLI tool interceptor attached to WebSocket handler');
+
+  // Create and attach diff extractor (tracks Edit/Write/Bash file operations)
+  const diffExtractor = new DiffExtractorService(diffRepo);
+  wsHandler.setDiffExtractor(diffExtractor);
+  app.log.info('Diff extractor attached to WebSocket handler');
 
   // Wire up the approval use case callback to interceptor
   const resolveUseCase = (app as unknown as { resolveApprovalUseCase: ResolveApprovalUseCase }).resolveApprovalUseCase;
@@ -443,7 +477,10 @@ function wireHooksToEventBus(
   eventBus: ReturnType<typeof getEventBus>,
   hookExecutor: HookExecutorService,
   taskRepo: SqliteTaskRepository,
-  sessionRepo: SqliteSessionRepository
+  sessionRepo: SqliteSessionRepository,
+  projectRepo: SqliteProjectRepository,
+  gitApprovalRepo: SqliteGitApprovalRepository,
+  taskTransitionService: TaskStatusTransitionService
 ): void {
   // Helper to execute hooks silently (log errors but don't throw)
   const executeHooks = async (context: HookContext) => {
@@ -482,6 +519,14 @@ function wireHooksToEventBus(
       sessionId: event.aggregateId,
       data: { tokenUsage: (event as { tokenUsage?: unknown }).tokenUsage },
     });
+
+    // Auto-trigger task status transition (IN_PROGRESS → REVIEW or DONE)
+    if (task?.projectId) {
+      const project = await projectRepo.findById(task.projectId);
+      if (project?.path) {
+        await taskTransitionService.onSessionCompleted(event.aggregateId, project.path);
+      }
+    }
   });
 
   eventBus.subscribe('session.failed', async (event) => {
@@ -565,5 +610,16 @@ function wireHooksToEventBus(
         commit: (event as { commit?: unknown }).commit,
       },
     });
+
+    // Auto-trigger task status transition (REVIEW → DONE or IN_PROGRESS)
+    const approval = await gitApprovalRepo.findById(event.aggregateId);
+    if (approval?.taskId) {
+      const status = (event as { status?: string }).status;
+      if (status === 'approved') {
+        await taskTransitionService.onCommitApproved(approval.taskId);
+      } else if (status === 'rejected') {
+        await taskTransitionService.onCommitRejected(approval.taskId);
+      }
+    }
   });
 }

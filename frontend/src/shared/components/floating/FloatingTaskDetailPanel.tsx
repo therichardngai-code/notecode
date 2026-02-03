@@ -22,7 +22,7 @@ import type { TaskStatus } from '@/adapters/api/tasks-api';
 // Shared types
 import type { ChatMessage } from '@/shared/types';
 // Phase 5 Tabs
-import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
+import { ActivityTab, AISessionTab, DiffsTab, GitTab, SessionsTab } from '@/shared/components/task-detail/tabs';
 // Phase 6 + Shared Components
 import {
   ChatInputFooter, type ChatInputFooterHandle, TaskInfoTabsNav,
@@ -30,7 +30,7 @@ import {
 } from '@/shared/components/task-detail';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
 import { projectsApi } from '@/adapters/api/projects-api';
-import type { SessionResumeMode } from '@/adapters/api/sessions-api';
+import { sessionsApi, type SessionResumeMode } from '@/adapters/api/sessions-api';
 import { useUIStore } from '@/shared/stores';
 
 interface FloatingTaskDetailPanelProps {
@@ -301,8 +301,22 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     setSubPanelTab('diffs');
     setIsSubPanelOpen(true);
   };
-  const handleApproveDiff = (diffId: string) => setDiffApprovals(prev => ({ ...prev, [diffId]: 'approved' }));
-  const handleRejectDiff = (diffId: string) => setDiffApprovals(prev => ({ ...prev, [diffId]: 'rejected' }));
+  const handleApproveDiff = async (diffId: string) => {
+    try {
+      await sessionsApi.approveDiff(diffId);
+      setDiffApprovals(prev => ({ ...prev, [diffId]: 'approved' }));
+    } catch (err) {
+      console.error('Failed to approve diff:', err);
+    }
+  };
+  const handleRejectDiff = async (diffId: string) => {
+    try {
+      await sessionsApi.rejectDiff(diffId);
+      setDiffApprovals(prev => ({ ...prev, [diffId]: 'rejected' }));
+    } catch (err) {
+      console.error('Failed to reject diff:', err);
+    }
+  };
 
   const toggleCommand = (key: string) => {
     setExpandedCommands(prev => {
@@ -524,6 +538,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                     activeTab={activeInfoTab}
                     latestSession={latestSession}
                     sessionsCount={sessions.length}
+                    hasPendingApproval={gitCommitApprovals.some(a => a.status === 'pending')}
                     onTabChange={handleTabChange}
                     onExpandToSubPanel={() => {
                       setSubPanelTab('chat-session');
@@ -573,9 +588,20 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                       latestSession={latestSession}
                       sessionDiffs={sessionDiffs}
                       diffApprovals={diffApprovals}
+                      taskStatus={task?.status}
                       onDiffFileClick={handleDiffFileClick}
                       onApproveDiff={handleApproveDiff}
                       onRejectDiff={handleRejectDiff}
+                    />
+                  )}
+
+                  {/* Git Tab */}
+                  {activeInfoTab === 'git' && task && (
+                    <GitTab
+                      taskId={task.id}
+                      taskStatus={task.status}
+                      approval={gitCommitApprovals.find(a => a.status === 'pending') || null}
+                      sessionDiffs={sessionDiffs}
                     />
                   )}
 

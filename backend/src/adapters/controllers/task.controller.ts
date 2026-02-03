@@ -350,10 +350,11 @@ export function registerTaskController(
               );
             }
 
-            // Task done → create commit approval
+            // Task done → create commit approval (manual override, no session context)
             if (newStatus === TaskStatus.DONE) {
               await createGitCommitApproval(
                 { id: task.id, projectId: task.projectId, title: task.title, autoCommit: task.autoCommit },
+                null, // No session context for manual status change
                 gitApprovalRepo,
                 gitService,
                 project.path,
@@ -431,10 +432,11 @@ export function registerTaskController(
                 );
               }
 
-              // Task done → create commit approval
+              // Task done → create commit approval (manual override, no session context)
               if (newStatus === TaskStatus.DONE) {
                 await createGitCommitApproval(
                   { id: task.id, projectId: task.projectId, title: task.title, autoCommit: task.autoCommit },
+                  null, // No session context for manual status change
                   gitApprovalRepo,
                   gitService,
                   project.path,

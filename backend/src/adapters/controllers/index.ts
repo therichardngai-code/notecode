@@ -19,3 +19,4 @@ export * from './backup.controller.js';
 export * from './cli-provider-hooks.controller.js';
 export { filesRoutes as registerFilesController } from './files.controller.js';
 export { analyticsRoutes as registerAnalyticsController } from './analytics.controller.js';
+export * from './diff.controller.js';

@@ -107,6 +107,7 @@ export class SqliteGitApprovalRepository implements IGitApprovalRepository {
       row.id,
       row.taskId,
       row.projectId,
+      row.sessionId ?? null, // Link to session for batch diff operations
       row.attemptNumber ?? 1,
       row.status as GitApprovalStatus,
       row.commitMessage ?? '',
@@ -124,6 +125,7 @@ export class SqliteGitApprovalRepository implements IGitApprovalRepository {
       id: approval.id,
       taskId: approval.taskId,
       projectId: approval.projectId,
+      sessionId: approval.sessionId, // Link to session for batch diff operations
       attemptNumber: approval.attemptNumber,
       status: approval.status,
       commitMessage: approval.commitMessage,

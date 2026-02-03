@@ -17,6 +17,7 @@ import { SessionStatus, ProviderType } from '../../domain/value-objects/task-sta
 import { ContextWindowUsage, PROVIDER_CONTEXT_CONFIG } from '../../domain/value-objects/context-window.vo.js';
 import type { ApprovalInterceptorService } from '../gateways/approval-interceptor.service.js';
 import type { CliToolInterceptorService } from '../services/cli-tool-interceptor.service.js';
+import type { DiffExtractorService } from '../gateways/diff-extractor.service.js';
 
 // Client -> Server message types
 interface ClientMessage {
@@ -61,6 +62,7 @@ export class SessionStreamHandler {
   private sessionProcessMap = new Map<string, number>();
   private approvalInterceptor: ApprovalInterceptorService | null = null;
   private toolInterceptor: CliToolInterceptorService | null = null;
+  private diffExtractor: DiffExtractorService | null = null;
   // Track active streaming message ID per session (memory cache for quick lookup)
   private streamingMessageIds = new Map<string, string>();
   // Track last assistant message usage per session (for accurate context window, not accumulated billing)
@@ -89,6 +91,13 @@ export class SessionStreamHandler {
    */
   setToolInterceptor(interceptor: CliToolInterceptorService): void {
     this.toolInterceptor = interceptor;
+  }
+
+  /**
+   * Set diff extractor for tracking file changes
+   */
+  setDiffExtractor(extractor: DiffExtractorService): void {
+    this.diffExtractor = extractor;
   }
 
   private setupConnectionHandler(): void {
@@ -315,6 +324,33 @@ export class SessionStreamHandler {
                 reason: decision.reason,
               },
             });
+          }
+        }
+
+        // Extract and save diff for file operations (Edit, Write, Bash)
+        // User can approve/reject individual diffs later via diff popup
+        if (this.diffExtractor) {
+          try {
+            const diff = this.diffExtractor.extractFromToolUse(sessionId, {
+              id: toolBlock.id,
+              name: toolBlock.name,
+              input: toolBlock.input,
+            });
+            if (diff) {
+              await this.diffExtractor.saveDiff(diff);
+              // Notify frontend of new diff
+              this.broadcast(sessionId, {
+                type: 'diff_preview',
+                data: {
+                  id: diff.id,
+                  filePath: diff.filePath,
+                  operation: diff.operation,
+                  status: diff.status,
+                },
+              });
+            }
+          } catch (err) {
+            console.error('[DiffExtractor] Failed to extract diff:', err);
           }
         }
       }

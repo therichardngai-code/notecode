@@ -16,6 +16,7 @@ export class GitCommitApproval {
     public readonly id: string,
     public readonly taskId: string,
     public readonly projectId: string,
+    public readonly sessionId: string | null, // Link to session for batch diff operations
     public readonly attemptNumber: number,
     public status: GitApprovalStatus,
     public commitMessage: string,

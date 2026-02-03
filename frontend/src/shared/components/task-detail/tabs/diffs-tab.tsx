@@ -1,13 +1,15 @@
 import { memo } from 'react';
-import { GitBranch, FileCode, ExternalLink, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { GitBranch, FileCode, ExternalLink, ThumbsUp, ThumbsDown, AlertTriangle } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import type { Session } from '@/adapters/api/sessions-api';
 import type { UIDiff } from '@/shared/types/task-detail-types';
+import type { TaskStatus } from '@/adapters/api/tasks-api';
 
 interface DiffsTabProps {
   latestSession: Session | undefined;
   sessionDiffs: UIDiff[];
   diffApprovals: Record<string, 'approved' | 'rejected' | null>;
+  taskStatus?: TaskStatus;
   onDiffFileClick: (diffId: string) => void;
   onApproveDiff: (diffId: string) => void;
   onRejectDiff: (diffId: string) => void;
@@ -17,10 +19,13 @@ export const DiffsTab = memo(function DiffsTab({
   latestSession,
   sessionDiffs,
   diffApprovals,
+  taskStatus,
   onDiffFileClick,
   onApproveDiff,
   onRejectDiff,
 }: DiffsTabProps) {
+  const isReviewMode = taskStatus === 'review';
+
   if (!latestSession) {
     return (
       <div className="space-y-3">
@@ -46,6 +51,18 @@ export const DiffsTab = memo(function DiffsTab({
 
   return (
     <div className="space-y-3">
+      {/* REVIEW mode alert */}
+      {isReviewMode && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm">
+          <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium text-yellow-600 dark:text-yellow-400">Task is in Review</p>
+            <p className="text-muted-foreground text-xs mt-0.5">
+              Individual diff actions are disabled. Use the Git tab to approve or reject all changes together.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
         <span>{sessionDiffs.length} file{sessionDiffs.length > 1 ? 's' : ''} changed,</span>
         <span className="text-green-500">+{sessionDiffs.reduce((sum, d) => sum + d.additions, 0)}</span>
@@ -63,8 +80,12 @@ export const DiffsTab = memo(function DiffsTab({
             <span className="text-xs text-green-500">+{diff.additions}</span>
             {diff.deletions > 0 && <span className="text-xs text-red-500">-{diff.deletions}</span>}
             <button onClick={() => onDiffFileClick(diff.id)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="View file details"><ExternalLink className="w-3.5 h-3.5" /></button>
-            <button onClick={() => onApproveDiff(diff.id)} className={cn("p-1.5 rounded", diffApprovals[diff.id] === 'approved' ? "bg-green-500/20 text-green-500" : "hover:bg-green-500/10 text-muted-foreground hover:text-green-500")}><ThumbsUp className="w-3.5 h-3.5" /></button>
-            <button onClick={() => onRejectDiff(diff.id)} className={cn("p-1.5 rounded", diffApprovals[diff.id] === 'rejected' ? "bg-red-500/20 text-red-500" : "hover:bg-red-500/10 text-muted-foreground hover:text-red-500")}><ThumbsDown className="w-3.5 h-3.5" /></button>
+            {!isReviewMode && (
+              <>
+                <button onClick={() => onApproveDiff(diff.id)} className={cn("p-1.5 rounded", diffApprovals[diff.id] === 'approved' ? "bg-green-500/20 text-green-500" : "hover:bg-green-500/10 text-muted-foreground hover:text-green-500")}><ThumbsUp className="w-3.5 h-3.5" /></button>
+                <button onClick={() => onRejectDiff(diff.id)} className={cn("p-1.5 rounded", diffApprovals[diff.id] === 'rejected' ? "bg-red-500/20 text-red-500" : "hover:bg-red-500/10 text-muted-foreground hover:text-red-500")}><ThumbsDown className="w-3.5 h-3.5" /></button>
+              </>
+            )}
           </div>
           <div className="max-h-[300px] overflow-y-auto bg-background font-mono text-xs">
             {diff.chunks.map((chunk, idx) => (

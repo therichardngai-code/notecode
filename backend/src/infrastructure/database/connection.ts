@@ -316,6 +316,9 @@ function runSchemaMigrations(): void {
   // CLI provider hooks table migrations
   addColumnIfNotExists('cli_provider_hooks', 'matcher', 'TEXT');
   addColumnIfNotExists('cli_provider_hooks', 'timeout', 'INTEGER');
+
+  // Git commit approvals table migrations
+  addColumnIfNotExists('git_commit_approvals', 'session_id', 'TEXT');
 }
 
 export async function closeDatabase(): Promise<void> {

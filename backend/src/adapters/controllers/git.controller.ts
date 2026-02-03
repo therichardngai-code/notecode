@@ -8,8 +8,10 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
+import { ISessionRepository } from '../../domain/ports/repositories/session.repository.port.js';
 import { IGitApprovalRepository } from '../repositories/sqlite-git-approval.repository.js';
 import { GitService } from '../../domain/services/git.service.js';
+import { DiffRevertService } from '../../domain/services/diff-revert.service.js';
 import { GitCommitApproval, GitApprovalStatus } from '../../domain/entities/git-commit-approval.entity.js';
 import {
   IEventBus,
@@ -34,7 +36,9 @@ export function registerGitController(
   projectRepo: IProjectRepository,
   gitApprovalRepo: IGitApprovalRepository,
   gitService: GitService,
-  eventBus: IEventBus
+  eventBus: IEventBus,
+  diffRevertService?: DiffRevertService, // For combined approval (batch diff operations)
+  sessionRepo?: ISessionRepository // For getting session working dir
 ): void {
   // GET /api/tasks/:taskId/git/status - Get task git status
   app.get('/api/tasks/:taskId/git/status', async (request, reply) => {
@@ -293,10 +297,15 @@ export function registerGitController(
         return reply.status(400).send({ error: 'No changes to commit' });
       }
 
+      // 1. Approve all diffs for session (Combined Approval: commit approval = batch approve all diffs)
+      if (diffRevertService && approval.sessionId) {
+        await diffRevertService.approveAllSessionDiffs(approval.sessionId);
+      }
+
       // Use custom message or default
       const commitMessage = body.commitMessage ?? approval.commitMessage;
 
-      // Perform commit
+      // 2. Perform commit
       const commitSha = await gitService.commit(project.path, commitMessage);
 
       // Update approval
@@ -306,7 +315,12 @@ export function registerGitController(
       }
       await gitApprovalRepo.save(approval);
 
-      // Emit WebSocket event
+      // 3. Mark all diffs as applied (clears content to save storage)
+      if (diffRevertService && approval.sessionId) {
+        await diffRevertService.markAllApplied(approval.sessionId);
+      }
+
+      // 4. Emit WebSocket event (triggers task transition REVIEW → DONE)
       eventBus.publish([
         new GitApprovalResolvedEvent(
           approval.id,
@@ -327,6 +341,7 @@ export function registerGitController(
           sha: commitSha,
           message: commitMessage,
         },
+        message: 'Commit created and all diffs approved',
       });
     } catch (error) {
       return reply.status(500).send({
@@ -354,18 +369,30 @@ export function registerGitController(
     const project = task ? await projectRepo.findById(task.projectId) : null;
 
     try {
-      // Discard changes if requested
+      // 1. Batch revert all diffs (Combined Approval: reject = revert all changes)
+      let revertResult = null;
+      if (diffRevertService && sessionRepo && approval.sessionId) {
+        const session = await sessionRepo.findById(approval.sessionId);
+        if (session?.workingDir) {
+          revertResult = await diffRevertService.revertAllSessionDiffs(
+            approval.sessionId,
+            session.workingDir
+          );
+        }
+      }
+
+      // 2. Discard git changes if requested (fallback for non-diff tracked changes)
       let changesDiscarded = false;
       if (body.discardChanges && project?.path) {
         await gitService.discardChanges(project.path);
         changesDiscarded = true;
       }
 
-      // Update approval
+      // 3. Update approval
       approval.reject();
       await gitApprovalRepo.save(approval);
 
-      // Emit WebSocket event
+      // 4. Emit WebSocket event (triggers task transition REVIEW → IN_PROGRESS)
       eventBus.publish([
         new GitApprovalResolvedEvent(
           approval.id,
@@ -382,6 +409,8 @@ export function registerGitController(
           resolvedAt: approval.resolvedAt?.toISOString(),
         },
         changesDiscarded,
+        revertResult,
+        message: 'Commit rejected and all diffs reverted',
       });
     } catch (error) {
       return reply.status(500).send({
@@ -457,6 +486,7 @@ export function registerGitController(
  */
 export async function createGitCommitApproval(
   task: { id: string; projectId: string; title: string; autoCommit: boolean },
+  sessionId: string | null, // Link to session for batch diff operations
   gitApprovalRepo: IGitApprovalRepository,
   gitService: GitService,
   projectPath: string,
@@ -475,7 +505,7 @@ export async function createGitCommitApproval(
     return null;
   }
 
-  // Create approval for manual commit
+  // Create approval for manual commit (with sessionId for batch diff operations)
   const attemptNumber = (await gitApprovalRepo.countByTaskId(task.id)) + 1;
   const filesChanged = await gitService.getChangedFiles(projectPath);
   const diffSummary = await gitService.getDiffSummary(projectPath);
@@ -484,6 +514,7 @@ export async function createGitCommitApproval(
     randomUUID(),
     task.id,
     task.projectId,
+    sessionId, // Link to session for batch diff operations
     attemptNumber,
     'pending',
     `task: ${task.title}`,

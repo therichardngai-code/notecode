@@ -17,7 +17,7 @@ import {
   FileDetailsPanel, TaskEditPanel, GitInitDialog,
 } from '@/shared/components/task-detail';
 import { projectsApi } from '@/adapters/api/projects-api';
-import type { SessionResumeMode } from '@/adapters/api/sessions-api';
+import { sessionsApi, type SessionResumeMode } from '@/adapters/api/sessions-api';
 // Phase 5 Tabs
 import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
@@ -319,8 +319,22 @@ function TaskDetailPage() {
   const handleDiffFileClick = (fileId: string) => { setSelectedDiffFile(fileId); setSubPanelTab('diffs'); setIsSubPanelOpen(true); };
   const handleCloseFileDetails = () => { setSelectedDiffFile(null); setIsSubPanelOpen(false); };
   const handleExpandToSubPanel = () => { setSubPanelTab('chat-session'); setIsSubPanelOpen(true); };
-  const handleApproveDiff = (diffId: string) => setDiffApprovals(prev => ({ ...prev, [diffId]: 'approved' }));
-  const handleRejectDiff = (diffId: string) => setDiffApprovals(prev => ({ ...prev, [diffId]: 'rejected' }));
+  const handleApproveDiff = async (diffId: string) => {
+    try {
+      await sessionsApi.approveDiff(diffId);
+      setDiffApprovals(prev => ({ ...prev, [diffId]: 'approved' }));
+    } catch (err) {
+      console.error('Failed to approve diff:', err);
+    }
+  };
+  const handleRejectDiff = async (diffId: string) => {
+    try {
+      await sessionsApi.rejectDiff(diffId);
+      setDiffApprovals(prev => ({ ...prev, [diffId]: 'rejected' }));
+    } catch (err) {
+      console.error('Failed to reject diff:', err);
+    }
+  };
 
   // Get property icon for display
   const getPropertyIcon = (type: string) => {

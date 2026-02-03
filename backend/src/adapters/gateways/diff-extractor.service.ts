@@ -20,6 +20,11 @@ export interface WriteToolInput {
   content: string;
 }
 
+export interface BashToolInput {
+  command: string;
+  description?: string;
+}
+
 export interface ToolUseEvent {
   id: string;
   name: string;
@@ -41,6 +46,8 @@ export class DiffExtractorService {
         return this.createEditDiff(sessionId, id, input as unknown as EditToolInput);
       case 'Write':
         return this.createWriteDiff(sessionId, id, input as unknown as WriteToolInput);
+      case 'Bash':
+        return this.createBashDiff(sessionId, id, input as unknown as BashToolInput);
       default:
         return null;
     }
@@ -76,6 +83,44 @@ export class DiffExtractorService {
       input.file_path,
       input.content
     );
+  }
+
+  /**
+   * Extract diff from Bash command (best-effort detection of file operations)
+   * Patterns: echo/cat > file, rm file, mv file, cp file
+   */
+  private createBashDiff(
+    sessionId: string,
+    toolUseId: string,
+    input: BashToolInput
+  ): Diff | null {
+    const cmd = input.command;
+
+    // Pattern: echo "content" > file or cat > file (write/create)
+    const writeMatch = cmd.match(/(?:echo|cat|printf)\s+(?:["']([^"']+)["']|([^>]+))\s*>\s*["']?([^\s"']+)["']?/);
+    if (writeMatch) {
+      const content = writeMatch[1] || writeMatch[2] || '';
+      const filePath = writeMatch[3];
+      return Diff.createWrite(randomUUID(), sessionId, toolUseId, filePath, content.trim());
+    }
+
+    // Pattern: rm file (delete) - track but can't revert
+    const rmMatch = cmd.match(/\brm\s+(?:-[rf]+\s+)?["']?([^\s"']+)["']?/);
+    if (rmMatch) {
+      const filePath = rmMatch[1];
+      return Diff.createDelete(randomUUID(), sessionId, toolUseId, filePath);
+    }
+
+    // Pattern: mv oldfile newfile (rename/move) - track as delete old
+    const mvMatch = cmd.match(/\bmv\s+["']?([^\s"']+)["']?\s+["']?([^\s"']+)["']?/);
+    if (mvMatch) {
+      const oldPath = mvMatch[1];
+      // Track as delete (source file removed)
+      return Diff.createDelete(randomUUID(), sessionId, toolUseId, oldPath);
+    }
+
+    // No file operation detected
+    return null;
   }
 
   /**

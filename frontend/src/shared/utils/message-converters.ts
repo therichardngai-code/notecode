@@ -108,7 +108,7 @@ export function diffToUI(diff: Diff): UIDiff {
   let deletions = 0;
 
   hunks.forEach(h =>
-    h.lines.forEach(l => {
+    (h.lines || []).forEach(l => {
       if (l.type === 'add') additions++;
       if (l.type === 'remove') deletions++;
     })
@@ -120,8 +120,8 @@ export function diffToUI(diff: Diff): UIDiff {
     additions,
     deletions,
     chunks: hunks.map(h => ({
-      header: h.header,
-      lines: h.lines.map(l => ({
+      header: h.header || '',
+      lines: (h.lines || []).map(l => ({
         type: l.type as 'add' | 'remove' | 'context',
         lineNum: l.lineNum,
         content: l.content,
