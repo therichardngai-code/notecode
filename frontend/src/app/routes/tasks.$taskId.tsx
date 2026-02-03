@@ -311,10 +311,10 @@ function TaskDetailPage() {
     await handleStartSessionWithMode('renew');
   };
   const handleCancelTask = () => updateStatus('cancelled' as TaskStatus);
-  // Continue task: Update status to in-progress AND start a new session
+  // Continue task: Update status to in-progress AND resume session with context
   const handleContinueTask = async () => {
     await updateStatus('in-progress' as TaskStatus);
-    await handleStartSessionWithMode('renew');
+    await handleStartSessionWithMode('retry');
   };
 
   // File Details handlers

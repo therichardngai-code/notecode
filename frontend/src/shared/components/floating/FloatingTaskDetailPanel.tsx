@@ -292,9 +292,10 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     await handleStartSessionWithMode('renew');
   };
   const handleCancelTask = () => updateStatus('cancelled' as TaskStatus);
+  // Continue task: Resume session with context (not fresh start)
   const handleContinueTask = async () => {
     await updateStatus('in-progress' as TaskStatus);
-    await handleStartSessionWithMode('renew');
+    await handleStartSessionWithMode('retry');
   };
 
   // File details handlers

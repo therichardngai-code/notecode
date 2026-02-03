@@ -14,7 +14,7 @@ import { IAgentRepository } from '../../domain/ports/repositories/agent.reposito
 import { IMessageRepository } from '../../domain/ports/repositories/message.repository.port.js';
 import { ISettingsRepository } from '../../adapters/repositories/sqlite-settings.repository.js';
 import { ICliExecutor, CliSpawnConfig } from '../../domain/ports/gateways/cli-executor.port.js';
-import { IEventBus, SessionStartedEvent } from '../../domain/events/event-bus.js';
+import { IEventBus, SessionStartedEvent, TaskStatusChangedEvent } from '../../domain/events/event-bus.js';
 import { Project } from '../../domain/entities/project.entity.js';
 import { Session } from '../../domain/entities/session.entity.js';
 import { Message } from '../../domain/entities/message.entity.js';
@@ -127,10 +127,26 @@ export class StartSessionUseCase {
       }
     }
 
-    // 3. Check task status - must be IN_PROGRESS to start session
-    if (task.status !== TaskStatus.IN_PROGRESS) {
-      return { success: false, error: `Task must be in-progress to start session (current: ${task.status})` };
+    // 3. Check task status - must be IN_PROGRESS or REVIEW to start session
+    if (task.status !== TaskStatus.IN_PROGRESS && task.status !== TaskStatus.REVIEW) {
+      return { success: false, error: `Task must be in-progress or review to start session (current: ${task.status})` };
     }
+
+    // 3a. Track if task was in REVIEW (for auto-retry mode)
+    const wasInReview = task.status === TaskStatus.REVIEW;
+
+    // 3b. Auto-transition REVIEW → IN_PROGRESS when resuming work
+    if (wasInReview) {
+      const oldStatus = task.status;
+      task.updateStatus(TaskStatus.IN_PROGRESS);
+      await this.taskRepo.save(task);
+      this.eventBus.publish([
+        new TaskStatusChangedEvent(task.id, task.projectId, oldStatus, TaskStatus.IN_PROGRESS)
+      ]);
+    }
+
+    // 3c. Auto-infer 'retry' mode when coming from REVIEW (Continue = Resume context)
+    const effectiveMode = (wasInReview && !request.mode) ? 'retry' : request.mode;
 
     // 4. Check for existing sessions
     const existingSessions = await this.sessionRepo.findByTaskId(task.id);
@@ -143,7 +159,7 @@ export class StartSessionUseCase {
     let resumeFromSessionId = request.resumeSessionId;
     let shouldFork = request.forkSession ?? false;
 
-    if ((request.mode === 'retry' || request.mode === 'fork') && !resumeFromSessionId && existingSessions.length > 0) {
+    if ((effectiveMode === 'retry' || effectiveMode === 'fork') && !resumeFromSessionId && existingSessions.length > 0) {
       // Find most recent session with providerSessionId
       const lastSession = existingSessions
         .filter(s => s.providerSessionId)
@@ -154,7 +170,7 @@ export class StartSessionUseCase {
     }
 
     // Fork mode sets forkSession flag
-    if (request.mode === 'fork') {
+    if (effectiveMode === 'fork') {
       shouldFork = true;
     }
 
@@ -162,11 +178,11 @@ export class StartSessionUseCase {
     const attemptNumber = existingSessions.length + 1;
 
     // Determine resume mode for this session
-    const resumeMode = existingSessions.length === 0 ? null : (request.mode ?? 'renew');
+    const resumeMode = existingSessions.length === 0 ? null : (effectiveMode ?? 'renew');
 
     // Find source session for resumedFromSessionId (for parentSessionId tracking)
     let resumedFromSessionId: string | null = null;
-    if (resumeFromSessionId && (request.mode === 'retry' || request.mode === 'fork')) {
+    if (resumeFromSessionId && (effectiveMode === 'retry' || effectiveMode === 'fork')) {
       const sourceSession = existingSessions.find(s => s.providerSessionId === resumeFromSessionId);
       resumedFromSessionId = sourceSession?.id ?? null;
     }
@@ -200,7 +216,7 @@ export class StartSessionUseCase {
     // Note: initialPrompt (storedPrompt) will be set after prompt resolution below
     // Only retry mode inherits providerSessionId (continue conversation)
     // Fork and renew get new providerSessionId from CLI (new conversation branch)
-    const inheritProviderSessionId = request.mode === 'retry';
+    const inheritProviderSessionId = effectiveMode === 'retry';
 
     const session = new Session(
       sessionId,
@@ -254,7 +270,7 @@ export class StartSessionUseCase {
       effectivePrompt = request.initialPrompt;
       displayPrompt = request.initialPrompt;
       storedPrompt = request.initialPrompt;
-    } else if ((request.mode === 'retry' || request.mode === 'fork') && existingSessions.length > 0) {
+    } else if ((effectiveMode === 'retry' || effectiveMode === 'fork') && existingSessions.length > 0) {
       // Retry/Fork without new prompt - look up previous session's initialPrompt
       const lastSessionWithPrompt = existingSessions
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

@@ -1,6 +1,10 @@
 /**
- * Git Approval SSE Hook
- * Listens for git:approval:created events via SSE and updates task status in real-time
+ * SSE Notifications Hook
+ * Listens for real-time events via SSE and updates React Query cache
+ *
+ * Supported events:
+ * - git:approval:created: Git commit approval created, updates task status and Git tab
+ * - task:status:changed: Task status transition, updates Board view and task detail
  */
 
 import { useEffect, useRef } from 'react';
@@ -21,6 +25,15 @@ interface GitApprovalCreatedEvent {
     additions: number;
     deletions: number;
   };
+}
+
+interface TaskStatusChangedEvent {
+  type: 'task:status:changed';
+  aggregateId: string;
+  taskId: string;
+  projectId: string;
+  oldStatus: string;
+  newStatus: string;
 }
 
 interface UseGitApprovalSSEOptions {
@@ -51,7 +64,6 @@ export function useGitApprovalSSE(options: UseGitApprovalSSEOptions = {}) {
         // Handle git:approval:created event
         if (data.type === 'git:approval:created') {
           const gitEvent = data as GitApprovalCreatedEvent;
-          console.log('[SSE] git:approval:created received:', gitEvent.taskId, gitEvent.taskStatus);
 
           // Invalidate task detail to refetch with new status
           queryClient.invalidateQueries({ queryKey: taskKeys.detail(gitEvent.taskId) });
@@ -64,6 +76,17 @@ export function useGitApprovalSSE(options: UseGitApprovalSSEOptions = {}) {
 
           // Invalidate git approvals for Git tab real-time update
           queryClient.invalidateQueries({ queryKey: gitApprovalKeys.task(gitEvent.taskId) });
+        }
+
+        // Handle task:status:changed event (e.g., REVIEW → IN_PROGRESS on Continue)
+        if (data.type === 'task:status:changed') {
+          const statusEvent = data as TaskStatusChangedEvent;
+
+          // Invalidate task detail to refetch with new status
+          queryClient.invalidateQueries({ queryKey: taskKeys.detail(statusEvent.taskId) });
+
+          // Invalidate task lists to update Board view status badges
+          queryClient.invalidateQueries({ queryKey: taskKeys.lists() });
         }
       } catch (error) {
         // Ignore parse errors (heartbeat messages, etc.)
