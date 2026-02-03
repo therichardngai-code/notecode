@@ -236,6 +236,9 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Initialize CLI provider hooks service (needed for approval gate auto-provision)
   const cliProviderHooksService = new CliProviderHooksService();
 
+  // Create diff extractor early (needed by approval controller for rejection cleanup)
+  const diffExtractor = new DiffExtractorService(diffRepo);
+
   // Register controllers
   registerProjectController(app, projectRepo, cliProviderHooksService);
   registerTaskController(app, taskRepo, {
@@ -257,6 +260,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   registerApprovalController(app, {
     approvalRepo,
     diffRepo,
+    diffExtractor,  // For discarding pending ops on rejection
     resolveApprovalUseCase,
     eventBus,
     // For dynamic config endpoint
@@ -387,7 +391,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Setup WebSocket after server is ready
   if (options.enableWebSocket !== false) {
     app.addHook('onReady', () => {
-      setupWebSocket(app, cliExecutor, sessionRepo, messageRepo, approvalRepo, eventBus, settingsRepo, taskRepo, hookExecutor, diffRepo);
+      setupWebSocket(app, cliExecutor, sessionRepo, messageRepo, approvalRepo, eventBus, settingsRepo, taskRepo, hookExecutor, diffExtractor);
     });
   }
 
@@ -407,7 +411,7 @@ function setupWebSocket(
   settingsRepo: SqliteSettingsRepository,
   taskRepo: SqliteTaskRepository,
   hookExecutor: HookExecutorService,
-  diffRepo: SqliteDiffRepository
+  diffExtractor: DiffExtractorService
 ): void {
   // Create WebSocket server in noServer mode
   const wss = new WebSocketServer({ noServer: true });
@@ -436,8 +440,7 @@ function setupWebSocket(
   wsHandler.setToolInterceptor(toolInterceptor);
   app.log.info('CLI tool interceptor attached to WebSocket handler');
 
-  // Create and attach diff extractor (tracks Edit/Write/Bash file operations)
-  const diffExtractor = new DiffExtractorService(diffRepo);
+  // Attach diff extractor to WebSocket handler (reuse instance from above)
   wsHandler.setDiffExtractor(diffExtractor);
   app.log.info('Diff extractor attached to WebSocket handler');
 

@@ -314,7 +314,17 @@ export class SessionStreamHandler {
           }
         }
 
+        // Store pending operation BEFORE approval check (don't create diff yet)
+        if (this.diffExtractor) {
+          this.diffExtractor.storePendingOperation(sessionId, {
+            id: toolBlock.id,
+            name: toolBlock.name,
+            input: toolBlock.input,
+          });
+        }
+
         // Check approval interceptor
+        let approvalRejected = false;
         if (this.approvalInterceptor) {
           const decision = await this.approvalInterceptor.checkApproval(
             sessionId,
@@ -323,8 +333,9 @@ export class SessionStreamHandler {
             toolBlock.id
           );
 
-          // If rejected, notify frontend
+          // If rejected, notify frontend and mark as rejected
           if (!decision.approved) {
+            approvalRejected = true;
             this.broadcast(sessionId, {
               type: 'output',
               data: {
@@ -333,20 +344,20 @@ export class SessionStreamHandler {
                 reason: decision.reason,
               },
             });
+
+            // Discard pending operation - tool was rejected
+            if (this.diffExtractor) {
+              this.diffExtractor.discardOperation(toolBlock.id);
+            }
           }
         }
 
-        // Extract and save diff for file operations (Edit, Write, Bash)
-        // User can approve/reject individual diffs later via diff popup
-        if (this.diffExtractor) {
+        // Only confirm and create diff if approval passed (or no interceptor)
+        // This defers diff creation until AFTER approval decision
+        if (!approvalRejected && this.diffExtractor) {
           try {
-            const diff = this.diffExtractor.extractFromToolUse(sessionId, {
-              id: toolBlock.id,
-              name: toolBlock.name,
-              input: toolBlock.input,
-            });
+            const diff = await this.diffExtractor.confirmOperation(toolBlock.id);
             if (diff) {
-              await this.diffExtractor.saveDiff(diff);
               // Notify frontend of new diff
               this.broadcast(sessionId, {
                 type: 'diff_preview',
@@ -359,7 +370,7 @@ export class SessionStreamHandler {
               });
             }
           } catch (err) {
-            console.error('[DiffExtractor] Failed to extract diff:', err);
+            console.error('[DiffExtractor] Failed to confirm diff:', err);
           }
         }
       }
@@ -513,6 +524,11 @@ export class SessionStreamHandler {
               } else {
                 this.eventBus.publish([new SessionFailedEvent(sessionId, subtype || 'unknown error')]);
               }
+            }
+
+            // Cleanup orphaned pending operations on session end
+            if (this.diffExtractor) {
+              this.diffExtractor.cleanupOrphanedPending();
             }
           }
         }

@@ -31,8 +31,123 @@ export interface ToolUseEvent {
   input: Record<string, unknown>;
 }
 
+/**
+ * Pending operation stored before tool_result confirmation
+ * Used to defer diff creation until tool execution succeeds
+ */
+export interface PendingOperation {
+  sessionId: string;
+  toolUseId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  createdAt: Date;
+}
+
 export class DiffExtractorService {
+  /** Cache of pending tool operations awaiting confirmation */
+  private pendingOperations = new Map<string, PendingOperation>();
+
   constructor(private diffRepo: IDiffRepository) {}
+
+  // ============ PENDING OPERATIONS (tool_use → tool_result flow) ============
+
+  /**
+   * Store tool_use event as pending (don't create diff yet)
+   * Called when tool_use event received, before tool execution
+   */
+  storePendingOperation(sessionId: string, event: ToolUseEvent): void {
+    // Only store file operations that create diffs
+    if (!['Edit', 'Write', 'Bash'].includes(event.name)) return;
+
+    this.pendingOperations.set(event.id, {
+      sessionId,
+      toolUseId: event.id,
+      toolName: event.name,
+      input: event.input,
+      createdAt: new Date()
+    });
+
+    console.log(`[DiffExtractor] Stored pending operation ${event.id} (${event.name})`);
+  }
+
+  /**
+   * Confirm pending operation and create diff
+   * Called when tool_result success received
+   * @returns Created diff or null if not a file operation
+   */
+  async confirmOperation(toolUseId: string): Promise<Diff | null> {
+    const pending = this.pendingOperations.get(toolUseId);
+    if (!pending) {
+      console.log(`[DiffExtractor] No pending operation for ${toolUseId}`);
+      return null;
+    }
+
+    this.pendingOperations.delete(toolUseId);
+
+    // Create diff from pending operation
+    const diff = this.extractFromToolUse(pending.sessionId, {
+      id: pending.toolUseId,
+      name: pending.toolName,
+      input: pending.input
+    });
+
+    if (diff) {
+      await this.diffRepo.save(diff);
+      console.log(`[DiffExtractor] Confirmed and saved diff ${diff.id} for ${diff.filePath}`);
+    }
+
+    return diff;
+  }
+
+  /**
+   * Discard pending operation without creating diff
+   * Called when tool_result fails or hook rejects
+   * @returns true if operation was discarded
+   */
+  discardOperation(toolUseId: string): boolean {
+    const existed = this.pendingOperations.delete(toolUseId);
+    if (existed) {
+      console.log(`[DiffExtractor] Discarded pending operation ${toolUseId}`);
+    }
+    return existed;
+  }
+
+  /**
+   * Cleanup orphaned pending operations older than maxAgeMs
+   * Called periodically or on session end
+   * @param maxAgeMs Maximum age in milliseconds (default 5 minutes)
+   * @returns Number of operations cleaned up
+   */
+  cleanupOrphanedPending(maxAgeMs: number = 5 * 60 * 1000): number {
+    const cutoff = Date.now() - maxAgeMs;
+    let cleaned = 0;
+
+    for (const [id, op] of this.pendingOperations) {
+      if (op.createdAt.getTime() < cutoff) {
+        this.pendingOperations.delete(id);
+        cleaned++;
+        console.log(`[DiffExtractor] Cleaned up orphaned pending ${id} (${op.toolName})`);
+      }
+    }
+
+    if (cleaned > 0) {
+      console.log(`[DiffExtractor] Cleaned up ${cleaned} orphaned pending operations`);
+    }
+
+    return cleaned;
+  }
+
+  /**
+   * Check if there are pending operations for a session
+   */
+  hasPendingOperations(sessionId: string): boolean {
+    for (const op of this.pendingOperations.values()) {
+      if (op.sessionId === sessionId) return true;
+    }
+    return false;
+  }
+
+  // ============ DIFF EXTRACTION ============
 
   /**
    * Extract diff from a tool_use event

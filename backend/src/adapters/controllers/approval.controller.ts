@@ -13,6 +13,7 @@ import { ITaskRepository } from '../../domain/ports/repositories/task.repository
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
 import { ISettingsRepository } from '../repositories/sqlite-settings.repository.js';
 import { ResolveApprovalUseCase } from '../../use-cases/approvals/resolve-approval.use-case.js';
+import { DiffExtractorService } from '../gateways/diff-extractor.service.js';
 import { Approval, ApprovalStatus, ToolCategory } from '../../domain/entities/approval.entity.js';
 import { IEventBus, ApprovalPendingEvent } from '../../domain/events/event-bus.js';
 import {
@@ -39,6 +40,7 @@ const hookApprovalRequestSchema = z.object({
 export interface ApprovalControllerDeps {
   approvalRepo: IApprovalRepository;
   diffRepo: IDiffRepository;
+  diffExtractor?: DiffExtractorService;  // For discarding pending ops on rejection
   resolveApprovalUseCase: ResolveApprovalUseCase;
   eventBus: IEventBus;
   config?: ApprovalGateConfig;
@@ -54,7 +56,7 @@ export function registerApprovalController(
   deps: ApprovalControllerDeps
 ): void {
   const {
-    approvalRepo, diffRepo, resolveApprovalUseCase, eventBus,
+    approvalRepo, diffRepo, diffExtractor, resolveApprovalUseCase, eventBus,
     config = DEFAULT_APPROVAL_GATE,
     sessionRepo, taskRepo, projectRepo, settingsRepo
   } = deps;
@@ -99,10 +101,20 @@ export function registerApprovalController(
     const { id } = request.params as { id: string };
     const body = request.body as { decidedBy?: string } | undefined;
 
+    // Get approval to extract toolUseId before rejection
+    const approval = await approvalRepo.findById(id);
+    const toolUseId = approval?.payload?.toolUseId as string | undefined;
+
     const result = await resolveApprovalUseCase.execute(id, 'reject', body?.decidedBy ?? 'user');
 
     if (!result.success) {
       return reply.status(400).send({ error: result.error });
+    }
+
+    // Discard pending diff operation (hook-based approval flow)
+    if (diffExtractor && toolUseId) {
+      diffExtractor.discardOperation(toolUseId);
+      console.log(`[Approval] Discarded pending diff for rejected tool (toolUseId: ${toolUseId})`);
     }
 
     return reply.send({ success: true });
