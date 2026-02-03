@@ -6,7 +6,7 @@ import {
   FileCode, Loader2, Wrench,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
-import { useTaskDetail, useSessions, useTaskMessages, useSessionDiffs, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, useSessionStartHandler, type TaskDetailProperty } from '@/shared/hooks';
+import { useTaskDetail, useSessions, useTaskMessages, useTaskDiffs, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, useSessionStartHandler, type TaskDetailProperty } from '@/shared/hooks';
 import { propertyTypes, statusPropertyType, agentLabels, providerLabels, modelLabels } from '@/shared/config/property-config';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
 // Shared types and utilities
@@ -19,7 +19,7 @@ import {
 import { projectsApi } from '@/adapters/api/projects-api';
 import { sessionsApi, type SessionResumeMode } from '@/adapters/api/sessions-api';
 // Phase 5 Tabs
-import { ActivityTab, AISessionTab, DiffsTab, SessionsTab } from '@/shared/components/task-detail/tabs';
+import { ActivityTab, AISessionTab, DiffsTab, GitTab, SessionsTab } from '@/shared/components/task-detail/tabs';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
 import { useUIStore } from '@/shared/stores';
 
@@ -91,10 +91,10 @@ function TaskDetailPage() {
   // CRITICAL: Keep filter stable during Resume (same providerSessionId) to prevent scroll jump
   const filterSessionIds = useFilteredSessionIds({ latestSession, sessions });
 
-  // Fetch all messages for task (across all sessions) and diffs from active session
+  // Fetch all messages for task (across all sessions) and task-level diffs (cross-session)
   // In Renew mode, only show messages from Renew session chain. In Retry/Resume, show all cumulative.
   const { data: apiMessages = [] } = useTaskMessages(taskId, 200, filterSessionIds);
-  const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
+  const { data: apiDiffs = [] } = useTaskDiffs(taskId);
 
   // Convert API data to UI format
   const { chatMessages, sessionDiffs } = useMessageConversion({ apiMessages, apiDiffs });
@@ -147,6 +147,7 @@ function TaskDetailPage() {
     setMessageBuffers,
     streamingBufferRef,
     processedMessageIds,
+    handleDiffPreview,
   } = useRealtimeState();
 
   // Scroll container refs
@@ -253,6 +254,7 @@ function TaskDetailPage() {
     setWsSessionStatus,
     setPendingApprovals,
     setMessageBuffers,
+    onDiffPreview: handleDiffPreview,
   });
 
   // Approval handlers hook (uses sendApprovalResponse from WebSocket)
@@ -468,6 +470,15 @@ function TaskDetailPage() {
               />
             )}
 
+            {/* Git Tab */}
+            {activeInfoTab === 'git' && task && (
+              <GitTab
+                taskId={task.id}
+                taskStatus={task.status}
+                approval={gitCommitApprovals.find(a => a.status === 'pending') || null}
+                sessionDiffs={sessionDiffs}
+              />
+            )}
 
             {/* Sessions Tab */}
             {activeInfoTab === 'sessions' && (

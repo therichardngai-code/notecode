@@ -68,6 +68,7 @@ export class GitApprovalCreatedEvent implements DomainEvent {
     public readonly aggregateId: string, // approvalId
     public readonly projectId: string,
     public readonly taskId: string,
+    public readonly taskStatus: string, // Task status after approval created (e.g., 'review')
     public readonly commitMessage: string,
     public readonly filesChanged: string[],
     public readonly diffSummary: { files: number; additions: number; deletions: number }

@@ -61,6 +61,24 @@ export class GitCommitApproval {
     this.commitMessage = message;
   }
 
+  /**
+   * Update approval with new session data (override pending)
+   */
+  updateForNewSession(
+    sessionId: string | null,
+    filesChanged: string[],
+    diffSummary: DiffSummary,
+    commitMessage: string
+  ): void {
+    if (this.status !== 'pending') {
+      throw new Error('Cannot update resolved approval');
+    }
+    (this as { sessionId: string | null }).sessionId = sessionId;
+    this.filesChanged = filesChanged;
+    this.diffSummary = diffSummary;
+    this.commitMessage = commitMessage;
+  }
+
   isPending(): boolean {
     return this.status === 'pending';
   }

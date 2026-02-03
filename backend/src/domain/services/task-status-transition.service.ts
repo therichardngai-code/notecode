@@ -11,6 +11,7 @@
 
 import { ITaskRepository } from '../ports/repositories/task.repository.port.js';
 import { ISessionRepository } from '../ports/repositories/session.repository.port.js';
+import { IDiffRepository } from '../ports/repositories/diff.repository.port.js';
 import { IEventBus, TaskStatusChangedEvent } from '../events/event-bus.js';
 import { TaskStatus } from '../value-objects/task-status.vo.js';
 import { GitService } from './git.service.js';
@@ -20,6 +21,7 @@ export class TaskStatusTransitionService {
   constructor(
     private taskRepo: ITaskRepository,
     private sessionRepo: ISessionRepository,
+    private diffRepo: IDiffRepository,
     private gitService: GitService,
     private eventBus: IEventBus
   ) {}
@@ -34,11 +36,13 @@ export class TaskStatusTransitionService {
     const task = await this.taskRepo.findById(session.taskId);
     if (!task || task.status !== TaskStatus.IN_PROGRESS) return;
 
-    // Check if there are changes to commit
-    const hasChanges = await this.gitService.hasChanges(projectPath);
-    if (!hasChanges) {
-      // No changes, stay IN_PROGRESS
-      console.log('[TaskTransition] No changes detected, staying IN_PROGRESS');
+    // Check if there are uncommitted diffs for this task (not git status)
+    const allDiffs = await this.diffRepo.findByTaskId(task.id);
+    const uncommittedDiffs = allDiffs.filter(d =>
+      d.status === 'pending' || d.status === 'approved'
+    );
+    if (uncommittedDiffs.length === 0) {
+      console.log('[TaskTransition] No uncommitted diffs, staying IN_PROGRESS');
       return;
     }
 

@@ -66,6 +66,7 @@ import { ExportDataUseCase } from '../../use-cases/backup/export-data.use-case.j
 import { VersionCheckService } from '../../adapters/services/version-check.service.js';
 import { CliToolInterceptorService } from '../../adapters/services/cli-tool-interceptor.service.js';
 import { getEventBus } from '../../domain/events/event-bus.js';
+import { createGitCommitApproval } from '../../adapters/controllers/git.controller.js';
 
 export interface ServerOptions {
   logger?: boolean;
@@ -240,6 +241,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   registerTaskController(app, taskRepo, {
     projectRepo,
     gitApprovalRepo,
+    diffRepo,
     gitService,
     eventBus,
     settingsRepo,
@@ -306,6 +308,7 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   const taskTransitionService = new TaskStatusTransitionService(
     taskRepo,
     sessionRepo,
+    diffRepo,
     gitService,
     eventBus
   );
@@ -346,6 +349,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     sessionRepo,
     projectRepo,
     gitApprovalRepo,
+    diffRepo,
+    gitService,
     taskTransitionService
   );
 
@@ -436,6 +441,10 @@ function setupWebSocket(
   wsHandler.setDiffExtractor(diffExtractor);
   app.log.info('Diff extractor attached to WebSocket handler');
 
+  // Attach event bus for session completion events (triggers task transitions + GitCommitApproval)
+  wsHandler.setEventBus(eventBus);
+  app.log.info('Event bus attached to WebSocket handler');
+
   // Wire up the approval use case callback to interceptor
   const resolveUseCase = (app as unknown as { resolveApprovalUseCase: ResolveApprovalUseCase }).resolveApprovalUseCase;
   if (resolveUseCase) {
@@ -480,6 +489,8 @@ function wireHooksToEventBus(
   sessionRepo: SqliteSessionRepository,
   projectRepo: SqliteProjectRepository,
   gitApprovalRepo: SqliteGitApprovalRepository,
+  diffRepo: SqliteDiffRepository,
+  gitService: GitService,
   taskTransitionService: TaskStatusTransitionService
 ): void {
   // Helper to execute hooks silently (log errors but don't throw)
@@ -525,6 +536,26 @@ function wireHooksToEventBus(
       const project = await projectRepo.findById(task.projectId);
       if (project?.path) {
         await taskTransitionService.onSessionCompleted(event.aggregateId, project.path);
+
+        // Create GitCommitApproval if task transitioned to REVIEW (!autoCommit)
+        // Re-fetch task to get updated status after transition
+        const updatedTask = await taskRepo.findById(task.id);
+        if (updatedTask && updatedTask.status === 'review' && !updatedTask.autoCommit) {
+          await createGitCommitApproval(
+            {
+              id: updatedTask.id,
+              projectId: updatedTask.projectId,
+              title: updatedTask.title,
+              autoCommit: updatedTask.autoCommit,
+            },
+            event.aggregateId, // sessionId for batch diff operations
+            gitApprovalRepo,
+            diffRepo,
+            gitService,
+            project.path,
+            eventBus
+          );
+        }
       }
     }
   });

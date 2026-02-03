@@ -19,6 +19,7 @@ interface UseTaskWebSocketParams {
   setWsSessionStatus: React.Dispatch<React.SetStateAction<string | null>>;
   setPendingApprovals: React.Dispatch<React.SetStateAction<ApprovalRequest[]>>;
   setMessageBuffers: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  onDiffPreview?: (data: { id: string; filePath: string; operation: 'edit' | 'write' | 'delete'; status: string }) => void;
 }
 
 export function useTaskWebSocket({
@@ -35,6 +36,7 @@ export function useTaskWebSocket({
   setWsSessionStatus,
   setPendingApprovals,
   setMessageBuffers,
+  onDiffPreview,
 }: UseTaskWebSocketParams) {
   const queryClient = useQueryClient();
 
@@ -105,6 +107,7 @@ export function useTaskWebSocket({
         createdAt: new Date().toISOString(),
       }]);
     },
+    onDiffPreview,
     onError: (message) => {
       console.error('WebSocket error:', message);
       setIsWaitingForResponse(false);

@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { sessionsApi, type ApprovalRequest } from '@/adapters/api/sessions-api';
 import { gitApi, type GitCommitApproval } from '@/adapters/api/git-api';
+
+// Query key for git approvals (used by SSE hook to invalidate)
+export const gitApprovalKeys = {
+  all: ['git-approvals'] as const,
+  task: (taskId: string) => [...gitApprovalKeys.all, taskId] as const,
+};
 
 interface ApprovalStateParams {
   activeSessionId: string;
@@ -34,7 +41,6 @@ export function useApprovalState({
 }: ApprovalStateParams): UseApprovalStateReturn {
   const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [processingApproval, setProcessingApproval] = useState<string | null>(null);
-  const [gitCommitApprovals, setGitCommitApprovals] = useState<GitCommitApproval[]>([]);
 
   // Fetch pending approvals when session changes
   useEffect(() => {
@@ -45,14 +51,14 @@ export function useApprovalState({
       .catch(() => setPendingApprovals([]));
   }, [activeSessionId]);
 
-  // Fetch git commit approvals when task changes
-  useEffect(() => {
-    if (!taskId) return;
-
-    gitApi.getTaskApprovals(taskId)
-      .then(res => setGitCommitApprovals(res.approvals))
-      .catch(() => setGitCommitApprovals([]));
-  }, [taskId]);
+  // Fetch git commit approvals using React Query (enables SSE invalidation)
+  const { data: gitCommitApprovals = [] } = useQuery({
+    queryKey: gitApprovalKeys.task(taskId),
+    queryFn: () => gitApi.getTaskApprovals(taskId),
+    select: (data) => data.approvals,
+    enabled: !!taskId,
+    staleTime: 0, // Always refetch
+  });
 
   return {
     pendingApprovals,

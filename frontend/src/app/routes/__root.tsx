@@ -11,7 +11,7 @@ import {
   TogglePanel,
 } from '@/shared/components/layout';
 import { FloatingTaskDetailPanel } from '@/shared/components/floating/FloatingTaskDetailPanel';
-import { useTabManager, usePanelState, useFloatingPanels, useSettings } from '@/shared/hooks';
+import { useTabManager, usePanelState, useFloatingPanels, useSettings, useGitApprovalSSE } from '@/shared/hooks';
 import { useUIStore } from '@/shared/stores';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -28,6 +28,9 @@ function RootLayout() {
   // Get active project ID from settings
   const { data: settings } = useSettings();
   const activeProjectId = settings?.currentActiveProjectId;
+
+  // Global SSE listener for git:approval:created events (real-time task status updates)
+  useGitApprovalSSE();
 
   // Task detail panel state from store - use atomic selectors for proper Zustand subscription
   const isTaskDetailPanelOpen = useUIStore((state) => state.isTaskDetailPanelOpen);

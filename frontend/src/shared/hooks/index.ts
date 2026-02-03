@@ -5,7 +5,7 @@ export { usePanelState, panelRoutes, panelTypeToRoute, type PanelType } from './
 export { useFloatingPanels } from './use-floating-panels';
 export { useTaskCreation, type TaskFormData, type TaskProperty } from './use-task-creation';
 export { useTaskDetail, type TaskDetailProperty } from './use-task-detail';
-export { useSessions, useSession, useSessionMessages, useSessionDiffs, useTaskMessages, useStartSession, sessionKeys } from './use-sessions-query';
+export { useSessions, useSession, useSessionMessages, useSessionDiffs, useTaskDiffs, useTaskMessages, useStartSession, sessionKeys } from './use-sessions-query';
 export { useLatestSession } from './use-latest-session';
 export { useTaskSessionState, type UseTaskSessionStateReturn, type UseTaskSessionStateOptions, type StreamingToolCommand } from './use-task-session-state';
 export { useChatInput, type UseChatInputReturn } from './use-chat-input';
@@ -24,6 +24,7 @@ export { useContextPicker } from './use-context-picker';
 export { useTaskUIState } from './use-task-ui-state';
 export { useChatInputState } from './use-chat-input-state';
 export { useScrollRestoration } from './use-scroll-restoration';
-export { useApprovalState } from './use-approval-state';
+export { useApprovalState, gitApprovalKeys } from './use-approval-state';
 export { useApprovalHandlers } from './use-approval-handlers';
 export { useSessionStartHandler } from './use-session-start-handler';
+export { useGitApprovalSSE } from './use-git-approval-sse';

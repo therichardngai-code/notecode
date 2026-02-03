@@ -11,7 +11,7 @@ import {
 } from '@/shared/config/property-config';
 // Phase 4 Hooks
 import {
-  useTaskDetail, useSessions, useTaskMessages, useSessionDiffs,
+  useTaskDetail, useSessions, useTaskMessages, useTaskDiffs,
   useTaskWebSocket, useRealtimeState,
   useMessageConversion, useFilteredSessionIds, useTaskUIState,
   useScrollRestoration, useApprovalState, useApprovalHandlers,
@@ -104,9 +104,9 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // Session chain filter for Renew mode (extracted hook)
   const filterSessionIds = useFilteredSessionIds({ latestSession, sessions });
 
-  // Fetch messages and diffs
+  // Fetch messages and diffs (task-level diffs across all sessions)
   const { data: apiMessages = [] } = useTaskMessages(taskId, 200, filterSessionIds);
-  const { data: apiDiffs = [] } = useSessionDiffs(activeSessionId);
+  const { data: apiDiffs = [] } = useTaskDiffs(taskId);
 
   // Convert API data to UI format (extracted hook)
   const { chatMessages, sessionDiffs } = useMessageConversion({ apiMessages, apiDiffs });
@@ -128,7 +128,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     processingApproval,
     setProcessingApproval,
     gitCommitApprovals,
-  } = useApprovalState({ activeSessionId, taskId: taskId || '' });
+  } = useApprovalState({ activeSessionId, taskId: taskId ?? '' });
 
   // UI state hook
   const {
@@ -160,6 +160,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     setMessageBuffers,
     streamingBufferRef,
     processedMessageIds,
+    handleDiffPreview,
   } = useRealtimeState();
 
   // Refs
@@ -206,6 +207,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     setWsSessionStatus,
     setPendingApprovals,
     setMessageBuffers,
+    onDiffPreview: handleDiffPreview,
   });
 
   // Approval handlers hook

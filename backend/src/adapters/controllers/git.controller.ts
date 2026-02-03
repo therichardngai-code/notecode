@@ -10,6 +10,7 @@ import { ITaskRepository } from '../../domain/ports/repositories/task.repository
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
 import { ISessionRepository } from '../../domain/ports/repositories/session.repository.port.js';
 import { IGitApprovalRepository } from '../repositories/sqlite-git-approval.repository.js';
+import { IDiffRepository } from '../../domain/ports/repositories/diff.repository.port.js';
 import { GitService } from '../../domain/services/git.service.js';
 import { DiffRevertService } from '../../domain/services/diff-revert.service.js';
 import { GitCommitApproval, GitApprovalStatus } from '../../domain/entities/git-commit-approval.entity.js';
@@ -483,57 +484,82 @@ export function registerGitController(
 /**
  * Helper: Create git commit approval when task completes
  * Called from task status update flow
+ * Uses task-level diffs (not git status) to get accurate file list
  */
 export async function createGitCommitApproval(
   task: { id: string; projectId: string; title: string; autoCommit: boolean },
-  sessionId: string | null, // Link to session for batch diff operations
+  sessionId: string | null,
   gitApprovalRepo: IGitApprovalRepository,
+  diffRepo: IDiffRepository,
   gitService: GitService,
   projectPath: string,
   eventBus: IEventBus
 ): Promise<GitCommitApproval | null> {
-  // Check if there are changes
-  const hasChanges = await gitService.hasChanges(projectPath);
-  if (!hasChanges) {
-    return null;
-  }
-
-  // If autoCommit, commit immediately
-  if (task.autoCommit) {
-    const commitMessage = `task: ${task.title}`;
-    await gitService.commit(projectPath, commitMessage);
-    return null;
-  }
-
-  // Create approval for manual commit (with sessionId for batch diff operations)
-  const attemptNumber = (await gitApprovalRepo.countByTaskId(task.id)) + 1;
-  const filesChanged = await gitService.getChangedFiles(projectPath);
-  const diffSummary = await gitService.getDiffSummary(projectPath);
-
-  const approval = new GitCommitApproval(
-    randomUUID(),
-    task.id,
-    task.projectId,
-    sessionId, // Link to session for batch diff operations
-    attemptNumber,
-    'pending',
-    `task: ${task.title}`,
-    filesChanged,
-    diffSummary,
-    null,
-    new Date(),
-    null,
-    null // pushedAt
+  // Get uncommitted diffs for this task (pending or approved, not applied/rejected)
+  const allDiffs = await diffRepo.findByTaskId(task.id);
+  const uncommittedDiffs = allDiffs.filter(d =>
+    d.status === 'pending' || d.status === 'approved'
   );
 
-  await gitApprovalRepo.save(approval);
+  // No uncommitted diffs = no approval needed
+  if (uncommittedDiffs.length === 0) {
+    return null;
+  }
 
-  // Emit WebSocket event
+  // If autoCommit, commit immediately (only diff files, not all changes)
+  if (task.autoCommit) {
+    const commitMessage = `task: ${task.title}`;
+    const filePaths = [...new Set(uncommittedDiffs.map(d => d.filePath))];
+    await gitService.commitFiles(projectPath, commitMessage, filePaths);
+    return null;
+  }
+
+  // Extract unique file paths from diffs
+  const filesChanged = [...new Set(uncommittedDiffs.map(d => d.filePath))];
+  const diffSummary = await gitService.getDiffSummary(projectPath);
+
+  // Check for existing pending approval - update instead of create
+  const existingPending = await gitApprovalRepo.findPendingByTaskId(task.id);
+
+  let approval: GitCommitApproval;
+  if (existingPending) {
+    // Update existing pending approval with new file list
+    existingPending.updateForNewSession(
+      sessionId,
+      filesChanged,
+      diffSummary,
+      `task: ${task.title}`
+    );
+    await gitApprovalRepo.save(existingPending);
+    approval = existingPending;
+  } else {
+    // Create new approval
+    const attemptNumber = (await gitApprovalRepo.countByTaskId(task.id)) + 1;
+    approval = new GitCommitApproval(
+      randomUUID(),
+      task.id,
+      task.projectId,
+      sessionId,
+      attemptNumber,
+      'pending',
+      `task: ${task.title}`,
+      filesChanged,
+      diffSummary,
+      null,
+      new Date(),
+      null,
+      null // pushedAt
+    );
+    await gitApprovalRepo.save(approval);
+  }
+
+  // Emit WebSocket event (taskStatus = 'review' since approval triggers REVIEW)
   eventBus.publish([
     new GitApprovalCreatedEvent(
       approval.id,
       approval.projectId,
       approval.taskId,
+      'review', // Task transitions to REVIEW when approval created
       approval.commitMessage,
       approval.filesChanged,
       approval.diffSummary

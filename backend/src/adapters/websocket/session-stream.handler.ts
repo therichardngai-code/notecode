@@ -18,6 +18,7 @@ import { ContextWindowUsage, PROVIDER_CONTEXT_CONFIG } from '../../domain/value-
 import type { ApprovalInterceptorService } from '../gateways/approval-interceptor.service.js';
 import type { CliToolInterceptorService } from '../services/cli-tool-interceptor.service.js';
 import type { DiffExtractorService } from '../gateways/diff-extractor.service.js';
+import { IEventBus, SessionCompletedEvent, SessionFailedEvent } from '../../domain/events/event-bus.js';
 
 // Client -> Server message types
 interface ClientMessage {
@@ -63,6 +64,7 @@ export class SessionStreamHandler {
   private approvalInterceptor: ApprovalInterceptorService | null = null;
   private toolInterceptor: CliToolInterceptorService | null = null;
   private diffExtractor: DiffExtractorService | null = null;
+  private eventBus: IEventBus | null = null;
   // Track active streaming message ID per session (memory cache for quick lookup)
   private streamingMessageIds = new Map<string, string>();
   // Track last assistant message usage per session (for accurate context window, not accumulated billing)
@@ -98,6 +100,13 @@ export class SessionStreamHandler {
    */
   setDiffExtractor(extractor: DiffExtractorService): void {
     this.diffExtractor = extractor;
+  }
+
+  /**
+   * Set event bus for publishing domain events
+   */
+  setEventBus(eventBus: IEventBus): void {
+    this.eventBus = eventBus;
   }
 
   private setupConnectionHandler(): void {
@@ -496,6 +505,15 @@ export class SessionStreamHandler {
               session.modelUsage = modelUsage;
             }
             await this.sessionRepo.save(session);
+
+            // Publish domain event for task status transitions and GitCommitApproval
+            if (this.eventBus) {
+              if (isSuccess) {
+                this.eventBus.publish([new SessionCompletedEvent(sessionId, tokenUsage)]);
+              } else {
+                this.eventBus.publish([new SessionFailedEvent(sessionId, subtype || 'unknown error')]);
+              }
+            }
           }
         }
 

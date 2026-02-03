@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "notecode-electron": "file:.."
+  }
+}

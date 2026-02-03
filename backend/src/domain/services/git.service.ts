@@ -271,11 +271,37 @@ export class GitService {
   }
 
   /**
-   * Commit changes with message
+   * Stage a specific file
+   */
+  async stageFile(workingDir: string, filePath: string): Promise<void> {
+    // Handle both absolute and relative paths
+    const escapedPath = filePath.replace(/"/g, '\\"');
+    await execAsync(`git add "${escapedPath}"`, { cwd: workingDir });
+  }
+
+  /**
+   * Commit changes with message (stages all changes first)
    */
   async commit(workingDir: string, message: string): Promise<string> {
     // Stage all changes first
     await this.stageAll(workingDir);
+
+    // Commit
+    await execAsync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { cwd: workingDir });
+
+    // Get commit SHA
+    const { stdout } = await execAsync('git rev-parse HEAD', { cwd: workingDir });
+    return stdout.trim();
+  }
+
+  /**
+   * Commit only specific files (stages only those files)
+   */
+  async commitFiles(workingDir: string, message: string, filePaths: string[]): Promise<string> {
+    // Stage only specific files
+    for (const filePath of filePaths) {
+      await this.stageFile(workingDir, filePath);
+    }
 
     // Commit
     await execAsync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { cwd: workingDir });

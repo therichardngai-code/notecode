@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { ITaskRepository } from '../../domain/ports/repositories/task.repository.port.js';
 import { IProjectRepository } from '../../domain/ports/repositories/project.repository.port.js';
 import { IMessageRepository } from '../../domain/ports/repositories/message.repository.port.js';
+import { IDiffRepository } from '../../domain/ports/repositories/diff.repository.port.js';
 import { Task } from '../../domain/entities/task.entity.js';
 import {
   TaskStatus,
@@ -87,6 +88,7 @@ export interface TaskControllerDeps {
   taskRepo: ITaskRepository;
   projectRepo: IProjectRepository;
   gitApprovalRepo: IGitApprovalRepository;
+  diffRepo: IDiffRepository;
   gitService: GitService;
   eventBus: IEventBus;
   settingsRepo: ISettingsRepository;
@@ -99,7 +101,7 @@ export function registerTaskController(
   deps?: Partial<TaskControllerDeps>
 ): void {
   // Dependencies (optional - if not provided, some features are skipped)
-  const { projectRepo, gitApprovalRepo, gitService, eventBus, settingsRepo, messageRepo } = deps ?? {};
+  const { projectRepo, gitApprovalRepo, diffRepo, gitService, eventBus, settingsRepo, messageRepo } = deps ?? {};
   // GET /api/tasks - List tasks (optionally by project)
   app.get('/api/tasks', async (request, reply) => {
     const { projectId, status, priority, search, agentId } = request.query as Record<string, string>;
@@ -351,11 +353,12 @@ export function registerTaskController(
             }
 
             // Task done → create commit approval (manual override, no session context)
-            if (newStatus === TaskStatus.DONE) {
+            if (newStatus === TaskStatus.DONE && diffRepo) {
               await createGitCommitApproval(
                 { id: task.id, projectId: task.projectId, title: task.title, autoCommit: task.autoCommit },
                 null, // No session context for manual status change
                 gitApprovalRepo,
+                diffRepo,
                 gitService,
                 project.path,
                 eventBus
@@ -433,11 +436,12 @@ export function registerTaskController(
               }
 
               // Task done → create commit approval (manual override, no session context)
-              if (newStatus === TaskStatus.DONE) {
+              if (newStatus === TaskStatus.DONE && diffRepo) {
                 await createGitCommitApproval(
                   { id: task.id, projectId: task.projectId, title: task.title, autoCommit: task.autoCommit },
                   null, // No session context for manual status change
                   gitApprovalRepo,
+                  diffRepo,
                   gitService,
                   project.path,
                   eventBus

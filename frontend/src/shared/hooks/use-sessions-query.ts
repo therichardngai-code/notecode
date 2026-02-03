@@ -70,7 +70,7 @@ export function useSessionMessages(id: string, limit = 50) {
 }
 
 /**
- * Fetch session diffs (file changes)
+ * Fetch session diffs (file changes for a specific session)
  */
 export function useSessionDiffs(sessionId: string) {
   return useQuery({
@@ -78,6 +78,19 @@ export function useSessionDiffs(sessionId: string) {
     queryFn: () => sessionsApi.getDiffs(sessionId),
     select: (data) => data.diffs,
     enabled: !!sessionId,
+  });
+}
+
+/**
+ * Fetch all diffs for a task (across all sessions)
+ * Use this for task-level diff views (DiffsTab, GitTab)
+ */
+export function useTaskDiffs(taskId: string | undefined | null) {
+  return useQuery({
+    queryKey: ['task-diffs', taskId],
+    queryFn: () => sessionsApi.getDiffsByTaskId(taskId!),
+    select: (data) => data.diffs,
+    enabled: !!taskId,
   });
 }
 
