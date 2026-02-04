@@ -62,6 +62,9 @@ export async function startServer(options?: {
   const address = server.server.address();
   const actualPort = typeof address === 'object' && address !== null ? address.port : PORT;
 
+  // Set NOTECODE_PORT so CLI adapters can pass correct URL to hooks
+  process.env.NOTECODE_PORT = actualPort.toString();
+
   // CRITICAL: Electron reads this log to detect backend URL
   if (!silent) {
     console.log(`Server listening on http://localhost:${actualPort}`);

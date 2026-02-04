@@ -313,6 +313,48 @@ export class SessionStreamHandler {
             });
             continue; // Skip this tool
           }
+
+          // Run tool:before hooks with permission context
+          const session = await this.sessionRepo.findById(sessionId);
+          const task = session?.taskId && this.taskRepo
+            ? await this.taskRepo.findById(session.taskId)
+            : null;
+
+          const hookResult = await this.toolInterceptor.checkToolCall({
+            sessionId,
+            projectId: task?.projectId,
+            taskId: session?.taskId,
+            provider: session?.provider ?? 'claude',
+            toolName: toolBlock.name,
+            toolInput: toolBlock.input,
+            workingDir: session?.workingDir,
+            permissionMode: task?.permissionMode ?? 'default',
+            allowedTools: task?.tools?.mode === 'allowlist' ? task.tools.tools : [],
+          });
+
+          if (hookResult.blocked) {
+            this.broadcast(sessionId, {
+              type: 'output',
+              data: {
+                type: 'tool_blocked',
+                toolName: toolBlock.name,
+                reason: hookResult.blockReason,
+                severity: 'hook',
+              },
+            });
+            continue; // Skip this tool
+          }
+
+          if (hookResult.warning) {
+            this.broadcast(sessionId, {
+              type: 'output',
+              data: {
+                type: 'tool_warning',
+                toolName: toolBlock.name,
+                warning: hookResult.warning,
+              },
+            });
+          }
         }
 
         // Store pending operation BEFORE approval check (don't create diff yet)

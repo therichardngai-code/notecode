@@ -518,6 +518,23 @@ function setupWebSocket(
       wsHandler!.registerSession(session.id, session.processId);
       app.log.info({ sessionId: session.id, processId: session.processId }, 'Registered session for CLI output streaming');
     }
+    // Set permission mode and allowed tools from task config (for hooks to check pre-approved tools)
+    if (session?.taskId) {
+      const task = await taskRepo.findById(session.taskId);
+      if (task?.permissionMode) {
+        approvalInterceptor.setPermissionMode(sessionId, task.permissionMode);
+      }
+      if (task?.tools?.mode === 'allowlist' && task.tools.tools.length > 0) {
+        approvalInterceptor.setAllowedTools(sessionId, task.tools.tools);
+      }
+      if (task?.permissionMode || task?.tools) {
+        app.log.info({
+          sessionId,
+          permissionMode: task?.permissionMode ?? 'default',
+          allowedTools: task?.tools?.mode === 'allowlist' ? task.tools.tools : []
+        }, 'Set session approval config');
+      }
+    }
   });
 
   // Handle HTTP upgrade for WebSocket

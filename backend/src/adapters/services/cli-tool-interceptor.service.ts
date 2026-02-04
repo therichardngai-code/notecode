@@ -22,6 +22,10 @@ export interface ToolCallContext {
   toolName: string;
   toolInput: Record<string, unknown>;
   workingDir?: string;
+  /** Permission mode from task config (for hooks to check pre-approved tools) */
+  permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
+  /** Allowed tools from task config (pre-approved by user) */
+  allowedTools?: string[];
 }
 
 export class CliToolInterceptorService {
@@ -42,6 +46,8 @@ export class CliToolInterceptorService {
         toolInput: context.toolInput,
         provider: context.provider,
         workingDir: context.workingDir,
+        permissionMode: context.permissionMode ?? 'default',
+        allowedTools: context.allowedTools ?? [],
       },
     };
 

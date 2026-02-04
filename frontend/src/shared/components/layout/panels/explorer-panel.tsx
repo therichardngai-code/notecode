@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Plus, RefreshCw, PanelLeftClose } from 'lucide-react';
 import { FileTreeItem, type FileNode } from './file-tree-item';
 import { filesApi } from '@/adapters/api/files-api';
@@ -27,6 +27,33 @@ function convertFileTree(nodes: any[]): FileNode[] {
   }));
 }
 
+// Recursively filter file tree based on search term
+function filterFileTree(nodes: FileNode[], search: string): FileNode[] {
+  if (!search.trim()) return nodes;
+
+  const lowerSearch = search.toLowerCase();
+
+  return nodes
+    .map(node => {
+      // Check if current node matches
+      const nameMatches = node.name.toLowerCase().includes(lowerSearch);
+
+      // For folders, recursively filter children
+      if (node.type === 'folder' && node.children) {
+        const filteredChildren = filterFileTree(node.children, search);
+        // Include folder if it matches OR has matching children
+        if (nameMatches || filteredChildren.length > 0) {
+          return { ...node, children: filteredChildren };
+        }
+        return null;
+      }
+
+      // For files, include if name matches
+      return nameMatches ? node : null;
+    })
+    .filter((node): node is FileNode => node !== null);
+}
+
 interface ExplorerPanelProps {
   onClose?: () => void;
   onFileClick?: (fileName: string, filePath: string) => void;
@@ -39,6 +66,7 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
   const [fileTree, setFileTree] = useState<FileNode[]>(mockFileTree);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Load real file tree from API
   useEffect(() => {
@@ -65,13 +93,19 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
       .finally(() => {
         setLoading(false);
       });
-  }, [projectId]);
+  }, [projectId, refreshKey]);
 
-  const handleRefresh = () => {
+  // Memoized filtered file tree based on search
+  const filteredFileTree = useMemo(
+    () => filterFileTree(fileTree, search),
+    [fileTree, search]
+  );
+
+  const handleRefresh = useCallback(() => {
     if (projectId) {
-      window.location.reload();
+      setRefreshKey(prev => prev + 1);
     }
-  };
+  }, [projectId]);
 
   return (
     <div className="h-full flex flex-col">
@@ -112,7 +146,12 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
             {error}
           </div>
         )}
-        {!loading && fileTree.map((node, idx) => (
+        {!loading && filteredFileTree.length === 0 && search && (
+          <div className="text-center py-4 text-muted-foreground text-sm">
+            No files match "{search}"
+          </div>
+        )}
+        {!loading && filteredFileTree.map((node, idx) => (
           <FileTreeItem key={idx} node={node} onFileClick={onFileClick} onOpenInNewTab={onOpenInNewTab} />
         ))}
       </div>

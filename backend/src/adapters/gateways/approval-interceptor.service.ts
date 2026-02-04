@@ -64,6 +64,28 @@ export class ApprovalInterceptorService {
     state.useHookApproval = enabled;
   }
 
+  // Set permission mode from task/session config (for hook context)
+  setPermissionMode(sessionId: string, mode: 'default' | 'acceptEdits' | 'bypassPermissions'): void {
+    const state = this.getOrCreateState(sessionId);
+    state.permissionMode = mode;
+  }
+
+  // Get permission mode for a session (hooks need this)
+  getPermissionMode(sessionId: string): 'default' | 'acceptEdits' | 'bypassPermissions' {
+    return this.sessionStates.get(sessionId)?.permissionMode ?? 'default';
+  }
+
+  // Set allowed tools from task config (pre-approved by user)
+  setAllowedTools(sessionId: string, tools: string[]): void {
+    const state = this.getOrCreateState(sessionId);
+    tools.forEach(t => state.allowedTools.add(t));
+  }
+
+  // Get allowed tools for a session (hooks need this)
+  getAllowedTools(sessionId: string): string[] {
+    return Array.from(this.sessionStates.get(sessionId)?.allowedTools ?? []);
+  }
+
   async checkApproval(
     sessionId: string,
     toolName: string,

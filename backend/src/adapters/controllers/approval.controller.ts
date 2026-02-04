@@ -159,6 +159,32 @@ export function registerApprovalController(
     const body = hookApprovalRequestSchema.parse(request.body);
     const { sessionId, toolName, toolInput, toolUseId } = body;
 
+    // Check task-level pre-approval (permissionMode, allowedTools)
+    if (sessionRepo && taskRepo) {
+      const session = await sessionRepo.findById(sessionId);
+      const task = session?.taskId ? await taskRepo.findById(session.taskId) : null;
+
+      if (task) {
+        // 1. Bypass mode - allow ALL tools
+        if (task.permissionMode === 'bypassPermissions') {
+          return reply.send({ requestId: null, decision: 'allow', reason: 'Bypass mode enabled' });
+        }
+
+        // 2. AcceptEdits mode - allow file operation tools
+        if (task.permissionMode === 'acceptEdits') {
+          const editTools = ['Write', 'Edit', 'NotebookEdit', 'Bash'];
+          if (editTools.includes(toolName)) {
+            return reply.send({ requestId: null, decision: 'allow', reason: 'AcceptEdits mode' });
+          }
+        }
+
+        // 3. Task allowlist - allow if tool in list
+        if (task.tools?.mode === 'allowlist' && task.tools.tools.includes(toolName)) {
+          return reply.send({ requestId: null, decision: 'allow', reason: 'Tool in allowlist' });
+        }
+      }
+    }
+
     // Determine tool category (now returns matchedPattern for dangerous ops)
     const { category, matchedPattern, matchType } = determineToolCategory(toolName, toolInput, config);
 

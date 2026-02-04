@@ -16,8 +16,9 @@ export class GeminiCliAdapter implements ICliExecutor {
   private outputCallbacks = new Map<number, Set<(output: CliOutput) => void>>();
   private exitCallbacks = new Map<number, Set<(code: number) => void>>();
 
+  // Backend URL for hook communication (from env or default, uses port 41920)
   private backendUrl: string = process.env.NOTECODE_BACKEND_URL
-    ?? `http://localhost:${process.env.NOTECODE_PORT ?? process.env.PORT ?? 3001}`;
+    ?? `http://localhost:${process.env.NOTECODE_PORT ?? process.env.PORT ?? 41920}`;
 
   async spawn(config: CliSpawnConfig): Promise<CliProcess> {
     const args = this.buildArgs(config);

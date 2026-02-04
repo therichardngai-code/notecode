@@ -5,7 +5,7 @@ import {
   Home,
   FolderTree,
   // GitBranch,   // Demo: Not implemented
-  // Sparkles,    // Demo: Not implemented
+  Sparkles,
   // Inbox,       // Demo: Not implemented
   ListTodo,
   BarChart3,
@@ -153,7 +153,7 @@ const navItems = [
   { icon: Home, label: 'Home', to: '/' },
   { icon: FolderTree, label: 'Explorer', to: '/explorer' },
   // { icon: GitBranch, label: 'Source Control', to: '/source-control' },  // Demo: Not implemented
-  // { icon: Sparkles, label: 'AI Chat', to: '/chat' },  // Demo: Not implemented
+  { icon: Sparkles, label: 'AI Chat', to: '/chat' },
   // { icon: Inbox, label: 'Inbox', to: '/inbox' },  // Demo: Not implemented
   { icon: ListTodo, label: 'Tasks', to: '/tasks' },
   { icon: BarChart3, label: 'Dashboard', to: '/dashboard' },

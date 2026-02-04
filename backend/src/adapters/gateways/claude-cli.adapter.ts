@@ -20,9 +20,9 @@ export class ClaudeCliAdapter implements ICliExecutor {
   // Callbacks for when CLI session ID is captured
   private sessionIdCallbacks = new Map<string, (cliSessionId: string) => void>();
 
-  // Backend URL for hook communication (from env or default)
+  // Backend URL for hook communication (from env or default, uses port 41920)
   private backendUrl: string = process.env.NOTECODE_BACKEND_URL
-    ?? `http://localhost:${process.env.NOTECODE_PORT ?? process.env.PORT ?? 3001}`;
+    ?? `http://localhost:${process.env.NOTECODE_PORT ?? process.env.PORT ?? 41920}`;
 
   async spawn(config: CliSpawnConfig): Promise<CliProcess> {
     const args = this.buildArgs(config);

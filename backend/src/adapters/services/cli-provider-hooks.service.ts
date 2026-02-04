@@ -755,7 +755,7 @@ export class CliProviderHooksService {
 const https = require('https');
 const http = require('http');
 
-const BACKEND_URL = process.env.NOTECODE_BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = process.env.NOTECODE_BACKEND_URL || 'http://localhost:41920';
 const SESSION_ID = process.env.NOTECODE_SESSION_ID;
 
 async function checkApproval(toolName, toolInput) {
@@ -830,46 +830,8 @@ const DEFAULT_CONFIG = {
     'TaskGet',
   ],
 
-  // Tools that always require approval
-  requireApprovalTools: [
-    'Write',
-    'Edit',
-    'NotebookEdit',
-    'Bash',
-    'TaskCreate',
-    'TaskUpdate',
-  ],
-
-  // Dangerous patterns - these get special handling
-  dangerousPatterns: {
-    commands: [
-      'rm\\\\s+-rf',
-      'rm\\\\s+-r',
-      'rmdir',
-      'del\\\\s+/s',
-      'DROP\\\\s+TABLE',
-      'DELETE\\\\s+FROM.*WHERE.*1.*=.*1',
-      'git\\\\s+push.*--force',
-      'git\\\\s+reset.*--hard',
-      'chmod\\\\s+777',
-      'curl.*\\\\|.*sh',
-      'wget.*\\\\|.*sh',
-    ],
-    files: [
-      '\\\\.env$',
-      '\\\\.env\\\\.',
-      'credentials',
-      'secrets?\\\\.json',
-      'password',
-      '\\\\.pem$',
-      '\\\\.key$',
-      'id_rsa',
-      '\\\\.ssh/',
-      '\\\\.aws/',
-      '\\\\.npmrc',
-      '\\\\.pypirc',
-    ],
-  },
+  // Note: requireApprovalTools and dangerousPatterns are handled by backend
+  // Backend checks task-level permissionMode/allowedTools + user settings
 };
 
 // Session config cache (to avoid fetching every tool call)
@@ -903,47 +865,8 @@ async function fetchConfig(sessionId, backendUrl) {
   return DEFAULT_CONFIG;
 }
 
-/**
- * Check if tool needs approval
- */
-function needsApproval(toolName, toolInput, config) {
-  // If approval gate disabled, allow all
-  if (!config.enabled) {
-    return { required: false };
-  }
-
-  // Auto-allow safe tools
-  if (config.autoAllowTools.includes(toolName)) {
-    return { required: false };
-  }
-
-  // Check dangerous command patterns for Bash
-  if (toolName === 'Bash') {
-    const command = toolInput.command || '';
-    for (const pattern of config.dangerousPatterns.commands) {
-      if (new RegExp(pattern, 'i').test(command)) {
-        return { required: true, reason: 'dangerous', details: command };
-      }
-    }
-  }
-
-  // Check sensitive file patterns for file operations
-  if (['Write', 'Edit', 'NotebookEdit'].includes(toolName)) {
-    const filePath = toolInput.file_path || toolInput.filePath || '';
-    for (const pattern of config.dangerousPatterns.files) {
-      if (new RegExp(pattern, 'i').test(filePath)) {
-        return { required: true, reason: 'sensitive-file', details: filePath };
-      }
-    }
-  }
-
-  // Tools in requireApprovalTools need approval
-  if (config.requireApprovalTools.includes(toolName)) {
-    return { required: true, reason: 'requires-approval', details: toolName };
-  }
-
-  return { required: false };
-}
+// Note: needsApproval logic moved to backend /api/approvals/request
+// Backend handles: permissionMode, allowedTools, dangerousPatterns, requireApprovalTools
 
 /**
  * Make HTTP request (supports http and https)
@@ -1062,7 +985,7 @@ async function main() {
     const toolUseId = payload.tool_use_id || '';
     // Use env var first (our backend session), fallback to CLI's session_id
     const sessionId = process.env.NOTECODE_SESSION_ID || payload.session_id || '';
-    const backendUrl = process.env.NOTECODE_BACKEND_URL || 'http://localhost:3001';
+    const backendUrl = process.env.NOTECODE_BACKEND_URL || 'http://localhost:41920';
 
     // Skip if not in notecode context (no env vars = standalone CLI usage)
     if (!process.env.NOTECODE_SESSION_ID && !process.env.NOTECODE_BACKEND_URL) {
@@ -1079,15 +1002,13 @@ async function main() {
       process.exit(0);
     }
 
-    // Check if approval needed (pass config)
-    const check = needsApproval(toolName, toolInput, config);
-
-    if (!check.required) {
+    // Only skip tools in config.autoAllowTools (fetched from backend)
+    if (config.autoAllowTools.includes(toolName)) {
       outputResponse('allow', 'Auto-allowed tool');
       process.exit(0);
     }
 
-    console.error(\`[ApprovalGate] Requesting approval for \${toolName} (\${check.reason})\`);
+    console.error(\`[ApprovalGate] Checking with backend for \${toolName}\`);
 
     // Request approval from backend
     let approvalResponse;
