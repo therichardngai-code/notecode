@@ -1,5 +1,7 @@
 // Analytics API client for dashboard data
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE_URL } from '@/shared/lib/api-config';
+
+const API_BASE = API_BASE_URL;
 
 export interface OverviewStats {
   totalTokens: number;

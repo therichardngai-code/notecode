@@ -4,3 +4,4 @@
  */
 
 export * from './fastify.server.js';
+export * from './port-utils.js';

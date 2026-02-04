@@ -8,6 +8,10 @@ import { WebSocketServer } from 'ws';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 import {
   registerProjectController,
   registerTaskController,
@@ -361,6 +365,46 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Register SSE notifications
   if (options.enableSSE !== false) {
     registerNotificationSSE(app, eventBus);
+  }
+
+  // Serve static frontend (for npx/production mode)
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const publicDir = join(__dirname, '../../../public');
+  const hasPublicDir = existsSync(publicDir) && existsSync(join(publicDir, 'index.html'));
+
+  if (hasPublicDir) {
+    await app.register(fastifyStatic, {
+      root: publicDir,
+      prefix: '/',
+      decorateReply: false,
+      // Cache control for assets
+      setHeaders: (res: { setHeader: (name: string, value: string) => void }, filePath: string) => {
+        if (filePath.includes('/assets/')) {
+          // Long cache for hashed assets (1 year)
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('.html')) {
+          // No cache for HTML
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    });
+
+    // SPA fallback - serve index.html for non-API routes
+    app.setNotFoundHandler((request, reply) => {
+      // Don't interfere with API/WS/SSE routes
+      if (
+        request.url.startsWith('/api/') ||
+        request.url.startsWith('/ws/') ||
+        request.url.startsWith('/sse/')
+      ) {
+        return reply.status(404).send({ error: 'Not Found' });
+      }
+      // Serve index.html for SPA routes (sendFile added by fastify-static)
+      return (reply as unknown as { sendFile: (filename: string) => Promise<void> }).sendFile('index.html');
+    });
+
+    app.log.info(`Static frontend served from ${publicDir}`);
   }
 
   // Global error handler

@@ -3,7 +3,7 @@
  * HTTP client for backup/export endpoints
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_BASE_URL } from '@/shared/lib/api-config';
 
 // Types
 export interface ExportOptions {

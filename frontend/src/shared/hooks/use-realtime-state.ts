@@ -24,11 +24,18 @@ export function useRealtimeState() {
   const processedMessageIds = useRef<Set<string>>(new Set());
 
   // Handle diff_preview WebSocket message
-  const handleDiffPreview = useCallback((data: { id: string; filePath: string; operation: 'edit' | 'write' | 'delete'; status: string }) => {
+  // Note: WebSocket sends 'content' but we store 'status' for UI tracking
+  const handleDiffPreview = useCallback((data: { id: string; filePath: string; operation: 'edit' | 'write' | 'delete'; content: string }) => {
     setRealtimeDiffs(prev => {
-      // Update existing or add new
+      // Update existing or add new (convert content message to status-based entry)
       const idx = prev.findIndex(d => d.id === data.id);
-      const newDiff: RealtimeDiff = { ...data, timestamp: Date.now() };
+      const newDiff: RealtimeDiff = {
+        id: data.id,
+        filePath: data.filePath,
+        operation: data.operation,
+        status: 'pending',
+        timestamp: Date.now(),
+      };
       if (idx >= 0) {
         const updated = [...prev];
         updated[idx] = newDiff;

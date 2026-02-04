@@ -284,11 +284,11 @@ export const sessionsApi = {
     apiClient.post<{ success: boolean }>(`/api/approvals/${approvalId}/reject`, { decidedBy: 'user' }),
 };
 
+import { getWsUrl } from '@/shared/lib/api-config';
+
 /**
  * WebSocket URL builder for session streaming
  */
 export function getSessionWebSocketUrl(sessionId: string): string {
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const apiHost = import.meta.env.VITE_API_URL?.replace(/^https?:\/\//, '') || 'localhost:3001';
-  return `${wsProtocol}//${apiHost}/ws/session/${sessionId}`;
+  return getWsUrl(`/ws/session/${sessionId}`);
 }

@@ -4,6 +4,7 @@
  */
 
 import { createServer } from './infrastructure/server/fastify.server.js';
+import { DEFAULT_PORT, findAvailablePort } from './infrastructure/server/port-utils.js';
 import { initializeDatabase, closeDatabase } from './infrastructure/database/connection.js';
 import { SqliteSettingsRepository } from './adapters/repositories/sqlite-settings.repository.js';
 import { DataRetentionService } from './domain/services/data-retention.service.js';
@@ -22,12 +23,21 @@ export async function startServer(options?: {
   host?: string;
   silent?: boolean;
 }): Promise<FastifyInstance> {
-  const PORT = options?.port
-    ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined)
-    ?? (isElectron ? 0 : 3001);  // Random port in Electron, 3001 for web
-
   const HOST = options?.host ?? process.env.HOST ?? '0.0.0.0';
   const silent = options?.silent ?? false;
+
+  // Determine port: options > env > auto-detect (Electron uses 0 for dynamic)
+  let PORT: number;
+  if (options?.port !== undefined) {
+    PORT = options.port;
+  } else if (process.env.PORT) {
+    PORT = parseInt(process.env.PORT, 10);
+  } else if (isElectron) {
+    PORT = 0; // Electron uses dynamic port allocation
+  } else {
+    // Find available port starting from DEFAULT_PORT (41920)
+    PORT = await findAvailablePort(DEFAULT_PORT);
+  }
 
   if (!silent) {
     console.log('Starting NoteCode backend...');

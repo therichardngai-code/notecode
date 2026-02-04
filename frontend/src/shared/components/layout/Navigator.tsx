@@ -1,15 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
 import {
-  Search,
+  // Search,      // Demo: Not implemented
   Home,
   FolderTree,
-  GitBranch,
-  Sparkles,
-  Inbox,
+  // GitBranch,   // Demo: Not implemented
+  // Sparkles,    // Demo: Not implemented
+  // Inbox,       // Demo: Not implemented
   ListTodo,
   BarChart3,
-  Brain,
+  // Brain,       // Demo: Not implemented
   Settings,
   ChevronDown,
   PanelLeft,
@@ -21,7 +21,11 @@ import { ScrollArea } from '@radix-ui/react-scroll-area';
 
 // Panel items - single click toggles panel, double click opens in tab
 // (same as prototype: source-control, inbox)
-const panelItems = ['/source-control', '/inbox'];
+// Demo: Commented out - features not implemented yet
+const panelItems: string[] = [
+  // '/source-control',  // Demo: Not implemented
+  // '/inbox',           // Demo: Not implemented
+];
 
 interface NavigatorProps {
   isCollapsed?: boolean;
@@ -143,16 +147,17 @@ function NavItem({ icon: Icon, label, to, isActive, isPanelActive, isPanelItem, 
 }
 
 // Navigation items config - Board/Sessions are view modes within Tasks, not separate nav items
+// Demo: Some items commented out - features not implemented yet
 const navItems = [
-  { icon: Search, label: 'Search', to: '/search' },
+  // { icon: Search, label: 'Search', to: '/search' },  // Demo: Not implemented
   { icon: Home, label: 'Home', to: '/' },
   { icon: FolderTree, label: 'Explorer', to: '/explorer' },
-  { icon: GitBranch, label: 'Source Control', to: '/source-control' },
-  { icon: Sparkles, label: 'AI Chat', to: '/chat' },
-  { icon: Inbox, label: 'Inbox', to: '/inbox' },
+  // { icon: GitBranch, label: 'Source Control', to: '/source-control' },  // Demo: Not implemented
+  // { icon: Sparkles, label: 'AI Chat', to: '/chat' },  // Demo: Not implemented
+  // { icon: Inbox, label: 'Inbox', to: '/inbox' },  // Demo: Not implemented
   { icon: ListTodo, label: 'Tasks', to: '/tasks' },
   { icon: BarChart3, label: 'Dashboard', to: '/dashboard' },
-  { icon: Brain, label: 'Memory', to: '/memory' },
+  // { icon: Brain, label: 'Memory', to: '/memory' },  // Demo: Not implemented
 ];
 
 export function Navigator({

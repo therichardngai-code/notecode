@@ -50,12 +50,13 @@ export interface ApprovalRequest {
   timeoutAt: number;
 }
 
-// Diff preview structure
+// Diff preview structure for WebSocket messages
 export interface DiffPreview {
   id: string;
   filePath: string;
   operation: string;
-  content: string;
+  content?: string;  // File content (optional, for preview display)
+  status?: string;   // Diff status: pending, approved, rejected, applied
 }
 
 export class SessionStreamHandler {

@@ -85,7 +85,6 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // Git init dialog state
   const [gitInitDialogOpen, setGitInitDialogOpen] = useState(false);
   const [pendingGitInitMode, setPendingGitInitMode] = useState<SessionResumeMode | null>(null);
-  const [pendingGitInitPrompt, setPendingGitInitPrompt] = useState<string | undefined>();
   const [isInitializingGit, setIsInitializingGit] = useState(false);
 
   // Track just-started session for immediate WebSocket connection (before query refetch)
@@ -220,9 +219,8 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   });
 
   // Git init dialog callback (passed to useSessionStartHandler)
-  const handleGitInitRequired = useCallback((mode: SessionResumeMode, prompt?: string) => {
+  const handleGitInitRequired = useCallback((mode: SessionResumeMode, _prompt?: string) => {
     setPendingGitInitMode(mode);
-    setPendingGitInitPrompt(prompt);
     setGitInitDialogOpen(true);
   }, []);
 
@@ -266,14 +264,12 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     } finally {
       setIsInitializingGit(false);
       setPendingGitInitMode(null);
-      setPendingGitInitPrompt(undefined);
     }
   }, [task?.projectId, pendingGitInitMode, handleStartSessionWithMode]);
 
   const handleGitInitCancel = useCallback(() => {
     setGitInitDialogOpen(false);
     setPendingGitInitMode(null);
-    setPendingGitInitPrompt(undefined);
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -281,7 +277,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   // ═══════════════════════════════════════════════════════════════════════════
 
   // Tab change handler with startTransition
-  const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'sessions') => {
+  const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'git' | 'sessions') => {
     startTransition(() => setActiveInfoTab(tab));
   }, [setActiveInfoTab]);
 

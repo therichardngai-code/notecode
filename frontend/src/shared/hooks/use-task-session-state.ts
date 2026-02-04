@@ -145,15 +145,15 @@ export function useTaskSessionState({
         setIsWaitingForResponse(false);
       }
     }, []),
-    onDiffPreview: useCallback((data: { id: string; filePath: string; operation: string; status: string }) => {
+    onDiffPreview: useCallback((data: { id: string; filePath: string; operation: 'edit' | 'write' | 'delete'; content: string }) => {
       setRealtimeDiffs(prev => {
         const idx = prev.findIndex(d => d.id === data.id);
         if (idx >= 0) {
           const updated = [...prev];
-          updated[idx] = data;
+          updated[idx] = { ...data, status: 'pending' };
           return updated;
         }
-        return [...prev, data];
+        return [...prev, { ...data, status: 'pending' }];
       });
     }, []),
   });

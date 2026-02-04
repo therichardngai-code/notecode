@@ -4,7 +4,7 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import path from 'path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     TanStackRouterVite({
       routesDirectory: './src/app/routes',
@@ -29,6 +29,12 @@ export default defineConfig({
     ],
   },
   build: {
+    // Production: output to backend/public/ for static serving
+    // Development: output to frontend/dist/ for local testing
+    outDir: mode === 'production'
+      ? path.resolve(__dirname, '../backend/public')
+      : path.resolve(__dirname, 'dist'),
+    emptyOutDir: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -45,4 +51,4 @@ export default defineConfig({
     },
     chunkSizeWarningLimit: 600,
   },
-})
+}))

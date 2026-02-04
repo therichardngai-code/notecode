@@ -8,6 +8,7 @@ import { filesApi } from '@/adapters/api/files-api';
 import { Search, Plus, RefreshCw } from 'lucide-react';
 import { FileTreeItem, type FileNode } from '@/shared/components/layout/panels/file-tree-item';
 import { useUIStore } from '@/shared/stores';
+import { API_BASE_URL } from '@/shared/lib/api-config';
 
 export const Route = createFileRoute('/explorer')({
   component: ExplorerPage,
@@ -76,8 +77,7 @@ function ExplorerPage() {
     if (!activeProjectId) return;
 
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseUrl}/api/projects/${activeProjectId}/files/open-external`, {
+      const response = await fetch(`${API_BASE_URL}/api/projects/${activeProjectId}/files/open-external`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath }),

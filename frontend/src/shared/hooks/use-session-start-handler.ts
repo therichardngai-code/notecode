@@ -26,12 +26,12 @@ interface UseSessionStartHandlerParams {
   setWsSessionStatus: React.Dispatch<React.SetStateAction<string | null>>;
   setJustStartedSession: React.Dispatch<React.SetStateAction<{ id: string; status: string } | null>>;
   setIsWaitingForResponse: React.Dispatch<React.SetStateAction<boolean>>;
-  setActiveInfoTab: React.Dispatch<React.SetStateAction<'activity' | 'ai-session' | 'diffs' | 'sessions'>>;
+  setActiveInfoTab: React.Dispatch<React.SetStateAction<'activity' | 'ai-session' | 'diffs' | 'git' | 'sessions'>>;
   // Scroll restoration
   resetScrollState: () => void;
   saveScrollPosition: () => void;
   // Current tab
-  activeInfoTab: 'activity' | 'ai-session' | 'diffs' | 'sessions';
+  activeInfoTab: 'activity' | 'ai-session' | 'diffs' | 'git' | 'sessions';
   // Git init callback (optional - for autoBranch warning)
   onGitInitRequired?: (mode: SessionResumeMode, prompt?: string) => void;
 }

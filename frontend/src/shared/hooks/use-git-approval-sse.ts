@@ -4,13 +4,14 @@
  *
  * Supported events:
  * - git:approval:created: Git commit approval created, updates task status and Git tab
- * - task:status:changed: Task status transition, updates Board view and task detail
+ * - task.status.changed: Task status transition, updates Board view and task detail
  */
 
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { taskKeys } from './use-tasks-query';
 import { gitApprovalKeys } from './use-approval-state';
+import { getSseUrl } from '@/shared/lib/api-config';
 
 interface GitApprovalCreatedEvent {
   type: 'git:approval:created';
@@ -28,7 +29,7 @@ interface GitApprovalCreatedEvent {
 }
 
 interface TaskStatusChangedEvent {
-  type: 'task:status:changed';
+  type: 'task.status.changed';
   aggregateId: string;
   taskId: string;
   projectId: string;
@@ -53,8 +54,7 @@ export function useGitApprovalSSE(options: UseGitApprovalSSEOptions = {}) {
     if (!enabled) return;
 
     // Connect to SSE endpoint
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-    const eventSource = new EventSource(`${baseUrl}/sse/notifications`);
+    const eventSource = new EventSource(getSseUrl('/sse/notifications'));
     eventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
@@ -78,8 +78,8 @@ export function useGitApprovalSSE(options: UseGitApprovalSSEOptions = {}) {
           queryClient.invalidateQueries({ queryKey: gitApprovalKeys.task(gitEvent.taskId) });
         }
 
-        // Handle task:status:changed event (e.g., REVIEW → IN_PROGRESS on Continue)
-        if (data.type === 'task:status:changed') {
+        // Handle task.status.changed event (e.g., REVIEW → IN_PROGRESS on Continue)
+        if (data.type === 'task.status.changed') {
           const statusEvent = data as TaskStatusChangedEvent;
 
           // Invalidate task detail to refetch with new status

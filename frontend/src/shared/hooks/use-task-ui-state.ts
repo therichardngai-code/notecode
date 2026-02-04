@@ -12,7 +12,7 @@ import { useState } from 'react';
  */
 export function useTaskUIState() {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
-  const [activeInfoTab, setActiveInfoTab] = useState<'activity' | 'ai-session' | 'diffs' | 'sessions'>('ai-session');
+  const [activeInfoTab, setActiveInfoTab] = useState<'activity' | 'ai-session' | 'diffs' | 'git' | 'sessions'>('ai-session');
   const [isTyping, setIsTyping] = useState(false); // Displayed in AISessionTab
   const [diffApprovals, setDiffApprovals] = useState<Record<string, 'approved' | 'rejected' | null>>({});
   const [showAddProperty, setShowAddProperty] = useState(false);

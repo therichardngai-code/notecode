@@ -17,6 +17,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { detectLanguage, getLanguageDisplayName } from '@/features/explorer/utils/language-detector';
 import { ExternalLink } from 'lucide-react';
+import { API_BASE_URL } from '@/shared/lib/api-config';
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -101,8 +102,7 @@ function RootLayout() {
     if (!filePath || !activeProjectId) return;
 
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${baseUrl}/api/projects/${activeProjectId}/files/open-external`, {
+      const response = await fetch(`${API_BASE_URL}/api/projects/${activeProjectId}/files/open-external`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath }),

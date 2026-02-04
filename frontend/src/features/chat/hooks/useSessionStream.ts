@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Message, Block } from '../../../domain/entities';
+import { getWsUrl } from '@/shared/lib/api-config';
 
 interface UseSessionStreamOptions {
   sessionId: string;
@@ -34,8 +35,7 @@ export function useSessionStream({
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     try {
-      // TODO: Replace with actual WebSocket URL
-      const ws = new WebSocket(`ws://localhost:8080/sessions/${sessionId}/stream`);
+      const ws = new WebSocket(getWsUrl(`/ws/session/${sessionId}`));
 
       ws.onopen = () => {
         setIsConnected(true);

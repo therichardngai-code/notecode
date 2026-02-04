@@ -1,7 +1,13 @@
 /**
  * API Client
  * Base HTTP client for backend communication
+ *
+ * Dev mode: Uses localhost:3001 (separate backend)
+ * Prod mode: Uses relative URLs (same-origin)
+ * Electron: Uses dynamic URL from main process
  */
+
+import { API_BASE_URL as CONFIG_BASE_URL } from '@/shared/lib/api-config';
 
 // Extend window interface for Electron API
 declare global {
@@ -12,7 +18,8 @@ declare global {
   }
 }
 
-let API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Mutable base URL - can be overridden by Electron
+let API_BASE_URL = CONFIG_BASE_URL;
 
 // Check for Electron and listen for dynamic port
 if (typeof window !== 'undefined' && window.electronAPI) {
@@ -40,9 +47,12 @@ interface RequestOptions extends RequestInit {
 
 /**
  * Build URL with query parameters
+ * Handles both absolute URLs (dev/Electron) and relative URLs (prod)
  */
 function buildUrl(endpoint: string, params?: Record<string, string | number | boolean | undefined>): string {
-  const url = new URL(`${API_BASE_URL}${endpoint}`);
+  // For relative URLs (prod mode), use current origin as base
+  const baseUrl = API_BASE_URL || window.location.origin;
+  const url = new URL(`${baseUrl}${endpoint}`);
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined) {
@@ -50,7 +60,8 @@ function buildUrl(endpoint: string, params?: Record<string, string | number | bo
       }
     });
   }
-  return url.toString();
+  // Return relative path if no API_BASE_URL (prod mode)
+  return API_BASE_URL ? url.toString() : `${url.pathname}${url.search}`;
 }
 
 /**

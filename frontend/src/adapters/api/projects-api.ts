@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './api-client';
+import { API_BASE_URL } from '@/shared/lib/api-config';
 import type { Session } from './sessions-api';
 
 // Tool-level approval rule (e.g., Bash → ask)
@@ -201,8 +202,7 @@ export const projectsApi = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-    const response = await fetch(`${baseUrl}/api/projects/${projectId}/uploads`, {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/uploads`, {
       method: 'POST',
       body: formData,
     });

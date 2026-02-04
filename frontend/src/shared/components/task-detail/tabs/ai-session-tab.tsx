@@ -155,7 +155,8 @@ export const AISessionTab = memo(function AISessionTab({
   const hasMessages = displayMessages.length > 0;
 
   // Virtualization state - react-window v2 API
-  const listRef = useListRef();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const listRef = useListRef(null as any);
 
   // Container ref and width state for responsive List sizing
   const containerRef = useRef<HTMLDivElement>(null);
@@ -253,8 +254,10 @@ export const AISessionTab = memo(function AISessionTab({
           style={{ height: 400, width: containerWidth }}
           rowCount={displayMessages.length}
           rowHeight={rowHeight}
-          rowComponent={MessageRow}
-          rowProps={rowProps}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          rowComponent={MessageRow as any}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          rowProps={rowProps as any}
           overscanCount={3}
           onScroll={() => {
             // Get scroll element from list ref for parent scroll tracking
