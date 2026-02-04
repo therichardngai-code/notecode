@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { FileViewer } from '@/features/explorer';
-import { useState } from 'react';
+import { FileEditor } from '@/features/explorer';
+import { useState, useCallback, useEffect } from 'react';
 import { useSettings } from '@/shared/hooks/use-settings';
 import { useQuery } from '@tanstack/react-query';
 import { projectsApi } from '@/adapters/api/projects-api';
 import { filesApi } from '@/adapters/api/files-api';
-import { Search, Plus, RefreshCw } from 'lucide-react';
+import { Search, Plus, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { FileTreeItem, type FileNode } from '@/shared/components/layout/panels/file-tree-item';
 import { useUIStore } from '@/shared/stores';
 import { API_BASE_URL } from '@/shared/lib/api-config';
@@ -20,12 +20,33 @@ function convertFileTree(nodes: any[]): FileNode[] {
     name: node.name,
     type: node.type === 'directory' ? 'folder' as const : 'file' as const,
     children: node.children ? convertFileTree(node.children) : undefined,
+    hasChildren: node.hasChildren,
   }));
+}
+
+// Merge loaded children into tree at target path
+function mergeChildrenRecursive(nodes: FileNode[], pathParts: string[], newChildren: FileNode[]): FileNode[] {
+  if (pathParts.length === 0) return nodes;
+  const [first, ...rest] = pathParts;
+  return nodes.map(node => {
+    if (node.name === first) {
+      if (rest.length === 0) {
+        return { ...node, children: newChildren, hasChildren: undefined };
+      }
+      if (node.children) {
+        return { ...node, children: mergeChildrenRecursive(node.children, rest, newChildren) };
+      }
+    }
+    return node;
+  });
 }
 
 function ExplorerPage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [showAllFiles, setShowAllFiles] = useState(true);
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
 
   const { data: settings } = useSettings();
   const activeProjectId = settings?.currentActiveProjectId;
@@ -41,17 +62,44 @@ function ExplorerPage() {
   // Get function to open file in new tab
   const openFileAsTab = useUIStore((state) => state.openFileAsTab);
 
-  // Load file tree with React Query (with caching)
-  const { data: fileTree = [], isLoading, refetch } = useQuery({
-    queryKey: ['fileTree', activeProjectId],
+  // Load file tree with React Query (with caching) - depth=1 for lazy loading
+  const { data: queryFileTree, isLoading, refetch } = useQuery({
+    queryKey: ['fileTree', activeProjectId, showAllFiles],
     queryFn: async () => {
-      const res = await filesApi.getTree(activeProjectId!);
+      const res = await filesApi.getTree(activeProjectId!, '/', { depth: 1, showAll: showAllFiles });
       return convertFileTree(res.tree.children || []);
     },
     enabled: !!activeProjectId,
     staleTime: 5 * 60 * 1000, // 5 minutes (matches backend cache)
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
+
+  // Sync query data to local state (for lazy loading modifications)
+  useEffect(() => {
+    if (queryFileTree) {
+      setFileTree(queryFileTree);
+    }
+  }, [queryFileTree]);
+
+  // Handle folder expand with lazy loading
+  const handleFolderExpand = useCallback(async (folderPath: string) => {
+    if (!activeProjectId) return;
+
+    setLoadingPaths(prev => new Set([...prev, folderPath]));
+    try {
+      const res = await filesApi.getTree(activeProjectId, `/${folderPath}`, { depth: 1, showAll: showAllFiles });
+      const children = convertFileTree(res.tree.children || []);
+      setFileTree(prev => mergeChildrenRecursive(prev, folderPath.split('/'), children));
+    } catch (err) {
+      console.error('Failed to load folder:', err);
+    } finally {
+      setLoadingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(folderPath);
+        return next;
+      });
+    }
+  }, [activeProjectId, showAllFiles]);
 
   const handleRefresh = () => {
     refetch();
@@ -100,6 +148,17 @@ function ExplorerPage() {
             {activeProject?.name || 'Explorer'}
           </span>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowAllFiles(!showAllFiles)}
+              className="p-1.5 rounded-lg hover:bg-muted"
+              title={showAllFiles ? 'Showing all files (click to hide ignored)' : 'Hiding ignored files (click to show all)'}
+            >
+              {showAllFiles ? (
+                <Eye className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <EyeOff className="w-4 h-4 text-muted-foreground" />
+              )}
+            </button>
             <button className="p-1.5 rounded-lg hover:bg-muted">
               <Plus className="w-4 h-4 text-muted-foreground" />
             </button>
@@ -132,6 +191,8 @@ function ExplorerPage() {
                 node={node}
                 onFileClick={(_, path) => setSelectedFile(path)}
                 onOpenInNewTab={handleOpenInNewTab}
+                onFolderExpand={handleFolderExpand}
+                loadingPaths={loadingPaths}
               />
             ))
           )}
@@ -139,10 +200,10 @@ function ExplorerPage() {
       </div>
 
       <div className="flex-1 flex flex-col">
-        {selectedFile ? (
-          <FileViewer
+        {selectedFile && activeProjectId ? (
+          <FileEditor
             filePath={selectedFile}
-            projectId={activeProjectId ?? undefined}
+            projectId={activeProjectId}
             onOpenInEditor={handleOpenInExternalEditor}
           />
         ) : (

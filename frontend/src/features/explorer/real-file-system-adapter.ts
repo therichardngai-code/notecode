@@ -4,7 +4,7 @@
  */
 
 import type { IFileSystem } from '@/domain/ports/gateways/file-system.port';
-import { filesApi, type FileNode } from '@/adapters/api/files-api';
+import { filesApi, type FileNode, type GetTreeOptions } from '@/adapters/api/files-api';
 import type { FileTreeNode } from './file-system-adapter';
 
 export class RealFileSystemAdapter implements IFileSystem {
@@ -19,8 +19,8 @@ export class RealFileSystemAdapter implements IFileSystem {
     return response.content;
   }
 
-  async buildFileTree(rootPath = '/'): Promise<FileTreeNode> {
-    const response = await filesApi.getTree(this.projectId, rootPath);
+  async buildFileTree(rootPath = '/', options?: GetTreeOptions): Promise<FileTreeNode> {
+    const response = await filesApi.getTree(this.projectId, rootPath, options);
     return this.convertToFileTreeNode(response.tree);
   }
 
@@ -29,7 +29,8 @@ export class RealFileSystemAdapter implements IFileSystem {
       name: node.name,
       path: node.path,
       isDirectory: node.type === 'directory',
-      children: node.children?.map(child => this.convertToFileTreeNode(child)),
+      children: node.children?.map((child) => this.convertToFileTreeNode(child)),
+      hasChildren: node.hasChildren, // Preserve lazy loading flag
     };
   }
 

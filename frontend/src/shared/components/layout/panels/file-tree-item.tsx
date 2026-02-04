@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, ExternalLink, MoreHorizontal } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, ExternalLink, MoreHorizontal, Loader2 } from 'lucide-react';
 
 export interface FileNode {
   name: string;
   type: 'file' | 'folder';
   children?: FileNode[];
+  hasChildren?: boolean; // true = folder has unloaded children (lazy loading)
 }
 
 interface FileTreeItemProps {
@@ -13,15 +14,27 @@ interface FileTreeItemProps {
   path?: string;
   onFileClick?: (fileName: string, filePath: string) => void;
   onOpenInNewTab?: (fileName: string, filePath: string) => void;
+  onFolderExpand?: (folderPath: string) => void;
+  loadingPaths?: Set<string>;
 }
 
-export function FileTreeItem({ node, level = 0, path = '', onFileClick, onOpenInNewTab }: FileTreeItemProps) {
+export function FileTreeItem({
+  node,
+  level = 0,
+  path = '',
+  onFileClick,
+  onOpenInNewTab,
+  onFolderExpand,
+  loadingPaths,
+}: FileTreeItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const isFolder = node.type === 'folder';
   const paddingLeft = level * 12 + 8;
   const currentPath = path ? `${path}/${node.name}` : node.name;
+  const isLoading = loadingPaths?.has(currentPath) ?? false;
+  const needsLoad = node.hasChildren && node.children === undefined;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -31,16 +44,32 @@ export function FileTreeItem({ node, level = 0, path = '', onFileClick, onOpenIn
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMenu]);
 
+  const handleFolderClick = () => {
+    if (needsLoad && onFolderExpand) {
+      // Load children first, then expand
+      onFolderExpand(currentPath);
+      setIsOpen(true);
+    } else {
+      setIsOpen(!isOpen);
+    }
+  };
+
   return (
     <div className="relative group">
       <button
-        onClick={() => (isFolder ? setIsOpen(!isOpen) : onFileClick?.(node.name, currentPath))}
+        onClick={() => (isFolder ? handleFolderClick() : onFileClick?.(node.name, currentPath))}
         className="w-full flex items-center gap-1 py-1 px-2 text-sm hover:bg-accent rounded-sm text-sidebar-foreground"
         style={{ paddingLeft }}
       >
         {isFolder ? (
           <>
-            {isOpen ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+            ) : isOpen ? (
+              <ChevronDown className="w-4 h-4 shrink-0" />
+            ) : (
+              <ChevronRight className="w-4 h-4 shrink-0" />
+            )}
             {isOpen ? <FolderOpen className="w-4 h-4 shrink-0 text-yellow-500" /> : <Folder className="w-4 h-4 shrink-0 text-yellow-500" />}
           </>
         ) : (
@@ -81,7 +110,16 @@ export function FileTreeItem({ node, level = 0, path = '', onFileClick, onOpenIn
       )}
 
       {isFolder && isOpen && node.children?.map((child, idx) => (
-        <FileTreeItem key={idx} node={child} level={level + 1} path={currentPath} onFileClick={onFileClick} onOpenInNewTab={onOpenInNewTab} />
+        <FileTreeItem
+          key={idx}
+          node={child}
+          level={level + 1}
+          path={currentPath}
+          onFileClick={onFileClick}
+          onOpenInNewTab={onOpenInNewTab}
+          onFolderExpand={onFolderExpand}
+          loadingPaths={loadingPaths}
+        />
       ))}
     </div>
   );

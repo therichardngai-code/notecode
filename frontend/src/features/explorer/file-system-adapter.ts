@@ -5,6 +5,7 @@ export interface FileTreeNode {
   path: string;
   isDirectory: boolean;
   children?: FileTreeNode[];
+  hasChildren?: boolean; // true = folder has unloaded children (lazy loading)
 }
 
 export class BrowserFileSystemAdapter implements IFileSystem {

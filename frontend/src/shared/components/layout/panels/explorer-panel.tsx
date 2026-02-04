@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Plus, RefreshCw, PanelLeftClose } from 'lucide-react';
+import { Search, Plus, RefreshCw, PanelLeftClose, Eye, EyeOff } from 'lucide-react';
 import { FileTreeItem, type FileNode } from './file-tree-item';
 import { filesApi } from '@/adapters/api/files-api';
 
@@ -24,7 +24,46 @@ function convertFileTree(nodes: any[]): FileNode[] {
     name: node.name,
     type: node.type === 'directory' ? 'folder' as const : 'file' as const,
     children: node.children ? convertFileTree(node.children) : undefined,
+    hasChildren: node.hasChildren, // Preserve lazy loading flag
   }));
+}
+
+// Merge loaded children into tree at target path
+function mergeChildren(nodes: FileNode[], targetPath: string, newChildren: FileNode[]): FileNode[] {
+  return nodes.map(node => {
+    const nodePath = node.name; // At root level, path is just the name
+    if (nodePath === targetPath.split('/')[0]) {
+      // This is the target or an ancestor
+      const remainingPath = targetPath.includes('/') ? targetPath.split('/').slice(1).join('/') : '';
+      if (remainingPath === '') {
+        // This is the target folder
+        return { ...node, children: newChildren, hasChildren: undefined };
+      }
+      // Recurse into children
+      if (node.children) {
+        return {
+          ...node,
+          children: mergeChildrenRecursive(node.children, remainingPath, newChildren),
+        };
+      }
+    }
+    return node;
+  });
+}
+
+function mergeChildrenRecursive(nodes: FileNode[], targetPath: string, newChildren: FileNode[]): FileNode[] {
+  const [first, ...rest] = targetPath.split('/');
+  return nodes.map(node => {
+    if (node.name === first) {
+      if (rest.length === 0) {
+        return { ...node, children: newChildren, hasChildren: undefined };
+      }
+      if (node.children) {
+        return { ...node, children: mergeChildrenRecursive(node.children, rest.join('/'), newChildren) };
+      }
+    }
+    return node;
+  });
 }
 
 // Recursively filter file tree based on search term
@@ -67,8 +106,10 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showAllFiles, setShowAllFiles] = useState(true);
+  const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
 
-  // Load real file tree from API
+  // Load real file tree from API with depth=1 for lazy loading
   useEffect(() => {
     if (!projectId) {
       // No project ID - use mock data
@@ -81,7 +122,7 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
     setLoading(true);
     setError(null);
 
-    filesApi.getTree(projectId)
+    filesApi.getTree(projectId, '/', { depth: 1, showAll: showAllFiles })
       .then(res => {
         const children = res.tree.children || [];
         setFileTree(convertFileTree(children));
@@ -93,7 +134,27 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
       .finally(() => {
         setLoading(false);
       });
-  }, [projectId, refreshKey]);
+  }, [projectId, refreshKey, showAllFiles]);
+
+  // Handle folder expand with lazy loading
+  const handleFolderExpand = useCallback(async (folderPath: string) => {
+    if (!projectId) return;
+
+    setLoadingPaths(prev => new Set([...prev, folderPath]));
+    try {
+      const res = await filesApi.getTree(projectId, `/${folderPath}`, { depth: 1, showAll: showAllFiles });
+      const children = res.tree.children || [];
+      setFileTree(prev => mergeChildren(prev, folderPath, convertFileTree(children)));
+    } catch (err) {
+      console.error('Failed to load folder:', err);
+    } finally {
+      setLoadingPaths(prev => {
+        const next = new Set(prev);
+        next.delete(folderPath);
+        return next;
+      });
+    }
+  }, [projectId, showAllFiles]);
 
   // Memoized filtered file tree based on search
   const filteredFileTree = useMemo(
@@ -115,6 +176,17 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
         </button>
         <span className="text-sm font-medium text-foreground">Explorer</span>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowAllFiles(!showAllFiles)}
+            className="p-1.5 rounded-lg hover:bg-muted"
+            title={showAllFiles ? 'Showing all files (click to hide ignored)' : 'Hiding ignored files (click to show all)'}
+          >
+            {showAllFiles ? (
+              <Eye className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <EyeOff className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
           <button className="p-1.5 rounded-lg hover:bg-muted">
             <Plus className="w-4 h-4 text-muted-foreground" />
           </button>
@@ -152,7 +224,14 @@ export function ExplorerPanel({ onClose, onFileClick, onOpenInNewTab, projectId 
           </div>
         )}
         {!loading && filteredFileTree.map((node, idx) => (
-          <FileTreeItem key={idx} node={node} onFileClick={onFileClick} onOpenInNewTab={onOpenInNewTab} />
+          <FileTreeItem
+            key={idx}
+            node={node}
+            onFileClick={onFileClick}
+            onOpenInNewTab={onOpenInNewTab}
+            onFolderExpand={handleFolderExpand}
+            loadingPaths={loadingPaths}
+          />
         ))}
       </div>
     </div>

@@ -33,6 +33,27 @@ export const FILE_SYSTEM_CONFIG = {
   CACHE_MAX_SIZE: 100,
 };
 
+// Known text file extensions - skip binary detection for these
+const TEXT_EXTENSIONS = new Set([
+  // Markdown/Docs
+  '.md', '.mdx', '.txt', '.rst', '.adoc',
+  // Web
+  '.html', '.htm', '.css', '.scss', '.less', '.sass',
+  // JavaScript/TypeScript
+  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+  // Data
+  '.json', '.yaml', '.yml', '.xml', '.toml', '.ini', '.env',
+  // Config
+  '.gitignore', '.npmrc', '.editorconfig', '.prettierrc', '.eslintrc',
+  // Shell
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  // Other languages
+  '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift', '.c', '.cpp', '.h', '.hpp',
+  '.php', '.pl', '.r', '.sql', '.graphql', '.prisma',
+  // Vue/Svelte
+  '.vue', '.svelte',
+]);
+
 export class FileSystemService {
   private ignoreService: IgnorePatternsService;
   private cache: LRUCache<string, FileNode>;
@@ -57,7 +78,7 @@ export class FileSystemService {
       maxFiles = FILE_SYSTEM_CONFIG.MAX_FILES,
       relativePath = '/',
       loadDepth,
-      skipIgnore = false,
+      skipIgnore = true, // Default: show all files (no gitignore filtering)
     } = options;
 
     // Validate and resolve paths
@@ -143,8 +164,22 @@ export class FileSystemService {
 
   /**
    * Detect if file is binary
+   * Skips check for known text extensions (handles UTF-16 encoded text files)
    */
   private async isBinaryFile(filePath: string): Promise<boolean> {
+    // Skip binary check for known text extensions
+    const ext = path.extname(filePath).toLowerCase();
+    if (TEXT_EXTENSIONS.has(ext)) {
+      return false;
+    }
+
+    // Also check filename without extension (e.g., Dockerfile, Makefile)
+    const filename = path.basename(filePath).toLowerCase();
+    const knownTextFiles = ['dockerfile', 'makefile', 'readme', 'license', 'changelog', 'authors'];
+    if (knownTextFiles.includes(filename)) {
+      return false;
+    }
+
     try {
       // Read first 8KB
       const buffer = Buffer.alloc(8192);
