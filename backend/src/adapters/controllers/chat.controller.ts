@@ -27,6 +27,14 @@ const startChatSchema = z.object({
   disableWebTools: z.boolean().optional().default(false),
 });
 
+// Schema for continuing a chat (resume/fork)
+const continueChatSchema = z.object({
+  message: z.string().min(1),
+  mode: z.enum(['retry', 'fork']).optional().default('retry'), // retry=resume, fork=new+context
+  attachments: z.array(z.string()).optional().default([]),
+  permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions']).optional(),
+});
+
 // Dependencies container
 export interface ChatControllerDeps {
   projectRepo: IProjectRepository;
@@ -36,11 +44,27 @@ export interface ChatControllerDeps {
 }
 
 /**
- * Format timestamp for chat title
+ * Generate chat title from first message
+ * Extracts first 6 words, max 50 chars
  */
-function formatChatTimestamp(): string {
-  const now = new Date();
-  return now.toISOString().slice(0, 16).replace('T', ' ');
+function generateChatTitle(message: string): string {
+  // Clean up: remove newlines, trim whitespace
+  const cleaned = message.trim().replace(/\n+/g, ' ');
+
+  // Extract first 6 words
+  const words = cleaned.split(/\s+/).slice(0, 6).join(' ');
+
+  // Truncate if over 50 chars
+  if (words.length > 50) {
+    return words.slice(0, 47) + '...';
+  }
+
+  // Add ellipsis if message was truncated
+  if (cleaned.split(/\s+/).length > 6) {
+    return words + '...';
+  }
+
+  return words;
 }
 
 /**
@@ -89,7 +113,7 @@ export function registerChatController(
       null, // agentId
       null, // parentId
       [], // dependencies
-      `Chat ${formatChatTimestamp()}`,
+      generateChatTitle(body.message),
       body.message, // Store original message in description
       TaskStatus.IN_PROGRESS,
       TaskPriority.MEDIUM,
@@ -210,6 +234,96 @@ export function registerChatController(
     chats.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
     return reply.send({ chats });
+  });
+
+  // POST /api/projects/:projectId/chats/:chatId/continue - Continue existing chat
+  app.post('/api/projects/:projectId/chats/:chatId/continue', async (request, reply) => {
+    const { projectId, chatId } = request.params as { projectId: string; chatId: string };
+    const body = continueChatSchema.parse(request.body);
+
+    // 1. Validate chat task exists and belongs to project
+    const task = await taskRepo.findById(chatId);
+    if (!task) {
+      return reply.status(404).send({ error: 'Chat not found' });
+    }
+
+    if (task.projectId !== projectId) {
+      return reply.status(403).send({ error: 'Chat does not belong to this project' });
+    }
+
+    if (task.workflowStage !== 'chat') {
+      return reply.status(400).send({ error: 'Task is not a chat' });
+    }
+
+    // 2. Check for running session - block if active
+    const existingSessions = await sessionRepo.findByTaskId(chatId);
+    const runningSession = existingSessions.find(s => s.status === 'running');
+    if (runningSession) {
+      return reply.status(409).send({
+        error: 'Chat already has a running session',
+        sessionId: runningSession.id,
+      });
+    }
+
+    // 3. Separate attachments into files and images
+    const fileAttachments: string[] = [];
+    const imageAttachments: string[] = [];
+
+    for (const attachment of body.attachments) {
+      if (isImagePath(attachment)) {
+        imageAttachments.push(attachment);
+      } else {
+        fileAttachments.push(attachment);
+      }
+    }
+
+    // 4. Update task context files if new attachments provided
+    if (fileAttachments.length > 0) {
+      const existingFiles = new Set(task.contextFiles);
+      for (const file of fileAttachments) {
+        existingFiles.add(file);
+      }
+      task.contextFiles = Array.from(existingFiles);
+      await taskRepo.save(task);
+    }
+
+    // 5. Build prompt with image attachments if any
+    let prompt = body.message;
+    if (imageAttachments.length > 0) {
+      prompt += `\n\n<attached-images>\n${imageAttachments.map(img => `@${img}`).join('\n')}\n</attached-images>`;
+    }
+
+    // 6. Start session with resume mode
+    const result = await startSessionUseCase.execute({
+      taskId: chatId,
+      initialPrompt: prompt,
+      permissionMode: body.permissionMode,
+      mode: body.mode, // 'retry' or 'fork'
+    });
+
+    if (!result.success) {
+      return reply.status(400).send({ error: result.error });
+    }
+
+    // 7. Return response (same format as start chat)
+    return reply.status(200).send({
+      task: {
+        id: task.id,
+        projectId: task.projectId,
+        title: task.title,
+        workflowStage: task.workflowStage,
+        createdAt: task.createdAt,
+      },
+      session: {
+        id: result.session!.id,
+        taskId: result.session!.taskId,
+        status: result.session!.status,
+        providerSessionId: result.session!.providerSessionId,
+        provider: result.session!.provider,
+        createdAt: result.session!.createdAt,
+      },
+      wsUrl: `/ws/session/${result.session!.id}`,
+    });
   });
 
   // DELETE /api/projects/:projectId/chats/:chatId - Delete a chat

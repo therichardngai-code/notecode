@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 interface UIState {
   // Theme
@@ -39,6 +40,10 @@ interface UIState {
   openFileAsTab: (path: string, content: string) => void;
   clearPendingFileTab: () => void;
 
+  // Pending Chat - for navigating to AI Chat with specific chat
+  pendingChatId: string | null;
+  setPendingChatId: (chatId: string | null) => void;
+
   // Modals
   activeModal: string | null;
   openModal: (modalId: string) => void;
@@ -49,50 +54,67 @@ interface UIState {
   setLoading: (loading: boolean) => void;
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  theme: 'system',
-  setTheme: (theme) => set({ theme }),
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      theme: 'system',
+      setTheme: (theme) => set({ theme }),
 
-  leftPanelOpen: true,
-  rightPanelOpen: false,
-  toggleLeftPanel: () => set((state) => ({ leftPanelOpen: !state.leftPanelOpen })),
-  toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
+      leftPanelOpen: true,
+      rightPanelOpen: false,
+      toggleLeftPanel: () => set((state) => ({ leftPanelOpen: !state.leftPanelOpen })),
+      toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
 
-  // Active Project
-  activeProjectId: null,
-  setActiveProjectId: (projectId) => set({ activeProjectId: projectId }),
+      // Active Project
+      activeProjectId: null,
+      setActiveProjectId: (projectId) => set({ activeProjectId: projectId }),
 
-  // Floating Panels
-  isNewTaskPanelOpen: false,
-  isSettingsPanelOpen: false,
-  openNewTaskPanel: (projectId) => set((state) => ({
-    isNewTaskPanelOpen: true,
-    activeProjectId: projectId ?? state.activeProjectId,
-  })),
-  closeNewTaskPanel: () => set({ isNewTaskPanelOpen: false }),
-  openSettingsPanel: () => set({ isSettingsPanelOpen: true }),
-  closeSettingsPanel: () => set({ isSettingsPanelOpen: false }),
+      // Floating Panels
+      isNewTaskPanelOpen: false,
+      isSettingsPanelOpen: false,
+      openNewTaskPanel: (projectId) => set((state) => ({
+        isNewTaskPanelOpen: true,
+        activeProjectId: projectId ?? state.activeProjectId,
+      })),
+      closeNewTaskPanel: () => set({ isNewTaskPanelOpen: false }),
+      openSettingsPanel: () => set({ isSettingsPanelOpen: true }),
+      closeSettingsPanel: () => set({ isSettingsPanelOpen: false }),
 
-  // Task Detail Panel
-  selectedTaskId: null,
-  isTaskDetailPanelOpen: false,
-  openTaskDetailPanel: (taskId) => set({ selectedTaskId: taskId, isTaskDetailPanelOpen: true }),
-  closeTaskDetailPanel: () => set({ selectedTaskId: null, isTaskDetailPanelOpen: false }),
+      // Task Detail Panel
+      selectedTaskId: null,
+      isTaskDetailPanelOpen: false,
+      openTaskDetailPanel: (taskId) => set({ selectedTaskId: taskId, isTaskDetailPanelOpen: true }),
+      closeTaskDetailPanel: () => set({ selectedTaskId: null, isTaskDetailPanelOpen: false }),
 
-  // Task Tab (Full View)
-  pendingTaskTab: null,
-  openTaskAsTab: (taskId, title) => set({ pendingTaskTab: { taskId, title }, isTaskDetailPanelOpen: false }),
-  clearPendingTaskTab: () => set({ pendingTaskTab: null }),
+      // Task Tab (Full View)
+      pendingTaskTab: null,
+      openTaskAsTab: (taskId, title) => set({ pendingTaskTab: { taskId, title }, isTaskDetailPanelOpen: false }),
+      clearPendingTaskTab: () => set({ pendingTaskTab: null }),
 
-  // File Preview Tab
-  pendingFileTab: null,
-  openFileAsTab: (path, content) => set({ pendingFileTab: { path, content } }),
-  clearPendingFileTab: () => set({ pendingFileTab: null }),
+      // File Preview Tab
+      pendingFileTab: null,
+      openFileAsTab: (path, content) => set({ pendingFileTab: { path, content } }),
+      clearPendingFileTab: () => set({ pendingFileTab: null }),
 
-  activeModal: null,
-  openModal: (modalId) => set({ activeModal: modalId }),
-  closeModal: () => set({ activeModal: null }),
+      // Pending Chat
+      pendingChatId: null,
+      setPendingChatId: (chatId) => set({ pendingChatId: chatId }),
 
-  isLoading: false,
-  setLoading: (loading) => set({ isLoading: loading }),
-}));
+      activeModal: null,
+      openModal: (modalId) => set({ activeModal: modalId }),
+      closeModal: () => set({ activeModal: null }),
+
+      isLoading: false,
+      setLoading: (loading) => set({ isLoading: loading }),
+    }),
+    {
+      name: 'notecode-ui-store',
+      // Only persist essential UI state, not transient panels/modals
+      partialize: (state) => ({
+        activeProjectId: state.activeProjectId,
+        theme: state.theme,
+        leftPanelOpen: state.leftPanelOpen,
+      }),
+    }
+  )
+);

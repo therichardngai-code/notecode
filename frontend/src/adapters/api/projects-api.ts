@@ -62,6 +62,14 @@ export interface StartChatRequest {
   disableWebTools?: boolean;
 }
 
+// Continue Chat request (resume existing conversation)
+export interface ContinueChatRequest {
+  message: string;
+  mode?: 'retry' | 'fork';
+  attachments?: string[];
+  permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions';
+}
+
 export interface ChatTask {
   id: string;
   projectId: string;
@@ -189,6 +197,13 @@ export const projectsApi = {
    */
   deleteChat: (projectId: string, chatId: string) =>
     apiClient.delete<{ success: boolean }>(`/api/projects/${projectId}/chats/${chatId}`),
+
+  /**
+   * Continue existing chat session (resume or fork)
+   * @param mode - 'retry' resumes same conversation, 'fork' creates new branch with context
+   */
+  continueChat: (projectId: string, chatId: string, data: ContinueChatRequest) =>
+    apiClient.post<StartChatResponse>(`/api/projects/${projectId}/chats/${chatId}/continue`, data),
 
   // ============================================
   // FILE UPLOAD APIs

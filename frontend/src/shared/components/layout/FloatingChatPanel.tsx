@@ -27,8 +27,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useChatSession, type ChatMessage } from '@/shared/hooks';
-// ToolUseBlock import removed - not used in this component
-import { projectsApi, type Project, type Chat } from '@/adapters/api';
+import { projectsApi, sessionsApi, type Project, type Chat, type Message } from '@/adapters/api';
+import { useUIStore } from '@/shared/stores/ui-store';
 
 // Chat history type (shared with AIChatView)
 interface ChatHistory {
@@ -36,6 +36,26 @@ interface ChatHistory {
   title: string;
   date: Date;
   messages: ChatMessage[];
+}
+
+// Convert backend Message to ChatMessage format
+function convertMessageToChatMessage(msg: Message): ChatMessage {
+  let content = '';
+  if (Array.isArray(msg.blocks)) {
+    for (const block of msg.blocks as Array<{ type?: string; text?: string; content?: string }>) {
+      if (block.type === 'text' && block.text) {
+        content += block.text;
+      } else if (typeof block.content === 'string') {
+        content += block.content;
+      }
+    }
+  }
+  return {
+    id: msg.id,
+    role: msg.role as 'user' | 'assistant',
+    content,
+    timestamp: new Date(msg.timestamp),
+  };
 }
 
 // Suggestion button component
@@ -61,29 +81,34 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
   const [selectedChat, setSelectedChat] = useState<ChatHistory | null>(null);
   const [input, setInput] = useState('');
   const [chatTitle, setChatTitle] = useState('New AI chat');
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [historicalMessages, setHistoricalMessages] = useState<ChatMessage[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Project selection state
+  // Project selection state - sync with global store
+  const activeProjectId = useUIStore((state) => state.activeProjectId);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(activeProjectId);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
 
   // Chat history state
   const [chatHistory, setChatHistory] = useState<Chat[]>([]);
 
-  // Load projects on mount
+  // Load projects on mount and sync with active project
   useEffect(() => {
     projectsApi.getRecent(10).then(res => {
       setProjects(res.projects);
       if (res.projects.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(res.projects[0].id);
+        // Use active project if available and exists in list, else first project
+        const projectExists = activeProjectId && res.projects.some(p => p.id === activeProjectId);
+        setSelectedProjectId(projectExists ? activeProjectId : res.projects[0].id);
       }
     }).catch(console.error);
-  }, []);
+  }, [activeProjectId]);
 
   // Load chat history when project changes
   useEffect(() => {
@@ -97,16 +122,25 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
   const {
     status: _chatStatus, // Reserved for status display
     messages,
+    currentTask,
     isStreaming,
     currentToolUse,
     startChat,
-    sendFollowUp,
+    continueChat,
+    sendFollowUp: _sendFollowUp, // Not used - use continueChat for follow-ups
     cancelStream,
     resetChat,
   } = useChatSession({
     projectId: selectedProjectId,
     onError: (msg) => console.error('Chat error:', msg),
   });
+
+  // Sync currentChatId from currentTask (set after startChat)
+  useEffect(() => {
+    if (currentTask?.id && !currentChatId) {
+      setCurrentChatId(currentTask.id);
+    }
+  }, [currentTask?.id, currentChatId]);
 
   // Expanded commands state (for tool input details)
   const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
@@ -289,16 +323,39 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
   const handleNewChat = () => {
     setSelectedChat(null);
     resetChat();
+    setHistoricalMessages([]);
+    setCurrentChatId(null);
     setChatTitle('New AI chat');
     setShowHistory(false);
     setAttachedFiles([]);
   };
 
-  // Chat history selection - implementation reserved for future
+  // Load historical messages when selecting from chat history
+  const handleLoadChat = async (chat: Chat) => {
+    setChatTitle(chat.title);
+    setCurrentChatId(chat.id);
+    setShowHistory(false);
+    resetChat();
+
+    if (chat.lastSession?.id) {
+      try {
+        const res = await sessionsApi.getMessages(chat.lastSession.id);
+        const converted = res.messages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(convertMessageToChatMessage);
+        setHistoricalMessages(converted);
+      } catch (err) {
+        console.error('Failed to load chat messages:', err);
+        setHistoricalMessages([]);
+      }
+    } else {
+      setHistoricalMessages([]);
+    }
+  };
 
   const handleOpenFullChat = () => {
     setIsOpen(false);
-    onGoToFullChat?.(selectedChat?.id);
+    onGoToFullChat?.(currentChatId ?? undefined);
   };
 
   const sendMessage = async (content: string) => {
@@ -308,8 +365,11 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
       return;
     }
 
-    // Set chat title from first message
-    if (messages.length === 0) {
+    // Check if this is a brand new chat (no messages at all)
+    const isNewChat = messages.length === 0 && historicalMessages.length === 0;
+
+    if (isNewChat) {
+      // Set chat title from first message
       setChatTitle(content.trim().slice(0, 25) + (content.length > 25 ? '...' : ''));
 
       // Start new chat session via API
@@ -320,9 +380,14 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
         permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
         disableWebTools: !webSearchEnabled,
       });
-    } else {
-      // Send follow-up via WebSocket
-      sendFollowUp(content.trim());
+    } else if (currentChatId) {
+      // Continue existing chat - creates new session to resume conversation
+      await continueChat(currentChatId, {
+        message: content.trim(),
+        mode: 'retry', // Resume same conversation with context
+        attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
+        permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
+      });
     }
 
     setInput('');
@@ -351,7 +416,9 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
     return () => document.removeEventListener('mousedown', h);
   }, [showProjectDropdown]);
 
-  const currentMessages = selectedChat ? selectedChat.messages : messages;
+  // Combine historical and active messages for display
+  const allMessages = [...historicalMessages, ...messages];
+  const currentMessages = selectedChat ? selectedChat.messages : allMessages;
   const hasMessages = currentMessages.length > 0;
 
   return (
@@ -409,7 +476,7 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
                   chatHistory.map((chat) => (
                     <button
                       key={chat.id}
-                      onClick={() => { setChatTitle(chat.title); setShowHistory(false); }}
+                      onClick={() => handleLoadChat(chat)}
                       className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted transition-colors text-left"
                     >
                       <span className="text-sm text-foreground truncate">{chat.title}</span>
@@ -603,36 +670,43 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
             )}
             {/* Project picker + Add context */}
             <div className="flex items-center gap-2 mb-2">
-              {/* Project Picker */}
-              <div className="relative" ref={projectDropdownRef}>
-                <button
-                  onClick={() => setShowProjectDropdown(!showProjectDropdown)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors max-w-[140px]"
-                >
+              {/* Project Picker - read-only when chat has messages */}
+              {hasMessages ? (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-background text-muted-foreground max-w-[140px]">
                   <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{projects.find(p => p.id === selectedProjectId)?.name || 'Select project'}</span>
-                  <ChevronDown className="w-3 h-3 shrink-0" />
-                </button>
-                {showProjectDropdown && (
-                  <div className="absolute bottom-full left-0 mb-1 w-48 bg-popover border border-border rounded-lg shadow-lg py-1 z-30 max-h-48 overflow-y-auto">
-                    <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Projects</div>
-                    {projects.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">No projects found</div>
-                    ) : (
-                      projects.map(p => (
-                        <button
-                          key={p.id}
-                          onClick={() => { setSelectedProjectId(p.id); setShowProjectDropdown(false); }}
-                          className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors hover:bg-accent", selectedProjectId === p.id && "text-primary font-medium")}
-                        >
-                          <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{p.name}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                  <span className="truncate">{projects.find(p => p.id === selectedProjectId)?.name || 'No project'}</span>
+                </div>
+              ) : (
+                <div className="relative" ref={projectDropdownRef}>
+                  <button
+                    onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors max-w-[140px]"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{projects.find(p => p.id === selectedProjectId)?.name || 'Select project'}</span>
+                    <ChevronDown className="w-3 h-3 shrink-0" />
+                  </button>
+                  {showProjectDropdown && (
+                    <div className="absolute bottom-full left-0 mb-1 w-48 bg-popover border border-border rounded-lg shadow-lg py-1 z-30 max-h-48 overflow-y-auto">
+                      <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Projects</div>
+                      {projects.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">No projects found</div>
+                      ) : (
+                        projects.map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => { setSelectedProjectId(p.id); setShowProjectDropdown(false); }}
+                            className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors hover:bg-accent", selectedProjectId === p.id && "text-primary font-medium")}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{p.name}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Add context button */}
               <button
                 onClick={() => { setInput(input + '@'); setShowContextPicker(true); chatInputRef.current?.focus(); }}

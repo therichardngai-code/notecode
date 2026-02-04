@@ -56,14 +56,16 @@ export class FileSystemService {
       maxDepth = FILE_SYSTEM_CONFIG.MAX_DEPTH,
       maxFiles = FILE_SYSTEM_CONFIG.MAX_FILES,
       relativePath = '/',
+      loadDepth,
+      skipIgnore = false,
     } = options;
 
     // Validate and resolve paths
     const resolvedProjectPath = path.resolve(projectPath);
     const targetPath = PathValidator.validate(resolvedProjectPath, relativePath);
 
-    // Check cache
-    const cacheKey = `tree:${targetPath}:${maxDepth}:${maxFiles}`;
+    // Check cache (include loadDepth and skipIgnore in key)
+    const cacheKey = `tree:${targetPath}:${maxDepth}:${maxFiles}:${loadDepth}:${skipIgnore}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
       return cached;
@@ -78,12 +80,14 @@ export class FileSystemService {
     // Load ignore patterns
     const ignorePatterns = await this.ignoreService.loadPatterns(resolvedProjectPath);
 
-    // Build tree
+    // Build tree with lazy loading support
     const builder = new FileTreeBuilder(maxDepth, maxFiles);
     const tree = await builder.buildTree(
       targetPath,
       resolvedProjectPath,
-      ignorePatterns
+      ignorePatterns,
+      0, // start at depth 0
+      { loadDepth, skipIgnore }
     );
 
     // Cache result

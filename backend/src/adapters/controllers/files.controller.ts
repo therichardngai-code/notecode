@@ -20,11 +20,16 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
 
   /**
    * GET /api/projects/:projectId/files/tree
-   * Get file tree for project
+   * Get file tree for project with lazy loading support
+   *
+   * Query params:
+   * - path: Root path to load (default: /)
+   * - depth: Depth to load (1 = immediate children only, for lazy loading)
+   * - showAll: Skip ignore patterns (default: false)
    */
   fastify.get<{
     Params: { projectId: string };
-    Querystring: { path?: string };
+    Querystring: { path?: string; depth?: string; showAll?: string };
   }>(
     '/projects/:projectId/files/tree',
     {
@@ -39,7 +44,9 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
         querystring: {
           type: 'object',
           properties: {
-            path: { type: 'string', default: '/', description: 'Root path' }
+            path: { type: 'string', default: '/', description: 'Root path to load' },
+            depth: { type: 'string', description: 'Depth to load (1 = immediate children only)' },
+            showAll: { type: 'string', description: 'Show all files (skip .gitignore)' }
           }
         },
         response: {
@@ -52,7 +59,8 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
                   name: { type: 'string' },
                   path: { type: 'string' },
                   type: { type: 'string', enum: ['file', 'directory'] },
-                  children: { type: 'array' }
+                  children: { type: 'array' },
+                  hasChildren: { type: 'boolean' }
                 }
               }
             }
@@ -68,7 +76,15 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
     },
     async (request, reply) => {
       const { projectId } = request.params;
-      const { path: relativePath = '/' } = request.query;
+      const {
+        path: relativePath = '/',
+        depth,
+        showAll
+      } = request.query;
+
+      // Parse depth (undefined = load all, number = load N levels)
+      const loadDepth = depth ? parseInt(depth, 10) : undefined;
+      const skipIgnore = showAll === 'true';
 
       try {
         // Find project
@@ -87,9 +103,11 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.code(404).send({ error: 'Project path not found' });
         }
 
-        // Build file tree
+        // Build file tree with lazy loading options
         const tree = await fileSystemService.buildFileTree(project.path, {
           relativePath,
+          loadDepth,
+          skipIgnore,
         });
 
         return reply.send({ tree });
@@ -207,6 +225,94 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         return reply.code(500).send({ error: 'Failed to read file content' });
+      }
+    }
+  );
+
+  /**
+   * PUT /api/projects/:projectId/files/content
+   * Save file content
+   */
+  fastify.put<{
+    Params: { projectId: string };
+    Body: { path: string; content: string };
+  }>(
+    '/projects/:projectId/files/content',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['projectId'],
+          properties: {
+            projectId: { type: 'string', description: 'Project ID' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['path', 'content'],
+          properties: {
+            path: { type: 'string', description: 'File path relative to project' },
+            content: { type: 'string', description: 'File content to save' }
+          }
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              path: { type: 'string' },
+              size: { type: 'number' }
+            }
+          },
+          400: { type: 'object', properties: { error: { type: 'string' } } },
+          403: { type: 'object', properties: { error: { type: 'string' } } },
+          404: { type: 'object', properties: { error: { type: 'string' } } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { projectId } = request.params;
+      const { path: filePath, content } = request.body;
+
+      if (!filePath) {
+        return reply.code(400).send({ error: 'File path is required' });
+      }
+
+      try {
+        // Find project
+        const project = await projectRepo.findById(projectId);
+        if (!project) {
+          return reply.code(404).send({ error: 'Project not found' });
+        }
+
+        // Validate path (prevents traversal attacks)
+        const absolutePath = PathValidator.validate(project.path, filePath);
+
+        // Write file content
+        await fs.writeFile(absolutePath, content, 'utf-8');
+        const stats = await fs.stat(absolutePath);
+
+        return reply.send({
+          success: true,
+          path: filePath,
+          size: stats.size
+        });
+      } catch (error: any) {
+        fastify.log.error('File save error:', error);
+
+        if (error instanceof PathTraversalError) {
+          return reply.code(403).send({ error: 'Invalid path - access denied' });
+        }
+
+        if (error.code === 'EACCES') {
+          return reply.code(403).send({ error: 'Permission denied' });
+        }
+
+        if (error.code === 'ENOENT') {
+          return reply.code(404).send({ error: 'Directory not found' });
+        }
+
+        return reply.code(500).send({ error: 'Failed to save file' });
       }
     }
   );

@@ -17,11 +17,14 @@ export function useFloatingPanels() {
     }
   }, [isSettingsPanelOpen, closeSettingsPanel, openSettingsPanel]);
 
+  const { setPendingChatId } = useUIStore();
+
   const handleGoToFullChat = useCallback(
-    (_chatId?: string) => {
+    (chatId?: string) => {
+      if (chatId) setPendingChatId(chatId);
       navigate({ to: '/chat' });
     },
-    [navigate]
+    [navigate, setPendingChatId]
   );
 
   const handleOpenFullSettings = useCallback(() => {

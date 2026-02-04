@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { projectsApi, type StartChatRequest, type ChatTask } from '@/adapters/api/projects-api';
+import { projectsApi, type StartChatRequest, type ContinueChatRequest, type ChatTask } from '@/adapters/api/projects-api';
 import { type Session, getSessionWebSocketUrl } from '@/adapters/api/sessions-api';
 import type { OutputMessage, StatusMessage, ServerMessage, ToolUseBlock } from './use-session-websocket';
 
@@ -185,6 +185,7 @@ export interface UseChatSessionReturn {
 
   // Actions
   startChat: (request: Omit<StartChatRequest, 'message'> & { message: string }) => Promise<void>;
+  continueChat: (chatId: string, request: Omit<ContinueChatRequest, 'message'> & { message: string }) => Promise<void>;
   sendFollowUp: (content: string) => void;
   cancelStream: () => void;
   resetChat: () => void;
@@ -208,6 +209,8 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
   const wsRef = useRef<WebSocket | null>(null);
   const currentAssistantMessageRef = useRef<string>('');
   const currentCommandsRef = useRef<ToolCommand[]>([]);
+  // Track messageIds to prevent duplicate message creation (aligned with Task Mode)
+  const streamedMessageIds = useRef<Set<string>>(new Set());
 
   // Cleanup WebSocket
   const cleanupWs = useCallback(() => {
@@ -251,29 +254,48 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
             let text = '';
             const tools: ToolCommand[] = [];
 
-            // Handle array format FIRST (WebSocket format: [{ type: 'text', content: '...' }])
-            if (Array.isArray(data)) {
-              const { text: t, tools: extractedTools } = processBlocks(data);
-              text = t;
-              tools.push(...extractedTools);
-            }
-            // Handle object formats
-            else if (typeof data === 'object' && data !== null) {
+            // Handle delta streaming (new backend format - aligned with Task Mode)
+            if (typeof data === 'object' && data !== null) {
               const dataObj = data as Record<string, unknown>;
 
-              // Handle direct tool_use events (WebSocket format: { type: 'tool_use', tool: {...} })
-              if (dataObj.type === 'tool_use' && (dataObj as { tool?: { name: string; input: Record<string, unknown> } }).tool) {
+              // Handle delta streaming (typewriter effect)
+              if (dataObj.type === 'delta' && typeof dataObj.text === 'string') {
+                text = dataObj.text;
+              }
+              // Handle stream_event for real-time streaming
+              else if (dataObj.type === 'stream_event') {
+                const content = dataObj.content as Record<string, unknown> | undefined;
+                const event = content?.event as Record<string, unknown> | undefined;
+                if (event?.type === 'content_block_delta') {
+                  const delta = event.delta as Record<string, unknown> | undefined;
+                  if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+                    text = delta.text;
+                  }
+                }
+              }
+              // Handle direct tool_use events
+              else if (dataObj.type === 'tool_use' && (dataObj as { tool?: { name: string; input: Record<string, unknown> } }).tool) {
                 const toolData = (dataObj as { tool: { name: string; input: Record<string, unknown> } }).tool;
                 tools.push({ cmd: toolData.name, status: 'success', input: toolData.input || {} });
               }
-              // Handle message type with content (WebSocket format: { type: 'message', content: [...] })
+              // Handle message type with content
               else if (dataObj.type === 'message' && dataObj.content) {
                 text = extractTextFromContent(dataObj.content);
                 const extractedTools = extractToolUseBlocks(dataObj.content);
                 tools.push(...extractedTools);
               }
-              // Fallback: try processBlocks on data.content or data itself
-              else {
+              // Handle text type (legacy)
+              else if (dataObj.type === 'text' && typeof dataObj.content === 'string') {
+                const content = dataObj.content;
+                if (content.startsWith('{') && content.includes('"type":"message"')) {
+                  text = extractTextFromContent(content);
+                  tools.push(...extractToolUseBlocks(content));
+                } else {
+                  text = content;
+                }
+              }
+              // Fallback: try processBlocks
+              else if (dataObj.content || !dataObj.type) {
                 const dataToProcess = dataObj.content ?? dataObj;
                 if (dataToProcess) {
                   const { text: t, tools: extractedTools } = processBlocks(dataToProcess);
@@ -281,6 +303,12 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
                   tools.push(...extractedTools);
                 }
               }
+            }
+            // Handle array format
+            else if (Array.isArray(data)) {
+              const { text: t, tools: extractedTools } = processBlocks(data);
+              text = t;
+              tools.push(...extractedTools);
             }
 
             // Update state with extracted text and tools
@@ -309,22 +337,34 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
           case 'status': {
             const statusMsg = message as StatusMessage;
             if (statusMsg.status === 'running') {
+              // Only create new assistant message if NOT already streaming
+              // This prevents duplicate messages when backend sends multiple 'running' events
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                // If already have a streaming assistant message, don't create another
+                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.isStreaming) {
+                  return prev;
+                }
+                // Create new assistant message - use any accumulated content from early output events
+                const msgId = `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                return [
+                  ...prev,
+                  {
+                    id: msgId,
+                    role: 'assistant',
+                    content: currentAssistantMessageRef.current, // Use accumulated content if any
+                    timestamp: new Date(),
+                    isStreaming: true,
+                    commands: currentCommandsRef.current.length > 0 ? [...currentCommandsRef.current] : undefined,
+                  }
+                ];
+              });
+
               setIsStreaming(true);
               setStatus('streaming');
-              // Reset for new streaming message
-              currentAssistantMessageRef.current = '';
-              currentCommandsRef.current = [];
+              // Only reset refs if empty - preserve content from early output events
+              // Refs will be reset on next follow-up or new chat
               setCurrentToolUse(null);
-              setMessages(prev => [
-                ...prev,
-                {
-                  id: Date.now().toString(),
-                  role: 'assistant',
-                  content: '',
-                  timestamp: new Date(),
-                  isStreaming: true,
-                }
-              ]);
             } else if (statusMsg.status === 'completed' || statusMsg.status === 'failed' || statusMsg.status === 'cancelled') {
               setIsStreaming(false);
               setStatus('connected');
@@ -365,10 +405,13 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     }
 
     setStatus('starting');
+    // Reset refs for fresh response
+    currentAssistantMessageRef.current = '';
+    currentCommandsRef.current = [];
 
-    // Add user message immediately
+    // Add user message immediately with unique ID
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       role: 'user',
       content: request.message,
       timestamp: new Date(),
@@ -390,6 +433,45 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     }
   }, [projectId, connectWebSocket, onError]);
 
+  // Continue existing chat session
+  const continueChat = useCallback(async (
+    chatId: string,
+    request: Omit<ContinueChatRequest, 'message'> & { message: string }
+  ) => {
+    if (!projectId) {
+      onError?.('No project selected');
+      return;
+    }
+
+    setStatus('starting');
+    // Reset refs for fresh response
+    currentAssistantMessageRef.current = '';
+    currentCommandsRef.current = [];
+
+    // Add user message immediately with unique ID
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      role: 'user',
+      content: request.message,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      // Call Continue Chat API
+      const response = await projectsApi.continueChat(projectId, chatId, request);
+
+      setCurrentTask(response.task);
+      setCurrentSession(response.session);
+
+      // Connect WebSocket for streaming
+      connectWebSocket(response.session.id);
+    } catch (err) {
+      setStatus('error');
+      onError?.(err instanceof Error ? err.message : 'Failed to continue chat');
+    }
+  }, [projectId, connectWebSocket, onError]);
+
   // Send follow-up message (via WebSocket)
   const sendFollowUp = useCallback((content: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -397,9 +479,13 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
       return;
     }
 
-    // Add user message
+    // Reset refs BEFORE sending - start fresh for new response
+    currentAssistantMessageRef.current = '';
+    currentCommandsRef.current = [];
+
+    // Add user message with unique ID
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       role: 'user',
       content,
       timestamp: new Date(),
@@ -431,6 +517,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     setCurrentToolUse(null);
     currentAssistantMessageRef.current = '';
     currentCommandsRef.current = [];
+    streamedMessageIds.current.clear();
   }, [cleanupWs]);
 
   // Cleanup on unmount
@@ -446,6 +533,7 @@ export function useChatSession(options: UseChatSessionOptions): UseChatSessionRe
     isStreaming,
     currentToolUse,
     startChat,
+    continueChat,
     sendFollowUp,
     cancelStream,
     resetChat,

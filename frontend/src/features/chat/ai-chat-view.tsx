@@ -9,10 +9,7 @@ import {
   ListTodo,
   FileSearch,
   CheckCircle,
-  Copy,
   Plus,
-  ThumbsUp,
-  ThumbsDown,
   ChevronRight,
   ChevronDown,
   Square,
@@ -32,7 +29,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useChatSession, type ChatMessage } from '@/shared/hooks';
-import { projectsApi, type Project, type Chat } from '@/adapters/api';
+import { projectsApi, sessionsApi, type Project, type Chat, type Message } from '@/adapters/api';
+import { useUIStore } from '@/shared/stores/ui-store';
 
 interface ChatHistoryItem {
   id: string;
@@ -119,6 +117,27 @@ function formatDate(date: Date) {
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
+// Convert backend Message to ChatMessage format
+function convertMessageToChatMessage(msg: Message): ChatMessage {
+  // Extract text content from blocks
+  let content = '';
+  if (Array.isArray(msg.blocks)) {
+    for (const block of msg.blocks as Array<{ type?: string; text?: string; content?: string }>) {
+      if (block.type === 'text' && block.text) {
+        content += block.text;
+      } else if (typeof block.content === 'string') {
+        content += block.content;
+      }
+    }
+  }
+  return {
+    id: msg.id,
+    role: msg.role as 'user' | 'assistant',
+    content,
+    timestamp: new Date(msg.timestamp),
+  };
+}
+
 // Components
 function QuickActionCard({ icon: Icon, label, onClick, delay = 0 }: { icon: React.ElementType; label: string; onClick?: () => void; delay?: number }) {
   return (
@@ -153,20 +172,6 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         </button>
       )}
       <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{message.content}</div>
-      <div className="flex items-center gap-1 mt-3">
-        <button className="p-1.5 rounded hover:bg-muted transition-colors" title="Copy">
-          <Copy className="w-4 h-4 text-muted-foreground" />
-        </button>
-        <button className="p-1.5 rounded hover:bg-muted transition-colors" title="Add to page">
-          <Plus className="w-4 h-4 text-muted-foreground" />
-        </button>
-        <button className="p-1.5 rounded hover:bg-muted transition-colors" title="Good response">
-          <ThumbsUp className="w-4 h-4 text-muted-foreground" />
-        </button>
-        <button className="p-1.5 rounded hover:bg-muted transition-colors" title="Bad response">
-          <ThumbsDown className="w-4 h-4 text-muted-foreground" />
-        </button>
-      </div>
     </div>
   );
 }
@@ -180,11 +185,7 @@ function TypingIndicator() {
   );
 }
 
-interface AIChatViewProps {
-  initialChatId?: string;
-}
-
-export function AIChatView({ initialChatId }: AIChatViewProps) {
+export function AIChatView() {
   const [input, setInput] = useState('');
   const [_selectedMode, _setSelectedMode] = useState('auto'); // TODO: Reserved for future mode selection
   const [showQuickActions, setShowQuickActions] = useState(true);
@@ -194,27 +195,32 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
   const [showHistoryPanel, setShowHistoryPanel] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [chatHistory, setChatHistory] = useState<Chat[]>([]);
+  const [historicalMessages, setHistoricalMessages] = useState<ChatMessage[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // inputRef removed - not currently needed
   const dropdownRef = useRef<HTMLDivElement>(null);
   const historyPanelRef = useRef<HTMLDivElement>(null);
 
-  // Project selection state
+  // Project selection state - default to active project from global store
+  const activeProjectId = useUIStore((state) => state.activeProjectId);
+  const pendingChatId = useUIStore((state) => state.pendingChatId);
+  const setPendingChatId = useUIStore((state) => state.setPendingChatId);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(activeProjectId);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load projects on mount
+  // Load projects on mount and sync with active project
   useEffect(() => {
     projectsApi.getRecent(10).then(res => {
       setProjects(res.projects);
       if (res.projects.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(res.projects[0].id);
+        // Use active project if available and exists in list, else first project
+        const projectExists = activeProjectId && res.projects.some(p => p.id === activeProjectId);
+        setSelectedProjectId(projectExists ? activeProjectId : res.projects[0].id);
       }
     }).catch(console.error);
-  }, []);
+  }, [activeProjectId]);
 
   // Load chat history when project changes
   useEffect(() => {
@@ -228,15 +234,24 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
   const {
     status: _chatStatus, // Reserved for status indicator
     messages,
+    currentTask,
     isStreaming,
     startChat,
-    sendFollowUp,
+    continueChat,
+    sendFollowUp: _sendFollowUp, // Not used - use continueChat for follow-ups
     cancelStream,
     resetChat,
   } = useChatSession({
     projectId: selectedProjectId,
     onError: (msg) => console.error('Chat error:', msg),
   });
+
+  // Sync currentChatId from currentTask (set after startChat)
+  useEffect(() => {
+    if (currentTask?.id && !currentChatId) {
+      setCurrentChatId(currentTask.id);
+    }
+  }, [currentTask?.id, currentChatId]);
 
   // Chat input options state (aligned with TaskDetail AI Session)
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -258,19 +273,39 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
   const projectFiles = ['src/index.ts', 'src/app.tsx', 'src/components/Button.tsx', 'package.json', 'tsconfig.json'];
   const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
 
-  // Load initial chat from history
+  // Load pending chat from store (set by FloatingChatPanel)
   useEffect(() => {
-    if (initialChatId && chatHistory.length > 0) {
-      const chat = chatHistory.find((c) => c.id === initialChatId);
+    if (pendingChatId && chatHistory.length > 0) {
+      const chat = chatHistory.find((c) => c.id === pendingChatId);
       if (chat) {
         setIsAnimating(true);
         setChatTitle(chat.title);
         setCurrentChatId(chat.id);
         setShowQuickActions(false);
+        resetChat();
+        setPendingChatId(null); // Clear after consuming
+
+        // Load historical messages from backend
+        if (chat.lastSession?.id) {
+          sessionsApi.getMessages(chat.lastSession.id)
+            .then(res => {
+              const converted = res.messages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(convertMessageToChatMessage);
+              setHistoricalMessages(converted);
+            })
+            .catch(err => {
+              console.error('Failed to load chat messages:', err);
+              setHistoricalMessages([]);
+            });
+        } else {
+          setHistoricalMessages([]);
+        }
+
         setTimeout(() => setIsAnimating(false), 600);
       }
     }
-  }, [initialChatId]);
+  }, [pendingChatId, chatHistory, resetChat, setPendingChatId]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -387,12 +422,14 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
       return;
     }
 
-    // Set chat title from first message
-    if (messages.length === 0) {
+    // Check if this is a brand new chat (no messages at all)
+    const isNewChat = messages.length === 0 && historicalMessages.length === 0;
+
+    if (isNewChat) {
+      // Start new chat session via API
       setChatTitle(content.trim().slice(0, 30) + (content.length > 30 ? '...' : ''));
       setShowQuickActions(false);
 
-      // Start new chat session via API
       await startChat({
         message: content.trim(),
         attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
@@ -400,9 +437,17 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
         permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
         disableWebTools: !webSearchEnabled,
       });
-    } else {
-      // Send follow-up via WebSocket
-      sendFollowUp(content.trim());
+    } else if (currentChatId) {
+      // Continue existing chat - creates new session to resume conversation
+      // Works for both: viewing history OR after first message
+      setShowQuickActions(false);
+
+      await continueChat(currentChatId, {
+        message: content.trim(),
+        mode: 'retry', // Resume same conversation with context
+        attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
+        permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
+      });
     }
 
     setInput('');
@@ -423,6 +468,7 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
 
   const handleNewChat = () => {
     resetChat();
+    setHistoricalMessages([]);
     setShowQuickActions(true);
     setChatTitle('New chat');
     setCurrentChatId(null);
@@ -430,14 +476,30 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
     setAttachedFiles([]);
   };
 
-  const handleLoadChat = (chat: Chat) => {
-    // Note: Loading historical chats would need backend support for resuming sessions
-    // For now, we just display the history visually
+  const handleLoadChat = async (chat: Chat) => {
     setIsAnimating(true);
     setChatTitle(chat.title);
     setCurrentChatId(chat.id);
     setShowQuickActions(false);
     setShowHistoryPanel(false);
+    resetChat(); // Clear active session messages
+
+    // Load historical messages from backend if session exists
+    if (chat.lastSession?.id) {
+      try {
+        const res = await sessionsApi.getMessages(chat.lastSession.id);
+        const converted = res.messages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(convertMessageToChatMessage);
+        setHistoricalMessages(converted);
+      } catch (err) {
+        console.error('Failed to load chat messages:', err);
+        setHistoricalMessages([]);
+      }
+    } else {
+      setHistoricalMessages([]);
+    }
+
     setTimeout(() => setIsAnimating(false), 600);
   };
 
@@ -453,7 +515,9 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
     }
   };
 
-  const hasMessages = messages.length > 0;
+  // Combine historical and active messages for display
+  const allMessages = [...historicalMessages, ...messages];
+  const hasMessages = allMessages.length > 0;
   const filteredHistory = chatHistory.filter((c) => c.title.toLowerCase().includes(historySearch.toLowerCase()));
 
   return (
@@ -747,8 +811,8 @@ export function AIChatView({ initialChatId }: AIChatViewProps) {
           ) : (
             /* Messages State */
             <div className="p-6 max-w-3xl mx-auto">
-              <div className={cn('text-center text-sm text-muted-foreground mb-6', isAnimating && 'animate-float-up')}>{formatDate(messages[0]?.timestamp || new Date())} · NoteCode AI</div>
-              {messages.map((msg, i) => (
+              <div className={cn('text-center text-sm text-muted-foreground mb-6', isAnimating && 'animate-float-up')}>{formatDate(allMessages[0]?.timestamp || new Date())} · NoteCode AI</div>
+              {allMessages.map((msg, i) => (
                 <div key={msg.id} className={isAnimating ? 'opacity-0' : ''} style={isAnimating ? { animation: `float-up 0.4s ease-out ${0.1 + i * 0.1}s forwards` } : undefined}>
                   {msg.role === 'user' ? <UserMessage content={msg.content} /> : <AssistantMessage message={msg} />}
                 </div>

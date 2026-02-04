@@ -192,11 +192,12 @@ function TasksIndexPage() {
   // Build dynamic project filter options from API data
   const projectFilterOptions = projects?.map(p => ({ id: p.id, label: p.name })) || [];
 
-  // Filter tasks by selected projects (client-side filtering)
+  // Filter tasks: exclude chat workflow, then filter by selected projects
   const projectFilterIds = filters.project || [];
+  const nonChatTasks = apiTasks?.filter(t => t.workflowStage !== 'chat');
   const filteredApiTasks = projectFilterIds.length > 0
-    ? apiTasks?.filter(t => projectFilterIds.includes(t.projectId))
-    : apiTasks;
+    ? nonChatTasks?.filter(t => projectFilterIds.includes(t.projectId))
+    : nonChatTasks;
 
   // Fetch sessions from API (all sessions, not task-filtered)
   // Note: Backend defaults to 20, pass higher limit to show more
@@ -204,8 +205,13 @@ function TasksIndexPage() {
   const stopSessionMutation = useStopSession();
   const deleteSessionMutation = useDeleteSession();
 
-  // Map API sessions to UI format
-  const mappedSessions = apiSessions?.map(mapApiSessionToUI) || [];
+  // Get chat task IDs to filter out their sessions
+  const chatTaskIds = new Set(apiTasks?.filter(t => t.workflowStage === 'chat').map(t => t.id) || []);
+
+  // Map API sessions to UI format, excluding chat sessions
+  const mappedSessions = apiSessions
+    ?.filter(s => !chatTaskIds.has(s.taskId))
+    .map(mapApiSessionToUI) || [];
 
   // Map filtered tasks to BoardView format
   const mappedTasks = filteredApiTasks?.map(t => ({
