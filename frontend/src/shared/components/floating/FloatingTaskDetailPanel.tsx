@@ -671,6 +671,8 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
               onSetSubPanelTab={setSubPanelTab}
               onApproveDiff={handleApproveDiff}
               onRejectDiff={handleRejectDiff}
+              onSetContentModal={setContentModalData}
+              onOpenFileAsTab={openFileAsTab}
             />
           </div>
         )}

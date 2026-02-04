@@ -577,6 +577,8 @@ function TaskDetailPage() {
         onSetSubPanelTab={setSubPanelTab}
         onApproveDiff={handleApproveDiff}
         onRejectDiff={handleRejectDiff}
+        onSetContentModal={setContentModalData}
+        onOpenFileAsTab={openFileAsTab}
       />
 
       {/* Content Modal for Write tool preview */}

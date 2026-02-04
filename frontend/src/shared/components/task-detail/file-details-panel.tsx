@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { X, Bot, GitBranch, MessageSquare, FileCode, ThumbsUp, ThumbsDown, AlertTriangle } from 'lucide-react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
-import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
+import { ChatMessageItem } from './tabs/chat-message-item';
 import { cn } from '@/shared/lib/utils';
 import type { ChatMessage, UIDiff } from '@/shared/types';
 import type { TaskStatus } from '@/adapters/api/tasks-api';
@@ -21,6 +21,8 @@ interface FileDetailsPanelProps {
   onSetSubPanelTab: (tab: 'chat-session' | 'diffs') => void;
   onApproveDiff: (diffId: string) => void;
   onRejectDiff: (diffId: string) => void;
+  onSetContentModal?: (data: { filePath: string; content: string }) => void;
+  onOpenFileAsTab?: (filePath: string, content: string) => void;
 }
 
 export function FileDetailsPanel({
@@ -38,8 +40,31 @@ export function FileDetailsPanel({
   onSetSubPanelTab,
   onApproveDiff,
   onRejectDiff,
+  onSetContentModal,
+  onOpenFileAsTab,
 }: FileDetailsPanelProps) {
   const isReviewMode = taskStatus === 'review';
+
+  // Local state for expanded commands (tool use blocks)
+  const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
+
+  const toggleCommand = useCallback((key: string) => {
+    setExpandedCommands(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  // Fallback no-op handlers if not provided
+  const handleSetContentModal = useCallback((data: { filePath: string; content: string }) => {
+    onSetContentModal?.(data);
+  }, [onSetContentModal]);
+
+  const handleOpenFileAsTab = useCallback((filePath: string, content: string) => {
+    onOpenFileAsTab?.(filePath, content);
+  }, [onOpenFileAsTab]);
 
   // Backend returns messages sorted by timestamp ASC (chronological)
   // Realtime messages are newer, so appending maintains order
@@ -93,21 +118,32 @@ export function FileDetailsPanel({
               ) : (
                 <>
                   {allChatMessages.map((message) => (
-                    message.role === 'user' ? (
-                      <div key={message.id} className="flex justify-end py-2">
-                        <div className="bg-muted border border-border rounded-lg px-4 py-2 text-sm text-foreground max-w-[80%]">{message.content}</div>
-                      </div>
-                    ) : (
-                      <div key={message.id} className="py-2">
-                        <MarkdownMessage content={message.content} className="text-sm text-foreground" />
-                      </div>
-                    )
+                    <div key={message.id} className="py-2">
+                      <ChatMessageItem
+                        message={message}
+                        expandedCommands={expandedCommands}
+                        onToggleCommand={toggleCommand}
+                        onSetContentModal={handleSetContentModal}
+                        onOpenFileAsTab={handleOpenFileAsTab}
+                      />
+                    </div>
                   ))}
 
                   {/* Show streaming assistant message */}
                   {currentAssistantMessage && (
                     <div className="py-2">
-                      <MarkdownMessage content={currentAssistantMessage} className="text-sm text-foreground" />
+                      <ChatMessageItem
+                        message={{
+                          id: 'streaming-temp',
+                          role: 'assistant',
+                          content: currentAssistantMessage,
+                          isStreaming: true,
+                        }}
+                        expandedCommands={expandedCommands}
+                        onToggleCommand={toggleCommand}
+                        onSetContentModal={handleSetContentModal}
+                        onOpenFileAsTab={handleOpenFileAsTab}
+                      />
                     </div>
                   )}
                 </>
