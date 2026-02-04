@@ -33,6 +33,8 @@ import {
 } from '../../adapters/controllers/index.js';
 import { DiffRevertService } from '../../domain/services/diff-revert.service.js';
 import { TaskStatusTransitionService } from '../../domain/services/task-status-transition.service.js';
+import { OrphanCleanupService } from '../../domain/services/orphan-cleanup.service.js';
+import { startCleanupScheduler } from '../scheduler/cleanup-job.js';
 import { DiffExtractorService } from '../../adapters/gateways/diff-extractor.service.js';
 import { CliProviderHooksService } from '../../adapters/services/cli-provider-hooks.service.js';
 import { registerNotificationSSE } from '../../adapters/sse/notification-sse.handler.js';
@@ -297,6 +299,15 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Initialize diff revert service (for combined approval integration)
   const diffRevertService = new DiffRevertService(diffRepo);
 
+  // Initialize orphan cleanup service (24h TTL for stale approvals/diffs)
+  const orphanCleanupService = new OrphanCleanupService(
+    gitApprovalRepo,
+    diffRepo,
+    sessionRepo,
+    diffRevertService
+  );
+  startCleanupScheduler(orphanCleanupService);
+
   // Register diff controller (diff revert, batch operations)
   registerDiffController(app, diffRevertService, diffRepo, sessionRepo);
 
@@ -377,7 +388,6 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
     await app.register(fastifyStatic, {
       root: publicDir,
       prefix: '/',
-      decorateReply: false,
       // Cache control for assets
       setHeaders: (res: { setHeader: (name: string, value: string) => void }, filePath: string) => {
         if (filePath.includes('/assets/')) {
@@ -400,8 +410,8 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
       ) {
         return reply.status(404).send({ error: 'Not Found' });
       }
-      // Serve index.html for SPA routes (sendFile added by fastify-static)
-      return (reply as unknown as { sendFile: (filename: string) => Promise<void> }).sendFile('index.html');
+      // Serve index.html for SPA routes (sendFile added by @fastify/static)
+      return reply.sendFile('index.html');
     });
 
     app.log.info(`Static frontend served from ${publicDir}`);

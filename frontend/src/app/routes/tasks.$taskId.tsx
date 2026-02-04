@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, startTransition } fr
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import {
   Folder, Bot, Sparkles, Zap,
-  FileCode, Loader2, Wrench,
+  FileCode, Loader2, Wrench, GripVertical,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useTaskDetail, useSessions, useTaskMessages, useTaskDiffs, useTaskWebSocket, useRealtimeState, useMessageConversion, useFilteredSessionIds, useTaskUIState, useScrollRestoration, useApprovalState, useApprovalHandlers, useSessionStartHandler, type TaskDetailProperty } from '@/shared/hooks';
@@ -33,6 +33,10 @@ const taskDetailPropertyTypes = [statusPropertyType, ...propertyTypes];
 function TaskDetailPage() {
   const { taskId } = Route.useParams();
   const openFileAsTab = useUIStore((s) => s.openFileAsTab);
+
+  // Main panel resize state for FileDetails split view
+  const [mainPanelWidth, setMainPanelWidth] = useState(558);
+  const [isResizing, setIsResizing] = useState(false);
 
   // Shared hook - single source of truth (API only)
   const {
@@ -221,6 +225,27 @@ function TaskDetailPage() {
     setPendingGitInitMode(null);
   }, []);
 
+  // Main panel resize handler
+  const handleMainPanelResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = mainPanelWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const newWidth = Math.min(Math.max(startWidth + delta, 400), 900);
+      setMainPanelWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [mainPanelWidth]);
+
   // Tab change handler
   const handleTabChange = useCallback((tab: 'activity' | 'ai-session' | 'diffs' | 'git' | 'sessions') => {
     startTransition(() => setActiveInfoTab(tab));
@@ -372,10 +397,17 @@ function TaskDetailPage() {
   }
 
   return (
-    <div className="h-full flex">
-      {/* Main Content - adjusts width when File Details is open */}
-      <div className={cn("flex-1 flex flex-col transition-all duration-300", (selectedDiffFile || isSubPanelOpen) ? "max-w-[50%]" : "")}>
-      <ScrollArea className="flex-1">
+    <div className="h-full flex overflow-hidden">
+      {/* Main Content - resizable width when File Details is open */}
+      <div
+        className={cn(
+          "flex flex-col relative overflow-hidden",
+          (selectedDiffFile || isSubPanelOpen) ? "shrink-0 min-w-0" : "flex-1",
+          isResizing && "select-none"
+        )}
+        style={(selectedDiffFile || isSubPanelOpen) ? { width: mainPanelWidth } : undefined}
+      >
+      <ScrollArea className="flex-1 [&_[style*='min-width']]:!min-w-0 [&_[style*='display:_table']]:!block">
         <div className="p-6 max-w-4xl mx-auto">
           <TaskEditPanel
             isEditing={isEditing}
@@ -460,6 +492,7 @@ function TaskDetailPage() {
                 latestSession={latestSession}
                 sessionDiffs={sessionDiffs}
                 diffApprovals={diffApprovals}
+                taskStatus={task?.status}
                 onDiffFileClick={handleDiffFileClick}
                 onApproveDiff={handleApproveDiff}
                 onRejectDiff={handleRejectDiff}
@@ -515,6 +548,18 @@ function TaskDetailPage() {
         onCancelTask={handleCancelTask}
         onContinueTask={handleContinueTask}
       />
+
+      {/* Resize Handle - right edge of main panel */}
+      {(selectedDiffFile || isSubPanelOpen) && (
+        <div
+          className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-primary/50 transition-colors z-10"
+          onMouseDown={handleMainPanelResize}
+        >
+          <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-12 flex items-center justify-center">
+            <GripVertical className="w-3 h-3 text-muted-foreground" />
+          </div>
+        </div>
+      )}
       </div>
 
       {/* File Details Panel - shown on the right when a diff file is selected or sub-panel is open */}
@@ -527,6 +572,7 @@ function TaskDetailPage() {
         currentAssistantMessage={currentAssistantMessage}
         sessionDiffs={sessionDiffs}
         diffApprovals={diffApprovals}
+        taskStatus={task?.status}
         onCloseFileDetails={handleCloseFileDetails}
         onSetSubPanelTab={setSubPanelTab}
         onApproveDiff={handleApproveDiff}

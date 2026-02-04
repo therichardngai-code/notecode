@@ -3,7 +3,7 @@
  * Implements persistence for git commit approvals
  */
 
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, lt } from 'drizzle-orm';
 import {
   GitCommitApproval,
   GitApprovalStatus,
@@ -20,6 +20,8 @@ export interface IGitApprovalRepository {
   findByTaskId(taskId: string): Promise<GitCommitApproval[]>;
   findByProjectId(projectId: string, status?: GitApprovalStatus): Promise<GitCommitApproval[]>;
   findPendingByTaskId(taskId: string): Promise<GitCommitApproval | null>;
+  /** Find pending approvals created before cutoff date (for TTL cleanup) */
+  findStalePending(cutoff: Date): Promise<GitCommitApproval[]>;
   countByTaskId(taskId: string): Promise<number>;
   save(approval: GitCommitApproval): Promise<GitCommitApproval>;
   delete(id: string): Promise<boolean>;
@@ -76,6 +78,17 @@ export class SqliteGitApprovalRepository implements IGitApprovalRepository {
       columns: { id: true },
     });
     return rows.length;
+  }
+
+  async findStalePending(cutoff: Date): Promise<GitCommitApproval[]> {
+    const db = getDatabase();
+    const rows = await db.query.gitCommitApprovals.findMany({
+      where: and(
+        eq(gitCommitApprovals.status, 'pending'),
+        lt(gitCommitApprovals.createdAt, cutoff.toISOString())
+      ),
+    });
+    return rows.map(row => this.toEntity(row));
   }
 
   async save(approval: GitCommitApproval): Promise<GitCommitApproval> {

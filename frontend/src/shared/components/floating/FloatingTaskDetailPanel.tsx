@@ -27,6 +27,7 @@ import { ActivityTab, AISessionTab, DiffsTab, GitTab, SessionsTab } from '@/shar
 import {
   ChatInputFooter, type ChatInputFooterHandle, TaskInfoTabsNav,
   TaskEditPanel, ContentPreviewModal, ContextWarningDialog, GitInitDialog,
+  FileDetailsPanel,
 } from '@/shared/components/task-detail';
 import { useContextWarning } from '@/shared/hooks/use-context-warning';
 import { projectsApi } from '@/adapters/api/projects-api';
@@ -46,7 +47,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
   const navigate = useNavigate();
   const openFileAsTab = useUIStore((s) => s.openFileAsTab);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [panelWidth, setPanelWidth] = useState(480);
+  const [panelWidth, setPanelWidth] = useState(558);
   const [isResizing, setIsResizing] = useState(false);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -137,9 +138,9 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     diffApprovals, setDiffApprovals,
     showAddProperty, setShowAddProperty,
     expandedCommands, setExpandedCommands,
-    setSelectedDiffFile,
-    setSubPanelTab,
-    setIsSubPanelOpen,
+    selectedDiffFile, setSelectedDiffFile,
+    subPanelTab, setSubPanelTab,
+    isSubPanelOpen, setIsSubPanelOpen,
     contentModalData, setContentModalData,
   } = useTaskUIState();
 
@@ -317,6 +318,17 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     }
   };
 
+  // File Details handlers
+  const handleCloseFileDetails = () => {
+    setSelectedDiffFile(null);
+    setIsSubPanelOpen(false);
+  };
+
+  const handleExpandToSubPanel = () => {
+    setSubPanelTab('chat-session');
+    setIsSubPanelOpen(true);
+  };
+
   const toggleCommand = (key: string) => {
     setExpandedCommands(prev => {
       const next = new Set(prev);
@@ -406,7 +418,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     const startWidth = panelWidth;
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const delta = startX - moveEvent.clientX;
-      const newWidth = Math.min(Math.max(startWidth + delta, 360), 800);
+      const newWidth = Math.min(Math.max(startWidth + delta, 558), 1200);
       setPanelWidth(newWidth);
     };
     const handleMouseUp = () => {
@@ -441,7 +453,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
           "transition-[width] duration-300 ease-out",
           isResizing && "select-none transition-none"
         )}
-        style={{ width: panelWidth }}
+        style={{ width: (selectedDiffFile || isSubPanelOpen) ? panelWidth + 720 : panelWidth }}
       >
         {/* Resize Handle */}
         <div
@@ -496,7 +508,9 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
             Task not found
           </div>
         ) : (
-          <>
+          <div className="flex-1 flex overflow-hidden">
+            {/* Main Content - keeps full width, FileDetailsPanel adds extra width */}
+            <div className="flex-1 flex flex-col overflow-hidden">
             {/* Use simple overflow div instead of ScrollArea for proper resize propagation */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="p-4">
@@ -539,10 +553,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
                     sessionsCount={sessions.length}
                     hasPendingApproval={gitCommitApprovals.some(a => a.status === 'pending')}
                     onTabChange={handleTabChange}
-                    onExpandToSubPanel={() => {
-                      setSubPanelTab('chat-session');
-                      setIsSubPanelOpen(true);
-                    }}
+                    onExpandToSubPanel={handleExpandToSubPanel}
                   />
 
                   {/* Activity Tab */}
@@ -642,7 +653,26 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
               onCancelTask={handleCancelTask}
               onContinueTask={handleContinueTask}
             />
-          </>
+            </div>
+
+            {/* File Details Panel - shown on the right when a diff file is selected or sub-panel is open */}
+            <FileDetailsPanel
+              selectedDiffFile={selectedDiffFile}
+              isSubPanelOpen={isSubPanelOpen}
+              subPanelTab={subPanelTab}
+              chatMessages={chatMessages}
+              realtimeMessages={realtimeMessages}
+              currentAssistantMessage={currentAssistantMessage}
+              sessionDiffs={sessionDiffs}
+              diffApprovals={diffApprovals}
+              taskStatus={task?.status}
+              fixedWidth={720}
+              onCloseFileDetails={handleCloseFileDetails}
+              onSetSubPanelTab={setSubPanelTab}
+              onApproveDiff={handleApproveDiff}
+              onRejectDiff={handleRejectDiff}
+            />
+          </div>
         )}
 
         {/* Content Modal */}

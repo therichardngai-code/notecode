@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import { X, Bot, GitBranch, MessageSquare, FileCode, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { X, Bot, GitBranch, MessageSquare, FileCode, ThumbsUp, ThumbsDown, AlertTriangle } from 'lucide-react';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import { MarkdownMessage } from '@/shared/components/ui/markdown-message';
 import { cn } from '@/shared/lib/utils';
 import type { ChatMessage, UIDiff } from '@/shared/types';
+import type { TaskStatus } from '@/adapters/api/tasks-api';
 
 interface FileDetailsPanelProps {
   selectedDiffFile: string | null;
@@ -14,6 +15,8 @@ interface FileDetailsPanelProps {
   currentAssistantMessage: string;
   sessionDiffs: UIDiff[];
   diffApprovals: Record<string, 'approved' | 'rejected' | null>;
+  taskStatus?: TaskStatus;
+  fixedWidth?: number;
   onCloseFileDetails: () => void;
   onSetSubPanelTab: (tab: 'chat-session' | 'diffs') => void;
   onApproveDiff: (diffId: string) => void;
@@ -29,11 +32,15 @@ export function FileDetailsPanel({
   currentAssistantMessage,
   sessionDiffs,
   diffApprovals,
+  taskStatus,
+  fixedWidth,
   onCloseFileDetails,
   onSetSubPanelTab,
   onApproveDiff,
   onRejectDiff,
 }: FileDetailsPanelProps) {
+  const isReviewMode = taskStatus === 'review';
+
   // Backend returns messages sorted by timestamp ASC (chronological)
   // Realtime messages are newer, so appending maintains order
   const { allChatMessages, hasChatMessages } = useMemo(() => {
@@ -50,7 +57,10 @@ export function FileDetailsPanel({
   if (!selectedDiffFile && !isSubPanelOpen) return null;
 
   return (
-    <div className="w-1/2 border-l border-border flex flex-col glass-strong">
+    <div
+      className={cn("border-l border-border flex flex-col glass-strong", !fixedWidth && "flex-1")}
+      style={fixedWidth ? { width: fixedWidth } : undefined}
+    >
       {/* File Details Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <span className="text-sm font-medium text-foreground">File Details</span>
@@ -107,7 +117,24 @@ export function FileDetailsPanel({
 
           {subPanelTab === 'diffs' && (
             <div>
-              {sessionDiffs.filter(diff => diff.id === selectedDiffFile).map((diff) => (
+              {/* REVIEW mode alert */}
+              {isReviewMode && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-sm mb-4">
+                  <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Task is in Review</p>
+                    <p className="text-muted-foreground text-xs mt-0.5">
+                      Individual diff actions are disabled. Use the Git tab to approve or reject all changes together.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {sessionDiffs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <FileCode className="w-8 h-8 mb-2 opacity-50" />
+                  <p className="text-sm">No code changes yet</p>
+                </div>
+              ) : sessionDiffs.filter(diff => !selectedDiffFile || diff.id === selectedDiffFile).map((diff) => (
                 <div key={diff.id}>
                   {/* File Header */}
                   <div className="flex items-center gap-3 mb-4 pb-3 border-b border-border flex-wrap">
@@ -117,14 +144,16 @@ export function FileDetailsPanel({
                     {diffApprovals[diff.id] === 'rejected' && <span className="text-xs px-2.5 py-1 rounded-full bg-red-500/20 text-red-600 font-medium">✗ Rejected</span>}
                     <span className="text-sm text-green-500 ml-auto">+{diff.additions}</span>
                     {diff.deletions > 0 && <span className="text-sm text-red-500">-{diff.deletions}</span>}
-                    <div className="flex items-center gap-2 ml-2">
-                      <button onClick={() => onApproveDiff(diff.id)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors", diffApprovals[diff.id] === 'approved' ? "bg-green-500 text-white" : "bg-green-500/10 text-green-600 hover:bg-green-500/20")}>
-                        <ThumbsUp className="w-4 h-4" />Approve
-                      </button>
-                      <button onClick={() => onRejectDiff(diff.id)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors", diffApprovals[diff.id] === 'rejected' ? "bg-red-500 text-white" : "bg-red-500/10 text-red-600 hover:bg-red-500/20")}>
-                        <ThumbsDown className="w-4 h-4" />Reject
-                      </button>
-                    </div>
+                    {!isReviewMode && (
+                      <div className="flex items-center gap-2 ml-2">
+                        <button onClick={() => onApproveDiff(diff.id)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors", diffApprovals[diff.id] === 'approved' ? "bg-green-500 text-white" : "bg-green-500/10 text-green-600 hover:bg-green-500/20")}>
+                          <ThumbsUp className="w-4 h-4" />Approve
+                        </button>
+                        <button onClick={() => onRejectDiff(diff.id)} className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors", diffApprovals[diff.id] === 'rejected' ? "bg-red-500 text-white" : "bg-red-500/10 text-red-600 hover:bg-red-500/20")}>
+                          <ThumbsDown className="w-4 h-4" />Reject
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Diff Content */}
