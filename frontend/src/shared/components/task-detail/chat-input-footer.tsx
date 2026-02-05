@@ -137,14 +137,12 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
     const chatHandlers = useChatHandlers({
       isWsConnected,
       isSessionLive,
-      chatInput,
       attachedFiles,
       selectedModel,
       chatPermissionMode,
       webSearchEnabled,
       isWaitingForResponse,
-      isTyping, // From parent (displayed in AISessionTab)
-      showContextPicker: contextPicker.showContextPicker,
+      isTyping,
       sendUserInput,
       setRealtimeMessages,
       setChatInput,
@@ -222,6 +220,7 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
               isWsConnected={isWsConnected}
               isTyping={isTyping}
               isWaitingForResponse={isWaitingForResponse}
+              task={task}
               showContextPicker={contextPicker.showContextPicker}
               filteredFiles={contextPicker.filteredFiles}
               contextPickerIndex={contextPicker.contextPickerIndex}
@@ -229,10 +228,13 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
               chatInputRef={chatInputRef}
               contextPickerRef={contextPicker.contextPickerRef}
               onChatInputChange={contextPicker.handleChatInputChange}
-              onChatKeyDown={chatHandlers.handleChatKeyDown}
               onContextPickerKeyDown={contextPicker.handleContextPickerKeyDown}
               onPaste={contextPicker.handlePaste}
               onSelectContextFile={contextPicker.selectContextFile}
+              onSendMessage={chatHandlers.sendMessage}
+              onStartTask={onStartTask}
+              onStartSessionWithMode={onStartSessionWithMode}
+              onContinueTask={onContinueTask}
             />
 
             {/* Bottom row: tools + actions */}

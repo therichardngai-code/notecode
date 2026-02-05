@@ -106,12 +106,23 @@ export function useContextPicker({
   }, [chatInput, cursorPosition, attachedFiles, setChatInput, setAttachedFiles, chatInputRef]);
 
   // Handle keyboard navigation in context picker
+  // Only preventDefault when we actually consume the event
   const handleContextPickerKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!showContextPicker) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(prev => Math.min(prev + 1, filteredFiles.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setContextPickerIndex(prev => Math.max(prev - 1, 0)); }
-    else if (e.key === 'Enter' && filteredFiles.length > 0) { e.preventDefault(); selectContextFile(filteredFiles[contextPickerIndex]); }
-    else if (e.key === 'Escape') setShowContextPicker(false);
+    if (e.key === 'ArrowDown' && filteredFiles.length > 0) {
+      e.preventDefault();
+      setContextPickerIndex(prev => Math.min(prev + 1, filteredFiles.length - 1));
+    } else if (e.key === 'ArrowUp' && filteredFiles.length > 0) {
+      e.preventDefault();
+      setContextPickerIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && filteredFiles.length > 0) {
+      e.preventDefault();
+      selectContextFile(filteredFiles[contextPickerIndex]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowContextPicker(false);
+    }
+    // If no files and Enter pressed, don't preventDefault - let parent handle it
   }, [showContextPicker, filteredFiles, contextPickerIndex, selectContextFile]);
 
   // Add context mention helper

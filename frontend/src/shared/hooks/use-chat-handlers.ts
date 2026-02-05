@@ -1,17 +1,16 @@
+import { useCallback } from 'react';
 import type { ChatMessage } from '@/shared/types';
 import type { UserInputMessage } from './use-session-websocket';
 
 interface ChatHandlersParams {
   isWsConnected: boolean;
   isSessionLive: boolean;
-  chatInput: string;
   attachedFiles: string[];
   selectedModel: 'default' | 'haiku' | 'sonnet' | 'opus';
   chatPermissionMode: 'default' | 'acceptEdits' | 'bypassPermissions';
   webSearchEnabled: boolean;
   isWaitingForResponse: boolean;
   isTyping: boolean;
-  showContextPicker: boolean;
   sendUserInput: (content: string, options?: Omit<UserInputMessage, 'type' | 'content'>) => void;
   setRealtimeMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setChatInput: React.Dispatch<React.SetStateAction<string>>;
@@ -24,14 +23,12 @@ interface ChatHandlersParams {
 export function useChatHandlers({
   isWsConnected,
   isSessionLive,
-  chatInput,
   attachedFiles,
   selectedModel,
   chatPermissionMode,
   webSearchEnabled,
   isWaitingForResponse,
   isTyping,
-  showContextPicker,
   sendUserInput,
   setRealtimeMessages,
   setChatInput,
@@ -41,7 +38,7 @@ export function useChatHandlers({
   setIsTyping,
 }: ChatHandlersParams) {
   // Chat handler - use WebSocket when connected
-  const sendMessage = async (content: string) => {
+  const sendMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
     if (isWaitingForResponse || isTyping) return;
 
@@ -75,17 +72,9 @@ export function useChatHandlers({
       await new Promise(resolve => setTimeout(resolve, 1000));
       setIsTyping(false);
     }
-  };
-
-  const handleChatKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !showContextPicker) {
-      e.preventDefault();
-      sendMessage(chatInput);
-    }
-  };
+  }, [isWaitingForResponse, isTyping, attachedFiles, isWsConnected, isSessionLive, selectedModel, chatPermissionMode, webSearchEnabled, setRealtimeMessages, setChatInput, setAttachedFiles, setIsWaitingForResponse, setCurrentAssistantMessage, sendUserInput, setIsTyping]);
 
   return {
     sendMessage,
-    handleChatKeyDown,
   };
 }

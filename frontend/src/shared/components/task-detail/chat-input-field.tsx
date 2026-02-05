@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { ContextPickerDropdown } from './context-picker-dropdown';
+import type { Task } from '@/adapters/api/tasks-api';
 
 interface ChatInputFieldProps {
   // Input state
@@ -8,6 +9,9 @@ interface ChatInputFieldProps {
   isWsConnected: boolean;
   isTyping: boolean;
   isWaitingForResponse: boolean;
+
+  // Task state (for Enter key action logic)
+  task: Task;
 
   // Context picker state
   showContextPicker: boolean;
@@ -21,10 +25,13 @@ interface ChatInputFieldProps {
 
   // Callbacks
   onChatInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onChatKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   onContextPickerKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
   onPaste: (e: React.ClipboardEvent<HTMLInputElement>) => void;
   onSelectContextFile: (file: string) => void;
+  onSendMessage: (content: string) => void;
+  onStartTask: () => void;
+  onStartSessionWithMode: (mode: 'retry') => void;
+  onContinueTask: () => void;
 }
 
 /**
@@ -40,6 +47,7 @@ export const ChatInputField = memo(function ChatInputField({
   isWsConnected,
   isTyping,
   isWaitingForResponse,
+  task,
   showContextPicker,
   filteredFiles,
   contextPickerIndex,
@@ -47,10 +55,13 @@ export const ChatInputField = memo(function ChatInputField({
   chatInputRef,
   contextPickerRef,
   onChatInputChange,
-  onChatKeyDown,
   onContextPickerKeyDown,
   onPaste,
   onSelectContextFile,
+  onSendMessage,
+  onStartTask,
+  onStartSessionWithMode,
+  onContinueTask,
 }: ChatInputFieldProps) {
   return (
     <div className="relative mb-2">
@@ -61,7 +72,23 @@ export const ChatInputField = memo(function ChatInputField({
         onChange={onChatInputChange}
         onKeyDown={(e) => {
           onContextPickerKeyDown(e);
-          if (!showContextPicker) onChatKeyDown(e);
+          // Handle Enter key - mirror button logic
+          if (!showContextPicker && e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (isSessionLive && isWsConnected) {
+              // Session active - send message
+              onSendMessage(chatInput);
+            } else if (task.status === 'not-started') {
+              // Start task
+              onStartTask();
+            } else if (task.status === 'in-progress' && !isSessionLive) {
+              // Resume session
+              onStartSessionWithMode('retry');
+            } else {
+              // Continue task
+              onContinueTask();
+            }
+          }
         }}
         onPaste={onPaste}
         placeholder={
