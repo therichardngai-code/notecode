@@ -254,7 +254,8 @@ export function AIChatView() {
   }, [currentTask?.id, currentChatId]);
 
   // Chat input options state (aligned with TaskDetail AI Session)
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]); // Uploaded files (images, etc)
+  const [contextFiles, setContextFiles] = useState<string[]>([]); // @ mentioned project file paths
   const [selectedModel, setSelectedModel] = useState<'default' | 'haiku' | 'sonnet' | 'opus'>('default');
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -356,7 +357,7 @@ export function AIChatView() {
 
   // File handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setAttachedFiles(prev => [...prev, ...Array.from(e.target.files!).map(f => f.name)]);
+    if (e.target.files) setAttachedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
   const removeAttachedFile = (idx: number) => setAttachedFiles(prev => prev.filter((_, i) => i !== idx));
@@ -366,14 +367,14 @@ export function AIChatView() {
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }, []);
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
-    if (e.dataTransfer.files?.length) setAttachedFiles(prev => [...prev, ...Array.from(e.dataTransfer.files).map(f => f.name)]);
+    if (e.dataTransfer.files?.length) setAttachedFiles(prev => [...prev, ...Array.from(e.dataTransfer.files)]);
   }, []);
 
   // Paste handler
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
-    const files: string[] = [];
-    for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const f = items[i].getAsFile(); if (f) files.push(f.name); } }
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const f = items[i].getAsFile(); if (f) files.push(f); } }
     if (files.length) setAttachedFiles(prev => [...prev, ...files]);
   }, []);
 
@@ -393,9 +394,9 @@ export function AIChatView() {
     const before = input.slice(0, cursorPosition), after = input.slice(cursorPosition), atIdx = before.lastIndexOf('@');
     setInput(before.slice(0, atIdx) + `@${file} ` + after);
     setShowContextPicker(false); setContextSearch('');
-    if (!attachedFiles.includes(file)) setAttachedFiles(prev => [...prev, file]);
+    if (!contextFiles.includes(file)) setContextFiles(prev => [...prev, file]);
     chatInputRef.current?.focus();
-  }, [input, cursorPosition, attachedFiles]);
+  }, [input, cursorPosition, contextFiles]);
 
   const handleContextKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!showContextPicker) return;
@@ -422,6 +423,22 @@ export function AIChatView() {
       return;
     }
 
+    // Upload attached files first (if any)
+    let uploadedPaths: string[] = [];
+    if (attachedFiles.length > 0) {
+      try {
+        const uploadPromises = attachedFiles.map(file => projectsApi.uploadFile(selectedProjectId, file));
+        const uploadResults = await Promise.all(uploadPromises);
+        uploadedPaths = uploadResults.map(r => r.path);
+      } catch (err) {
+        console.error('Failed to upload files:', err);
+        return;
+      }
+    }
+
+    // Combine uploaded file paths with context file paths
+    const allAttachments = [...uploadedPaths, ...contextFiles];
+
     // Check if this is a brand new chat (no messages at all)
     const isNewChat = messages.length === 0 && historicalMessages.length === 0;
 
@@ -432,7 +449,7 @@ export function AIChatView() {
 
       await startChat({
         message: content.trim(),
-        attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
+        attachments: allAttachments.length > 0 ? allAttachments : undefined,
         model: selectedModel !== 'default' ? selectedModel : undefined,
         permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
         disableWebTools: !webSearchEnabled,
@@ -445,13 +462,14 @@ export function AIChatView() {
       await continueChat(currentChatId, {
         message: content.trim(),
         mode: 'retry', // Resume same conversation with context
-        attachments: attachedFiles.length > 0 ? attachedFiles : undefined,
+        attachments: allAttachments.length > 0 ? allAttachments : undefined,
         permissionMode: chatPermissionMode !== 'default' ? chatPermissionMode : undefined,
       });
     }
 
     setInput('');
     setAttachedFiles([]);
+    setContextFiles([]);
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
@@ -717,7 +735,7 @@ export function AIChatView() {
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       {attachedFiles.map((f, i) => (
                         <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-xs text-foreground">
-                          <FileCode className="w-3 h-3" /><span className="max-w-[100px] truncate">{f}</span>
+                          <FileCode className="w-3 h-3" /><span className="max-w-[100px] truncate">{f.name}</span>
                           <button onClick={() => removeAttachedFile(i)} className="hover:text-destructive"><X className="w-3 h-3" /></button>
                         </span>
                       ))}
@@ -854,7 +872,7 @@ export function AIChatView() {
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {attachedFiles.map((f, i) => (
                       <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-xs text-foreground">
-                        <FileCode className="w-3 h-3" /><span className="max-w-[100px] truncate">{f}</span>
+                        <FileCode className="w-3 h-3" /><span className="max-w-[100px] truncate">{f.name}</span>
                         <button type="button" onClick={() => removeAttachedFile(i)} className="hover:text-destructive"><X className="w-3 h-3" /></button>
                       </span>
                     ))}
