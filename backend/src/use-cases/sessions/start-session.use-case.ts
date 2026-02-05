@@ -194,8 +194,8 @@ export class StartSessionUseCase {
     // 4. Get global settings for defaults
     const settings = await this.settingsRepo.getGlobal();
 
-    // 5. Determine working directory: task contextFiles[0] > project path > cwd
-    const workingDir = task.contextFiles[0] ?? project.path ?? process.cwd();
+    // 5. Determine working directory: project path > cwd (contextFiles are file paths, not directories)
+    const workingDir = project.path ?? process.cwd();
 
     // 6. Resolve provider and model from task → settings (required)
     if (!settings.defaultProvider || !settings.defaultModel) {
