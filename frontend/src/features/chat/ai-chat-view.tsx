@@ -10,7 +10,6 @@ import {
   FileSearch,
   CheckCircle,
   Plus,
-  ChevronRight,
   ChevronDown,
   Square,
   Loader2,
@@ -29,8 +28,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useChatSession, type ChatMessage } from '@/shared/hooks';
-import { projectsApi, sessionsApi, type Project, type Chat, type Message } from '@/adapters/api';
+import { projectsApi, sessionsApi, type Project, type Chat } from '@/adapters/api';
 import { useUIStore } from '@/shared/stores/ui-store';
+import { ChatMessageItem } from '@/shared/components/task-detail/tabs/chat-message-item';
+import { ContentPreviewModal } from '@/shared/components/task-detail';
+import { messageToChat } from '@/shared/utils/message-converters';
+import type { ChatMessage as TaskChatMessage } from '@/shared/types/task-detail-types';
 
 interface ChatHistoryItem {
   id: string;
@@ -117,26 +120,6 @@ function formatDate(date: Date) {
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
-// Convert backend Message to ChatMessage format
-function convertMessageToChatMessage(msg: Message): ChatMessage {
-  // Extract text content from blocks
-  let content = '';
-  if (Array.isArray(msg.blocks)) {
-    for (const block of msg.blocks as Array<{ type?: string; text?: string; content?: string }>) {
-      if (block.type === 'text' && block.text) {
-        content += block.text;
-      } else if (typeof block.content === 'string') {
-        content += block.content;
-      }
-    }
-  }
-  return {
-    id: msg.id,
-    role: msg.role as 'user' | 'assistant',
-    content,
-    timestamp: new Date(msg.timestamp),
-  };
-}
 
 // Components
 function QuickActionCard({ icon: Icon, label, onClick, delay = 0 }: { icon: React.ElementType; label: string; onClick?: () => void; delay?: number }) {
@@ -160,21 +143,6 @@ function UserMessage({ content }: { content: string }) {
   );
 }
 
-function AssistantMessage({ message }: { message: ChatMessage }) {
-  const [stepsExpanded, setStepsExpanded] = useState(false);
-
-  return (
-    <div className="mb-6">
-      {message.steps && (
-        <button onClick={() => setStepsExpanded(!stepsExpanded)} className="flex items-center gap-1 text-sm text-muted-foreground mb-3 hover:text-foreground transition-colors">
-          {stepsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          {message.steps} steps
-        </button>
-      )}
-      <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{message.content}</div>
-    </div>
-  );
-}
 
 function TypingIndicator() {
   return (
@@ -205,6 +173,21 @@ export function AIChatView() {
   const activeProjectId = useUIStore((state) => state.activeProjectId);
   const pendingChatId = useUIStore((state) => state.pendingChatId);
   const setPendingChatId = useUIStore((state) => state.setPendingChatId);
+  const openFileAsTab = useUIStore((state) => state.openFileAsTab);
+
+  // Tool command UI state (for ChatMessageItem)
+  const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
+  const [contentModalData, setContentModalData] = useState<{ filePath: string; content: string } | null>(null);
+
+  // Toggle command expansion handler
+  const toggleCommand = useCallback((cmdKey: string) => {
+    setExpandedCommands(prev => {
+      const next = new Set(prev);
+      if (next.has(cmdKey)) next.delete(cmdKey);
+      else next.add(cmdKey);
+      return next;
+    });
+  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(activeProjectId);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
@@ -292,7 +275,10 @@ export function AIChatView() {
             .then(res => {
               const converted = res.messages
                 .filter(m => m.role === 'user' || m.role === 'assistant')
-                .map(convertMessageToChatMessage);
+                .map(m => {
+                  const chat = messageToChat(m);
+                  return { ...chat, timestamp: new Date(m.timestamp) } as ChatMessage;
+                });
               setHistoricalMessages(converted);
             })
             .catch(err => {
@@ -508,7 +494,10 @@ export function AIChatView() {
         const res = await sessionsApi.getMessages(chat.lastSession.id);
         const converted = res.messages
           .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(convertMessageToChatMessage);
+          .map(m => {
+            const chat = messageToChat(m);
+            return { ...chat, timestamp: new Date(m.timestamp) } as ChatMessage;
+          });
         setHistoricalMessages(converted);
       } catch (err) {
         console.error('Failed to load chat messages:', err);
@@ -832,7 +821,17 @@ export function AIChatView() {
               <div className={cn('text-center text-sm text-muted-foreground mb-6', isAnimating && 'animate-float-up')}>{formatDate(allMessages[0]?.timestamp || new Date())} · NoteCode AI</div>
               {allMessages.map((msg, i) => (
                 <div key={msg.id} className={isAnimating ? 'opacity-0' : ''} style={isAnimating ? { animation: `float-up 0.4s ease-out ${0.1 + i * 0.1}s forwards` } : undefined}>
-                  {msg.role === 'user' ? <UserMessage content={msg.content} /> : <AssistantMessage message={msg} />}
+                  {msg.role === 'user' ? (
+                    <UserMessage content={msg.content} />
+                  ) : (
+                    <ChatMessageItem
+                      message={msg as TaskChatMessage}
+                      expandedCommands={expandedCommands}
+                      onToggleCommand={toggleCommand}
+                      onSetContentModal={setContentModalData}
+                      onOpenFileAsTab={openFileAsTab}
+                    />
+                  )}
                 </div>
               ))}
               {isStreaming && messages[messages.length - 1]?.content === '' && <TypingIndicator />}
@@ -950,6 +949,14 @@ export function AIChatView() {
           </div>
         )}
       </div>
+
+      {/* Content Preview Modal for Write tool */}
+      <ContentPreviewModal
+        isOpen={!!contentModalData}
+        filePath={contentModalData?.filePath || ''}
+        content={contentModalData?.content || ''}
+        onClose={() => setContentModalData(null)}
+      />
     </div>
   );
 }

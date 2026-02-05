@@ -72,9 +72,24 @@ function extractTextFromContent(content: unknown): string {
 
 /**
  * Extract tool_use blocks from Claude CLI message content
+ * Handles: direct array, { content: [...] }, full API response
  * Aligned with use-session-websocket.ts extractToolUseBlocks
  */
 function extractToolUseBlocks(content: unknown): ToolCommand[] {
+  // Handle direct array format (WebSocket sends content as array)
+  if (Array.isArray(content)) {
+    return content
+      .filter((block): block is { type: string; id?: string; name: string; input?: Record<string, unknown> } =>
+        typeof block === 'object' && block !== null && block.type === 'tool_use' && !!block.name
+      )
+      .map(block => ({
+        cmd: block.name,
+        status: 'success' as const,
+        input: block.input || {},
+      }));
+  }
+
+  // Handle { content: [...] } or JSON string format
   const parsed = parseCliContent(content);
   if (!parsed || !Array.isArray(parsed.content)) return [];
 
