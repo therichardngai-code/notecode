@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useChatSession, type ChatMessage } from '@/shared/hooks';
-import { projectsApi, sessionsApi, type Project, type Chat } from '@/adapters/api';
+import { projectsApi, sessionsApi, filesApi, type Project, type Chat } from '@/adapters/api';
 import { useUIStore } from '@/shared/stores/ui-store';
 import { messageToChat } from '@/shared/utils/message-converters';
 import { ChatMessageItem } from '@/shared/components/task-detail/tabs/chat-message-item';
@@ -158,11 +158,9 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
   const [contextSearch, setContextSearch] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [contextPickerIndex, setContextPickerIndex] = useState(0);
+  const [fileSearchResults, setFileSearchResults] = useState<Array<{ path: string; name: string }>>([]);
+  const [isSearchingFiles, setIsSearchingFiles] = useState(false);
   const contextPickerRef = useRef<HTMLDivElement>(null);
-
-  // Sample project files
-  const projectFiles = ['src/index.ts', 'src/app.tsx', 'src/components/Button.tsx', 'package.json', 'tsconfig.json'];
-  const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
 
   // Click outside to close history dropdown
   useEffect(() => {
@@ -235,6 +233,23 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
 
   useEffect(() => { setContextPickerIndex(0); }, [contextSearch]);
 
+  // Debounced file search API call
+  useEffect(() => {
+    if (!showContextPicker || !selectedProjectId) {
+      setFileSearchResults([]);
+      return;
+    }
+    const query = contextSearch.trim() || '';
+    const timeoutId = setTimeout(() => {
+      setIsSearchingFiles(true);
+      filesApi.search(selectedProjectId, query)
+        .then((res: { results: Array<{ path: string; name: string }> }) => setFileSearchResults(res.results.slice(0, 10)))
+        .catch(() => setFileSearchResults([]))
+        .finally(() => setIsSearchingFiles(false));
+    }, 150);
+    return () => clearTimeout(timeoutId);
+  }, [contextSearch, showContextPicker, selectedProjectId]);
+
   // File handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -299,11 +314,11 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
 
   const handleContextPickerKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!showContextPicker) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(prev => Math.min(prev + 1, filteredFiles.length - 1)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(prev => Math.min(prev + 1, fileSearchResults.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setContextPickerIndex(prev => Math.max(prev - 1, 0)); }
-    else if (e.key === 'Enter' && filteredFiles.length > 0) { e.preventDefault(); selectContextFile(filteredFiles[contextPickerIndex]); }
+    else if (e.key === 'Enter' && fileSearchResults.length > 0) { e.preventDefault(); selectContextFile(fileSearchResults[contextPickerIndex].path); }
     else if (e.key === 'Escape') setShowContextPicker(false);
-  }, [showContextPicker, filteredFiles, contextPickerIndex, selectContextFile]);
+  }, [showContextPicker, fileSearchResults, contextPickerIndex, selectContextFile]);
 
   const handleNewChat = () => {
     setSelectedChat(null);
@@ -639,19 +654,28 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
                 disabled={isStreaming}
               />
               {/* @ Context Picker */}
-              {showContextPicker && filteredFiles.length > 0 && (
+              {showContextPicker && (
                 <div ref={contextPickerRef} className="absolute bottom-full left-0 mb-1 w-64 max-h-40 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg py-1 z-30">
                   <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Files</div>
-                  {filteredFiles.slice(0, 6).map((file, idx) => (
-                    <button
-                      key={file}
-                      onClick={() => selectContextFile(file)}
-                      className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", idx === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}
-                    >
-                      <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{file}</span>
-                    </button>
-                  ))}
+                  {isSearchingFiles ? (
+                    <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Searching...</span>
+                    </div>
+                  ) : fileSearchResults.length > 0 ? (
+                    fileSearchResults.slice(0, 6).map((file, idx) => (
+                      <button
+                        key={file.path}
+                        onClick={() => selectContextFile(file.path)}
+                        className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", idx === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}
+                      >
+                        <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate">{file.path}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">Type to search files...</div>
+                  )}
                 </div>
               )}
             </div>
@@ -746,7 +770,7 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
       />
 
       {/* Backdrop when panel is open (for mobile) */}
-      {isOpen && <div className="fixed inset-0 z-40 bg-black/20 md:hidden" onClick={() => setIsOpen(false)} />}
+      {isOpen && <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setIsOpen(false)} />}
     </>
   );
 }

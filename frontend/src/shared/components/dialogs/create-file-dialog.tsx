@@ -49,7 +49,7 @@ export function CreateFileDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
 
       {/* Dialog */}
       <div className="relative w-full max-w-md mx-4 bg-card rounded-xl border border-border shadow-xl animate-float-up">

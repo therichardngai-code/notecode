@@ -1,11 +1,12 @@
 import { memo } from 'react';
-import { FileCode } from 'lucide-react';
+import { FileCode, Loader2 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 interface ContextPickerDropdownProps {
   isOpen: boolean;
   filteredFiles: string[];
   selectedIndex: number;
+  isSearching?: boolean;
   onSelect: (file: string) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -21,10 +22,11 @@ export const ContextPickerDropdown = memo(function ContextPickerDropdown({
   isOpen,
   filteredFiles,
   selectedIndex,
+  isSearching = false,
   onSelect,
   containerRef,
 }: ContextPickerDropdownProps) {
-  if (!isOpen || filteredFiles.length === 0) return null;
+  if (!isOpen) return null;
 
   return (
     <div
@@ -34,24 +36,37 @@ export const ContextPickerDropdown = memo(function ContextPickerDropdown({
       <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">
         Files
       </div>
-      {filteredFiles.slice(0, 8).map((file, idx) => (
-        <button
-          key={file}
-          onClick={() => onSelect(file)}
-          className={cn(
-            "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors",
-            idx === selectedIndex
-              ? "bg-accent text-accent-foreground"
-              : "hover:bg-accent/50"
+      {isSearching ? (
+        <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>Searching...</span>
+        </div>
+      ) : filteredFiles.length > 0 ? (
+        <>
+          {filteredFiles.slice(0, 8).map((file, idx) => (
+            <button
+              key={file}
+              onClick={() => onSelect(file)}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors",
+                idx === selectedIndex
+                  ? "bg-accent text-accent-foreground"
+                  : "hover:bg-accent/50"
+              )}
+            >
+              <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="truncate">{file}</span>
+            </button>
+          ))}
+          {filteredFiles.length > 8 && (
+            <div className="px-3 py-1 text-xs text-muted-foreground">
+              +{filteredFiles.length - 8} more
+            </div>
           )}
-        >
-          <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          <span className="truncate">{file}</span>
-        </button>
-      ))}
-      {filteredFiles.length > 8 && (
-        <div className="px-3 py-1 text-xs text-muted-foreground">
-          +{filteredFiles.length - 8} more
+        </>
+      ) : (
+        <div className="px-3 py-2 text-sm text-muted-foreground">
+          Type to search files...
         </div>
       )}
     </div>

@@ -41,7 +41,7 @@ export function FloatingPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/20 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
       <div
         ref={panelRef}
         className={cn(

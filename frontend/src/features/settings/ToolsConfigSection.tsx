@@ -62,15 +62,15 @@ export function ToolsConfigSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Tools Configuration</h2>
-        <p className="text-sm text-gray-600 mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-2">Tools Configuration</h2>
+        <p className="text-sm text-muted-foreground mb-4">
           Control which tools AI agents can use. Allowlist mode only permits selected tools, while
           blocklist mode permits all except selected tools.
         </p>
       </div>
 
       <div>
-        <label htmlFor="mode" className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor="mode" className="block text-sm font-medium text-foreground mb-2">
           Mode
         </label>
         <select
@@ -80,7 +80,7 @@ export function ToolsConfigSection() {
             setMode(e.target.value as ToolMode);
             setSaved(false);
           }}
-          className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full max-w-xs px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="allowlist">Allowlist (only selected tools allowed)</option>
           <option value="blocklist">Blocklist (all except selected tools allowed)</option>
@@ -89,7 +89,7 @@ export function ToolsConfigSection() {
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="block text-sm font-medium text-gray-700">Tools</label>
+          <label className="block text-sm font-medium text-foreground">Tools</label>
           <div className="flex gap-2">
             <button
               onClick={handleSelectAll}
@@ -106,12 +106,12 @@ export function ToolsConfigSection() {
           </div>
         </div>
 
-        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto">
+        <div className="border border-border rounded-lg p-4 bg-muted max-h-96 overflow-y-auto">
           <div className="grid grid-cols-2 gap-2">
             {availableTools.map((tool) => (
               <label
                 key={tool}
-                className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
+                className="flex items-center gap-2 p-2 hover:bg-accent rounded cursor-pointer"
               >
                 <input
                   type="checkbox"
@@ -119,13 +119,13 @@ export function ToolsConfigSection() {
                   onChange={() => handleToggleTool(tool)}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-900">{tool}</span>
+                <span className="text-sm text-foreground">{tool}</span>
               </label>
             ))}
           </div>
         </div>
 
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           {mode === 'allowlist'
             ? `${selectedTools.length} tools allowed`
             : `${availableTools.length - selectedTools.length} tools allowed (${

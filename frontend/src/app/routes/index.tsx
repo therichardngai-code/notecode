@@ -66,8 +66,8 @@ function QuickAction({ icon: Icon, label, onClick, primary, disabled, loading }:
       className={cn(
         "flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-all",
         primary
-          ? "bg-white dark:bg-white/90 text-zinc-900 hover:bg-white/80 shadow-md"
-          : "glass hover:bg-white/20 dark:hover:bg-white/10",
+          ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+          : "glass border border-border hover:bg-white/20 dark:hover:bg-white/10",
         (disabled || loading) && "opacity-50 cursor-not-allowed"
       )}
     >

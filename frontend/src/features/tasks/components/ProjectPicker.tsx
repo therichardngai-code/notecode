@@ -55,18 +55,18 @@ export function ProjectPicker({ value, onChange }: ProjectPickerProps) {
       {selectedProject ? (
         <button
           onClick={() => setShowDropdown(!showDropdown)}
-          className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-gray-100 rounded transition-colors"
+          className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-accent rounded transition-colors"
         >
-          <Folder className="w-3.5 h-3.5 text-gray-500" />
+          <Folder className="w-3.5 h-3.5 text-muted-foreground" />
           <span>{selectedProject.name}</span>
         </button>
       ) : (
         <div className="relative">
-          <div className="flex items-center gap-2 px-2 py-1 border border-gray-300 rounded bg-gray-50">
+          <div className="flex items-center gap-2 px-2 py-1 border border-input rounded bg-muted">
             {isLoading ? (
-              <Loader2 className="w-3.5 h-3.5 text-gray-500 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
             ) : (
-              <Search className="w-3.5 h-3.5 text-gray-500" />
+              <Search className="w-3.5 h-3.5 text-muted-foreground" />
             )}
             <input
               ref={searchInputRef}
@@ -78,16 +78,16 @@ export function ProjectPicker({ value, onChange }: ProjectPickerProps) {
               }}
               onFocus={() => setShowDropdown(true)}
               placeholder="Search projects..."
-              className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+              className="flex-1 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
             />
           </div>
         </div>
       )}
 
       {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
           {isLoading ? (
-            <div className="px-3 py-2 text-sm text-gray-500 flex items-center gap-2">
+            <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
               Loading...
             </div>
@@ -97,20 +97,20 @@ export function ProjectPicker({ value, onChange }: ProjectPickerProps) {
                 <button
                   key={project.id}
                   onClick={() => selectProject(project.id)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors text-left"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
                 >
-                  <Folder className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                  <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <span className="truncate">{project.name}</span>
                 </button>
               ))
             ) : (
-              <div className="px-3 py-2 text-sm text-gray-500">No projects found</div>
+              <div className="px-3 py-2 text-sm text-muted-foreground">No projects found</div>
             )
           ) : (
             <>
               {favoriteProjects.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                  <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                     <Star className="w-3 h-3" />
                     Favorites
                   </div>
@@ -118,9 +118,9 @@ export function ProjectPicker({ value, onChange }: ProjectPickerProps) {
                     <button
                       key={project.id}
                       onClick={() => selectProject(project.id)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
                     >
-                      <Folder className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                      <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       <span className="truncate">{project.name}</span>
                     </button>
                   ))}
@@ -129,16 +129,16 @@ export function ProjectPicker({ value, onChange }: ProjectPickerProps) {
 
               {recentProjects.length > 0 && (
                 <>
-                  <div className="px-3 py-1.5 text-xs font-medium text-gray-500 uppercase tracking-wider mt-2">
+                  <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
                     Recent
                   </div>
                   {recentProjects.map((project) => (
                     <button
                       key={project.id}
                       onClick={() => selectProject(project.id)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent transition-colors text-left"
                     >
-                      <Folder className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                      <Folder className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                       <span className="truncate">{project.name}</span>
                     </button>
                   ))}
@@ -146,7 +146,7 @@ export function ProjectPicker({ value, onChange }: ProjectPickerProps) {
               )}
 
               {favoriteProjects.length === 0 && recentProjects.length === 0 && (
-                <div className="px-3 py-2 text-sm text-gray-500">No projects available</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">No projects available</div>
               )}
             </>
           )}

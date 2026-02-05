@@ -39,8 +39,8 @@ export function HooksListView({ onEdit, onDelete, onCreate }: HooksListViewProps
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Hooks Configuration</h2>
-          <p className="text-sm text-gray-600 mt-1">
+          <h2 className="text-lg font-semibold text-foreground">Hooks Configuration</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             Configure hooks to customize AI agent behavior at different lifecycle events.
           </p>
         </div>
@@ -53,8 +53,8 @@ export function HooksListView({ onEdit, onDelete, onCreate }: HooksListViewProps
       </div>
 
       {hooks.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-          <p className="text-gray-600">No hooks configured yet.</p>
+        <div className="text-center py-12 bg-muted rounded-lg border border-border">
+          <p className="text-muted-foreground">No hooks configured yet.</p>
           <button
             onClick={onCreate}
             className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
@@ -67,23 +67,23 @@ export function HooksListView({ onEdit, onDelete, onCreate }: HooksListViewProps
           {hooks.map((hook) => (
             <div
               key={hook.id}
-              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+              className="border border-border rounded-lg p-4 hover:bg-muted transition-colors"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-3">
-                    <h3 className="font-medium text-gray-900">{hook.name}</h3>
+                    <h3 className="font-medium text-foreground">{hook.name}</h3>
                     <span className="px-2 py-0.5 text-xs font-medium rounded bg-blue-100 text-blue-700">
                       {hook.event}
                     </span>
-                    <span className="px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-700">
+                    <span className="px-2 py-0.5 text-xs font-medium rounded bg-secondary text-secondary-foreground">
                       {hook.type}
                     </span>
                   </div>
                   {hook.description && (
-                    <p className="text-sm text-gray-600 mt-1">{hook.description}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{hook.description}</p>
                   )}
-                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                     <span>Providers: {hook.providers.join(', ')}</span>
                     <span>Updated: {hook.updatedAt.toLocaleDateString()}</span>
                   </div>
@@ -95,7 +95,7 @@ export function HooksListView({ onEdit, onDelete, onCreate }: HooksListViewProps
                     className={`px-3 py-1 text-sm rounded ${
                       hook.enabled
                         ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-600'
+                        : 'bg-secondary text-muted-foreground'
                     }`}
                   >
                     {hook.enabled ? 'Enabled' : 'Disabled'}

@@ -29,7 +29,7 @@ export function ChatContainer({
 
   if (messages.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+      <div className="flex items-center justify-center h-full text-muted-foreground">
         No messages yet. Start a conversation!
       </div>
     );
@@ -38,7 +38,7 @@ export function ChatContainer({
   return (
     <div
       ref={scrollRef}
-      className="chat-container bg-gray-100 dark:bg-gray-900 overflow-y-auto p-4 space-y-4"
+      className="chat-container bg-muted overflow-y-auto p-4 space-y-4"
       style={{ height: `${height}px` }}
     >
       {messages.map((message) => (

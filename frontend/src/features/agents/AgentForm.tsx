@@ -82,7 +82,7 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="name" className="block text-sm font-medium text-foreground mb-1">
             Agent Name *
           </label>
           <input
@@ -91,20 +91,20 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
             required
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="e.g., Frontend Developer"
           />
         </div>
 
         <div>
-          <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="role" className="block text-sm font-medium text-foreground mb-1">
             Role *
           </label>
           <select
             id="role"
             value={formData.role}
             onChange={(e) => setFormData({ ...formData, role: e.target.value as AgentType })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {agentRoles.map((role) => (
               <option key={role.value} value={role.value}>
@@ -116,7 +116,7 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
       </div>
 
       <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="description" className="block text-sm font-medium text-foreground mb-1">
           Description
         </label>
         <textarea
@@ -124,26 +124,26 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
           rows={3}
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="Describe the agent's purpose and capabilities"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Focus Areas</label>
+        <label className="block text-sm font-medium text-foreground mb-1">Focus Areas</label>
         <div className="flex gap-2 mb-2">
           <input
             type="text"
             value={focusInput}
             onChange={(e) => setFocusInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddFocusArea())}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Add focus area (e.g., React, TypeScript)"
           />
           <button
             type="button"
             onClick={handleAddFocusArea}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80"
           >
             Add
           </button>
@@ -168,20 +168,20 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Default Skills</label>
+        <label className="block text-sm font-medium text-foreground mb-1">Default Skills</label>
         <div className="flex gap-2 mb-2">
           <input
             type="text"
             value={skillInput}
             onChange={(e) => setSkillInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSkill())}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Add skill (e.g., debugging, ui-design)"
           />
           <button
             type="button"
             onClick={handleAddSkill}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80"
           >
             Add
           </button>
@@ -206,7 +206,7 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
       </div>
 
       <div className="border-t pt-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">Summary Injection</h3>
+        <h3 className="text-sm font-medium text-foreground mb-3">Summary Injection</h3>
         <div className="space-y-3">
           <label className="flex items-center gap-2">
             <input
@@ -217,14 +217,14 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
               }
               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-700">Inject previous session summaries</span>
+            <span className="text-sm text-foreground">Inject previous session summaries</span>
           </label>
 
           {formData.injectPreviousSummaries && (
             <div>
               <label
                 htmlFor="maxSummaries"
-                className="block text-sm font-medium text-gray-700 mb-1"
+                className="block text-sm font-medium text-foreground mb-1"
               >
                 Max summaries to inject
               </label>
@@ -237,7 +237,7 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
                 onChange={(e) =>
                   setFormData({ ...formData, maxSummariesToInject: parseInt(e.target.value) })
                 }
-                className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-32 px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           )}
@@ -248,13 +248,13 @@ export function AgentForm({ agent, onSubmit, onCancel }: AgentFormProps) {
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          className="px-4 py-2 text-secondary-foreground bg-secondary rounded-md hover:bg-secondary/80 transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          className="px-4 py-2 text-primary-foreground bg-primary rounded-md hover:bg-primary/90 transition-colors"
         >
           {agent ? 'Update Agent' : 'Create Agent'}
         </button>

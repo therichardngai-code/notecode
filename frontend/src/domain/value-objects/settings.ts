@@ -15,7 +15,7 @@ export interface ApprovalGateConfig {
 export interface GlobalSettings {
   id: 'global';
   userName: string;
-  theme: 'light' | 'dark' | 'system';
+  theme: 'light' | 'dark' | 'glass-light' | 'glass-dark';
   defaultProvider: ProviderType;
   defaultModel: string;
   apiKeys: {

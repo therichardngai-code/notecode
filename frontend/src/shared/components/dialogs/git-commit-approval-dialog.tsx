@@ -96,7 +96,7 @@ export function GitCommitApprovalDialog({
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose} />
 
       {/* Dialog */}
       <div className="fixed inset-4 z-50 flex items-center justify-center pointer-events-none">

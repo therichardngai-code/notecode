@@ -66,7 +66,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       <div>
         <label
           htmlFor="title"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-foreground mb-1"
         >
           Title *
         </label>
@@ -77,14 +77,14 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
           required
           value={formData.title}
           onChange={handleChange}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
       <div>
         <label
           htmlFor="description"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-foreground mb-1"
         >
           Description *
         </label>
@@ -95,7 +95,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
           rows={4}
           value={formData.description}
           onChange={handleChange}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -103,7 +103,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         <div>
           <label
             htmlFor="status"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-foreground mb-1"
           >
             Status
           </label>
@@ -112,7 +112,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             name="status"
             value={formData.status}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="not-started">To Do</option>
             <option value="in-progress">In Progress</option>
@@ -124,7 +124,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         <div>
           <label
             htmlFor="priority"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-foreground mb-1"
           >
             Priority
           </label>
@@ -133,7 +133,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             name="priority"
             value={formData.priority}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="low">Low</option>
             <option value="medium">Medium</option>
@@ -146,7 +146,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         <div>
           <label
             htmlFor="agentRole"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-foreground mb-1"
           >
             Agent Role
           </label>
@@ -155,7 +155,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             name="agentRole"
             value={formData.agentRole}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="researcher">Researcher</option>
             <option value="planner">Planner</option>
@@ -168,7 +168,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         <div>
           <label
             htmlFor="provider"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-foreground mb-1"
           >
             Provider
           </label>
@@ -177,7 +177,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             name="provider"
             value={formData.provider}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="anthropic">Anthropic</option>
             <option value="google">Google</option>
@@ -190,7 +190,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         <div>
           <label
             htmlFor="assignee"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-foreground mb-1"
           >
             Assignee
           </label>
@@ -200,14 +200,14 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             name="assignee"
             value={formData.assignee}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
         <div>
           <label
             htmlFor="dueDate"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-foreground mb-1"
           >
             Due Date
           </label>
@@ -217,13 +217,13 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             name="dueDate"
             value={formData.dueDate}
             onChange={handleChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-foreground mb-1">
           Project
         </label>
         <ProjectPicker
@@ -233,7 +233,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-foreground mb-1">
           Agent
         </label>
         <AgentPicker
@@ -245,10 +245,11 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-foreground mb-1">
           Context Files
         </label>
         <ContextFilePicker
+          projectId={formData.projectId}
           value={formData.contextFiles}
           onChange={(files) => setFormData((prev) => ({ ...prev, contextFiles: files }))}
         />
@@ -258,13 +259,13 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          className="px-4 py-2 text-secondary-foreground bg-secondary rounded-md hover:bg-secondary/80 transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          className="px-4 py-2 text-primary-foreground bg-primary rounded-md hover:bg-primary/90 transition-colors"
         >
           {task ? 'Update Task' : 'Create Task'}
         </button>

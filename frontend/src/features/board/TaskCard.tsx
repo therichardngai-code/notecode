@@ -47,7 +47,7 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       }`}
     >
       <div className="flex items-start justify-between mb-2">
-        <h3 className="font-semibold text-gray-900 text-sm flex-1">
+        <h3 className="font-semibold text-foreground text-sm flex-1">
           {task.title}
         </h3>
         <span
@@ -59,21 +59,21 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
         </span>
       </div>
 
-      <p className="text-gray-600 text-xs mb-3 line-clamp-2">
+      <p className="text-muted-foreground text-xs mb-3 line-clamp-2">
         {task.description}
       </p>
 
       <div className="flex items-center justify-between text-xs">
-        <span className="text-gray-500 bg-gray-100 px-2 py-1 rounded">
+        <span className="text-muted-foreground bg-secondary px-2 py-1 rounded">
           {task.agentRole}
         </span>
         {task.assignee && (
-          <span className="text-gray-700 font-medium">{task.assignee}</span>
+          <span className="text-foreground/80 font-medium">{task.assignee}</span>
         )}
       </div>
 
       {task.dueDate && (
-        <div className="mt-2 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-muted-foreground">
           Due: {new Date(task.dueDate).toLocaleDateString()}
         </div>
       )}

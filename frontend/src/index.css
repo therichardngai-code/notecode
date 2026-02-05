@@ -2,143 +2,252 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =============================================================================
+   4-MODE THEME SYSTEM
+   Modes: light (solid), dark (solid), glass-light, glass-dark
+   Strategy: .dark for color, .glass for style
+   - <html class="">           → Solid Light
+   - <html class="dark">       → Solid Dark
+   - <html class="glass">      → Glass Light
+   - <html class="dark glass"> → Glass Dark
+   ============================================================================= */
+
 @layer base {
+  /* ---------------------------------------------------------------------------
+     SOLID LIGHT MODE (default)
+     Inspired by VS Code Light / Notion
+     --------------------------------------------------------------------------- */
   :root {
+    /* Theme transition for smooth mode switching */
+    --theme-transition: background-color 0.3s ease, border-color 0.3s ease, color 0.2s ease;
+
+    /* Core colors */
     --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 80%;
+    --input: 0 0% 80%;
+    --ring: 221 83% 53%;
     --radius: 0.5rem;
 
+    /* Sidebar */
     --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 240 5.9% 10%;
+    --sidebar-foreground: 0 0% 25%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 9%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 221 83% 53%;
 
+    /* Body background - solid white for light mode */
+    --body-bg: #ffffff;
+
+    /* Code block background */
+    --code-bg: 24 24 27;
+
+    /* Glass variables (INACTIVE in solid mode - zeroed out) */
+    --glass-bg: 255 255 255;
+    --glass-opacity: 0;
+    --glass-subtle-opacity: 0;
+    --glass-strong-opacity: 0;
+    --glass-blur: 0px;
+    --glass-blur-strong: 0px;
+    --glass-border-opacity: 0;
+    --glass-shadow: none;
   }
 
+  /* ---------------------------------------------------------------------------
+     SOLID DARK MODE
+     Inspired by VS Code Dark
+     --------------------------------------------------------------------------- */
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /* Core colors */
+    --background: 0 0% 12%;
+    --foreground: 0 0% 93%;
+    --card: 0 0% 15%;
+    --card-foreground: 0 0% 93%;
+    --popover: 0 0% 15%;
+    --popover-foreground: 0 0% 93%;
+    --primary: 213 94% 68%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 93%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 93%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 93%;
+    --border: 0 0% 22%;
+    --input: 0 0% 22%;
+    --ring: 213 94% 68%;
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 240 4.9% 83.9%;
+    /* Sidebar */
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 213 94% 68%;
+    --sidebar-primary-foreground: 0 0% 9%;
+    --sidebar-accent: 0 0% 18%;
+    --sidebar-accent-foreground: 0 0% 93%;
+    --sidebar-border: 0 0% 22%;
+    --sidebar-ring: 213 94% 68%;
 
+    /* Body background - solid dark */
+    --body-bg: #1e1e1e;
+
+    /* Glass variables (INACTIVE in solid mode) */
+    --glass-bg: 30 30 30;
+    --glass-opacity: 0;
+    --glass-subtle-opacity: 0;
+    --glass-strong-opacity: 0;
+    --glass-blur: 0px;
+    --glass-blur-strong: 0px;
+    --glass-border-opacity: 0;
+    --glass-shadow: none;
+  }
+
+  /* ---------------------------------------------------------------------------
+     GLASS LIGHT MODE
+     Frosted glass effect with gradient background
+     --------------------------------------------------------------------------- */
+  html.glass {
+    /* Body background - gradient for glass effect */
+    --body-bg: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 30%, #e7e5e4 60%, #f5f5f4 100%);
+
+    /* Glass variables ACTIVE */
+    --glass-bg: 255 255 255;
+    --glass-opacity: 0.25;
+    --glass-subtle-opacity: 0.15;
+    --glass-strong-opacity: 0.88;
+    --glass-blur: 12px;
+    --glass-blur-strong: 16px;
+    --glass-border-opacity: 0.3;
+    --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  /* ---------------------------------------------------------------------------
+     GLASS DARK MODE
+     Dark frosted glass with dark gradient
+     --------------------------------------------------------------------------- */
+  html.dark.glass {
+    /* Body background - dark gradient for glass effect */
+    --body-bg: linear-gradient(135deg, #18181b 0%, #27272a 50%, #3f3f46 100%);
+
+    /* Glass variables ACTIVE */
+    --glass-bg: 39 39 42;
+    --glass-opacity: 0.7;
+    --glass-subtle-opacity: 0.5;
+    --glass-strong-opacity: 0.92;
+    --glass-blur: 12px;
+    --glass-blur-strong: 16px;
+    --glass-border-opacity: 0.1;
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   }
 }
+
+/* =============================================================================
+   BASE STYLES
+   ============================================================================= */
 
 @layer base {
   * {
     @apply border-border;
+    transition: var(--theme-transition);
   }
+
   body {
     @apply text-foreground;
-    /* Web mode: Subtle neutral gradient (teal-gray-cream like reference) */
-    background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 30%, #e7e5e4 60%, #f5f5f4 100%);
+    background: var(--body-bg);
     background-attachment: fixed;
     min-height: 100vh;
+    transition: background 0.4s ease;
   }
-  body.dark, .dark body, html.dark body {
-    /* Black to gray gradient */
-    background: linear-gradient(135deg, #18181b 0%, #27272a 50%, #3f3f46 100%);
-    background-attachment: fixed;
-  }
+
   /* Electron mode: Transparent background to show user's desktop */
   body.electron-mode {
     background: transparent !important;
   }
-  body.electron-mode.dark, .dark body.electron-mode {
-    background: transparent !important;
-  }
 }
 
-/* Glassmorphism utility classes - lower opacity for visible effect */
+/* =============================================================================
+   GLASS COMPONENT CLASSES
+   These classes apply glass effects ONLY when html.glass is active
+   In solid modes, they fall back to solid card/border colors
+   ============================================================================= */
+
 @layer components {
+  /* Standard glass effect */
   .glass {
-    background: rgba(255, 255, 255, 0.25) !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    background: rgba(var(--glass-bg) / var(--glass-opacity));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid rgba(var(--glass-bg) / var(--glass-border-opacity));
+    box-shadow: var(--glass-shadow);
+    transition: var(--theme-transition), backdrop-filter 0.3s ease;
   }
 
+  /* Subtle glass (lighter) */
   .glass-subtle {
-    background: rgba(255, 255, 255, 0.15) !important;
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    background: rgba(var(--glass-bg) / var(--glass-subtle-opacity));
+    backdrop-filter: blur(calc(var(--glass-blur) * 0.67));
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.67));
+    border: 1px solid rgba(var(--glass-bg) / calc(var(--glass-border-opacity) * 0.67));
+    transition: var(--theme-transition), backdrop-filter 0.3s ease;
   }
 
+  /* Strong glass (more opaque) */
   .glass-strong {
-    background: rgba(250, 250, 252, 0.92) !important;
-    backdrop-filter: blur(16px) !important;
-    -webkit-backdrop-filter: blur(16px) !important;
-    border: 1px solid rgba(0, 0, 0, 0.08) !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04) !important;
+    background: rgba(var(--glass-bg) / var(--glass-strong-opacity));
+    backdrop-filter: blur(var(--glass-blur-strong));
+    -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+    border: 1px solid rgba(var(--glass-bg) / var(--glass-border-opacity));
+    box-shadow: var(--glass-shadow), 0 0 0 1px rgba(var(--glass-bg) / 0.05);
+    transition: var(--theme-transition), backdrop-filter 0.3s ease;
   }
 
-  /* Dark mode glass - semi-transparent to show gradient */
-  .dark .glass {
-    background: rgba(39, 39, 42, 0.7) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  /* ---------------------------------------------------------------------------
+     SOLID MODE FALLBACK
+     When html does NOT have .glass class, glass components become solid
+     --------------------------------------------------------------------------- */
+  html:not(.glass) .glass,
+  html:not(.glass) .glass-subtle,
+  html:not(.glass) .glass-strong {
+    background: hsl(var(--card));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid hsl(var(--border));
+    box-shadow: none;
   }
 
-  .dark .glass-subtle {
-    background: rgba(39, 39, 42, 0.5) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  }
-
-  .dark .glass-strong {
-    background: rgba(24, 24, 27, 0.92) !important;
-    backdrop-filter: blur(16px) !important;
-    -webkit-backdrop-filter: blur(16px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+  /* ---------------------------------------------------------------------------
+     GLASS MODE POPOVER OVERRIDE
+     In glass mode, popovers/dropdowns should also be glass
+     --------------------------------------------------------------------------- */
+  html.glass .bg-popover {
+    background: rgba(var(--glass-bg) / var(--glass-strong-opacity)) !important;
+    backdrop-filter: blur(var(--glass-blur-strong)) !important;
+    -webkit-backdrop-filter: blur(var(--glass-blur-strong)) !important;
   }
 }
 
-/* Custom scrollbar */
+/* =============================================================================
+   CUSTOM SCROLLBAR
+   ============================================================================= */
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -157,11 +266,15 @@
   background: hsl(var(--muted-foreground) / 0.5);
 }
 
-/* Float-up entrance animation */
+/* =============================================================================
+   ANIMATIONS
+   ============================================================================= */
+
 @keyframes float-up {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
 .animate-float-up {
   animation: float-up 0.4s ease-out forwards;
 }

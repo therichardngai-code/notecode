@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- NoteCode: Inner N shape with dot, clear gap -->
+
+  <rect x="48" y="48" width="416" height="416" rx="80" fill="#06B6D4"/>
+
+  <!-- Left: vertical line + short angle -->
+  <path d="M152 356 L152 156" stroke="white" stroke-width="36" stroke-linecap="round" fill="none"/>
+  <path d="M152 156 L200 210" stroke="white" stroke-width="36" stroke-linecap="round" fill="none"/>
+
+  <!-- Right: short angle + vertical line -->
+  <path d="M312 302 L360 356" stroke="white" stroke-width="36" stroke-linecap="round" fill="none"/>
+  <path d="M360 156 L360 356" stroke="white" stroke-width="36" stroke-linecap="round" fill="none"/>
+
+  <!-- Center dot -->
+  <circle cx="256" cy="256" r="32" fill="white"/>
+</svg>

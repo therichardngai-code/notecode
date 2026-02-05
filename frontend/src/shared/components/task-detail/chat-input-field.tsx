@@ -13,6 +13,7 @@ interface ChatInputFieldProps {
   showContextPicker: boolean;
   filteredFiles: string[];
   contextPickerIndex: number;
+  isSearchingFiles?: boolean;
 
   // Refs
   chatInputRef: React.RefObject<HTMLInputElement | null>;
@@ -42,6 +43,7 @@ export const ChatInputField = memo(function ChatInputField({
   showContextPicker,
   filteredFiles,
   contextPickerIndex,
+  isSearchingFiles,
   chatInputRef,
   contextPickerRef,
   onChatInputChange,
@@ -75,6 +77,7 @@ export const ChatInputField = memo(function ChatInputField({
         isOpen={showContextPicker}
         filteredFiles={filteredFiles}
         selectedIndex={contextPickerIndex}
+        isSearching={isSearchingFiles}
         onSelect={onSelectContextFile}
         containerRef={contextPickerRef}
       />

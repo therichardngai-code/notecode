@@ -14,7 +14,7 @@ export interface GlobalSettings {
   id: string;
   userName?: string;
   userEmail?: string; // Used as fallback for git commits when global git config not set
-  theme: 'light' | 'dark' | 'system';
+  theme: 'light' | 'dark' | 'glass-light' | 'glass-dark';
   defaultProvider?: 'anthropic' | 'google' | 'openai';
   defaultModel?: string;
   fallbackModel?: string;

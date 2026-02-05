@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ScrollArea } from '@radix-ui/react-scroll-area';
+import { useSettings } from '@/shared/hooks/use-settings';
 
 // Panel items - single click toggles panel, double click opens in tab
 // (same as prototype: source-control, inbox)
@@ -175,6 +176,8 @@ export function Navigator({
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const location = useLocation();
   const currentPath = location.pathname;
+  const { data: settings } = useSettings();
+  const userName = settings?.userName || 'User';
 
   if (isCollapsed) {
     return (
@@ -182,10 +185,10 @@ export function Navigator({
         <div className="flex items-center justify-center py-2 border-b border-sidebar-border/50">
           <button
             onClick={onToggleCollapse}
-            className="w-7 h-7 rounded-md bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-xs font-semibold hover:opacity-90 transition-opacity"
+            className="w-7 h-7 rounded-md overflow-hidden hover:opacity-90 transition-opacity"
             title="Expand sidebar"
           >
-            N
+            <img src="/logo.svg" alt="NoteCode" className="w-full h-full" />
           </button>
         </div>
       </div>
@@ -194,10 +197,13 @@ export function Navigator({
 
   return (
     <div className="w-60 glass-subtle border-r border-sidebar-border/50 flex flex-col h-full">
-      {/* Top Row: App Logo + Toggle */}
+      {/* Top Row: App Logo + Name + Toggle */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/50">
-        <div className="w-6 h-6 rounded-md bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-xs font-semibold">
-          N
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md overflow-hidden">
+            <img src="/logo.svg" alt="NoteCode" className="w-full h-full" />
+          </div>
+          <span className="font-semibold text-sm text-sidebar-foreground">NoteCode</span>
         </div>
         {onToggleCollapse && (
           <button
@@ -212,12 +218,7 @@ export function Navigator({
 
       {/* Workspace Selector */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/50">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-[10px] font-semibold">
-            N
-          </div>
-          <span className="font-medium text-sm text-sidebar-foreground">AI Workspace</span>
-        </div>
+        <span className="font-medium text-sm text-sidebar-foreground">{userName}'s Workspace</span>
         <div className="flex items-center gap-0.5">
           {onNewTaskClick && (
             <button

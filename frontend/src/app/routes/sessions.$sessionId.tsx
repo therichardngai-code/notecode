@@ -39,8 +39,8 @@ function SessionDetail() {
 
   return (
     <div className="flex flex-col h-screen">
-      <header className="border-b border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+      <header className="border-b border-border bg-card px-6 py-4">
+        <h1 className="text-xl font-semibold text-foreground">
           Session: {sessionId}
         </h1>
       </header>

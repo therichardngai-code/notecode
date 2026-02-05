@@ -440,7 +440,7 @@ export function FloatingTaskDetailPanel({ isOpen, taskId, onClose }: FloatingTas
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/20 z-40 transition-opacity"
+        className="fixed inset-0 bg-black/40 z-40 transition-opacity"
         onClick={onClose}
       />
 

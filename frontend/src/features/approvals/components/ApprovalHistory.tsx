@@ -36,7 +36,7 @@ export function ApprovalHistory({ approvals, onApprovalClick }: ApprovalHistoryP
     pending: 'bg-yellow-500/20 text-yellow-600 dark:text-yellow-400',
     approved: 'bg-green-500/20 text-green-600 dark:text-green-400',
     rejected: 'bg-red-500/20 text-red-600 dark:text-red-400',
-    timeout: 'bg-gray-500/20 text-gray-600 dark:text-gray-400',
+    timeout: 'bg-muted text-muted-foreground',
   };
 
   return (

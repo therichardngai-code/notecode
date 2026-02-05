@@ -3,8 +3,8 @@ import { persist } from 'zustand/middleware';
 
 interface UIState {
   // Theme
-  theme: 'light' | 'dark' | 'system';
-  setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  theme: 'light' | 'dark' | 'glass-light' | 'glass-dark';
+  setTheme: (theme: 'light' | 'dark' | 'glass-light' | 'glass-dark') => void;
 
   // Panels
   leftPanelOpen: boolean;
@@ -57,7 +57,7 @@ interface UIState {
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
-      theme: 'system',
+      theme: 'light',
       setTheme: (theme) => set({ theme }),
 
       leftPanelOpen: true,

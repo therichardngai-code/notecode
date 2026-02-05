@@ -13,3 +13,4 @@ export * from './settings-api';
 export * from './version-api';
 export * from './backup-api';
 export * from './discovery-api';
+export * from './files-api';

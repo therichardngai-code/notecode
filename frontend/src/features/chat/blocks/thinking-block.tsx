@@ -22,8 +22,8 @@ export function ThinkingBlockComponent({ block }: ThinkingBlockProps) {
         </span>
       </button>
       {!isCollapsed && (
-        <div className="px-4 py-3 bg-white dark:bg-gray-800">
-          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap italic">
+        <div className="px-4 py-3 bg-card">
+          <p className="text-sm text-foreground/80 whitespace-pre-wrap italic">
             {block.content}
           </p>
         </div>

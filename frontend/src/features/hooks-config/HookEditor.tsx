@@ -63,7 +63,7 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="name" className="block text-sm font-medium text-foreground mb-1">
             Hook Name *
           </label>
           <input
@@ -72,19 +72,19 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
             required
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label htmlFor="event" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="event" className="block text-sm font-medium text-foreground mb-1">
             Event *
           </label>
           <select
             id="event"
             value={formData.event}
             onChange={(e) => setFormData({ ...formData, event: e.target.value as HookEvent })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {hookEvents.map((event) => (
               <option key={event} value={event}>
@@ -96,7 +96,7 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
       </div>
 
       <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="description" className="block text-sm font-medium text-foreground mb-1">
           Description
         </label>
         <textarea
@@ -104,20 +104,20 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
           rows={2}
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="type" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="type" className="block text-sm font-medium text-foreground mb-1">
             Type *
           </label>
           <select
             id="type"
             value={formData.type}
             onChange={(e) => setFormData({ ...formData, type: e.target.value as HookType })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {hookTypes.map((type) => (
               <option key={type} value={type}>
@@ -128,7 +128,7 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Providers</label>
+          <label className="block text-sm font-medium text-foreground mb-1">Providers</label>
           <div className="flex gap-3 items-center h-10">
             {(['anthropic', 'google', 'openai'] as ProviderType[]).map((provider) => (
               <label key={provider} className="flex items-center gap-1 cursor-pointer">
@@ -138,7 +138,7 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
                   onChange={() => handleProviderToggle(provider)}
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700 capitalize">{provider}</span>
+                <span className="text-sm text-foreground capitalize">{provider}</span>
               </label>
             ))}
           </div>
@@ -147,8 +147,8 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
 
       {formData.type === 'script' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Script</label>
-          <div className="border border-gray-300 rounded-md overflow-hidden">
+          <label className="block text-sm font-medium text-foreground mb-1">Script</label>
+          <div className="border border-input rounded-md bg-background overflow-hidden">
             <Suspense fallback={<div className="h-[300px] flex items-center justify-center"><LoadingSpinner /></div>}>
               <Editor
                 height="300px"
@@ -176,7 +176,7 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
           onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
         />
-        <label htmlFor="enabled" className="text-sm text-gray-700">
+        <label htmlFor="enabled" className="text-sm text-foreground">
           Enable this hook
         </label>
       </div>
@@ -185,13 +185,13 @@ export function HookEditor({ hook, onSave, onCancel }: HookEditorProps) {
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+          className="px-4 py-2 text-secondary-foreground bg-secondary rounded-md hover:bg-secondary/80 transition-colors"
         >
           Cancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          className="px-4 py-2 text-primary-foreground bg-primary rounded-md hover:bg-primary/90 transition-colors"
         >
           {hook ? 'Update Hook' : 'Create Hook'}
         </button>

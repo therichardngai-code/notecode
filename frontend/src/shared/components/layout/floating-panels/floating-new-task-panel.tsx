@@ -176,7 +176,7 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
   return (
     <>
       {/* Backdrop */}
-      {isNewTaskPanelOpen && <div className="fixed inset-0 z-40 bg-black/20" />}
+      {isNewTaskPanelOpen && <div className="fixed inset-0 z-40 bg-black/40" />}
 
       {/* Sliding Panel */}
       <div

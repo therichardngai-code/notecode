@@ -10,14 +10,14 @@ export function CommandBlockComponent({ block }: CommandBlockProps) {
   const isSuccess = exitCode === 0;
 
   return (
-    <div className="command-block my-2 border border-gray-300 dark:border-gray-700 rounded overflow-hidden">
+    <div className="command-block my-2 border border-border rounded overflow-hidden">
       <div className="bg-gray-900 text-white px-4 py-2 flex items-center gap-2">
         <span className="text-gray-400">$</span>
         <code className="font-mono text-sm">{block.command}</code>
       </div>
       {hasOutput && (
-        <div className={`px-4 py-2 font-mono text-sm ${isSuccess ? 'bg-gray-50 dark:bg-gray-800' : 'bg-red-50 dark:bg-red-900/20'}`}>
-          <pre className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">
+        <div className={`px-4 py-2 font-mono text-sm ${isSuccess ? 'bg-muted' : 'bg-red-50 dark:bg-red-900/20'}`}>
+          <pre className="whitespace-pre-wrap text-foreground">
             {block.output}
           </pre>
           {block.exitCode !== undefined && !isSuccess && (

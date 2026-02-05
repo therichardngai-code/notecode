@@ -57,7 +57,7 @@ export function NewTabPanel({ isOpen, onClose, onSelectPage, onCreateNew }: NewT
   return createPortal(
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-[100] bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 z-[100] bg-black/40" onClick={onClose} />
 
       {/* Centered Modal */}
       <div className="fixed inset-0 z-[110] flex items-start justify-center pt-[15vh] pointer-events-none">

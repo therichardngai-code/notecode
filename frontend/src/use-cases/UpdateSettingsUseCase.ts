@@ -6,7 +6,7 @@ export interface UpdateSettingsInput {
   defaultProvider?: ProviderType;
   defaultModel?: string;
   yoloMode?: boolean;
-  theme?: 'light' | 'dark' | 'system';
+  theme?: 'light' | 'dark' | 'glass-light' | 'glass-dark';
   autoExtractSummary?: boolean;
 }
 

@@ -20,10 +20,10 @@ export function DiffBlockComponent({ block, onApprove, onReject }: DiffBlockProp
   };
 
   return (
-    <div className="diff-block my-2 border border-gray-300 dark:border-gray-700 rounded overflow-hidden">
-      <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 flex items-center justify-between">
+    <div className="diff-block my-2 border border-border rounded overflow-hidden">
+      <div className="bg-muted px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+          <span className="text-sm font-semibold text-foreground">
             Diff:
           </span>
           <code className="font-mono text-sm text-blue-600 dark:text-blue-400">
@@ -59,7 +59,7 @@ export function DiffBlockComponent({ block, onApprove, onReject }: DiffBlockProp
       </div>
 
       {block.status === 'pending' && (
-        <div className="bg-gray-50 dark:bg-gray-800 px-4 py-3 flex gap-2">
+        <div className="bg-muted px-4 py-3 flex gap-2">
           <button
             onClick={() => onApprove?.(block.filePath)}
             className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded transition-colors"

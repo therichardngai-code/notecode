@@ -14,10 +14,10 @@ interface BoardColumnProps {
 }
 
 const statusColors: Record<string, string> = {
-  'not-started': 'bg-gray-50 border-gray-300',
-  'in-progress': 'bg-blue-50 border-blue-300',
-  review: 'bg-purple-50 border-purple-300',
-  done: 'bg-green-50 border-green-300',
+  'not-started': 'bg-muted border-border',
+  'in-progress': 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800',
+  review: 'bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800',
+  done: 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-800',
 };
 
 export function BoardColumn({
@@ -35,9 +35,9 @@ export function BoardColumn({
   return (
     <div className="flex-1 min-w-[280px]">
       <div className="mb-4">
-        <h2 className="font-bold text-gray-800 text-lg flex items-center justify-between">
+        <h2 className="font-bold text-foreground text-lg flex items-center justify-between">
           {title}
-          <span className="text-sm font-normal text-gray-500 bg-gray-200 px-2 py-1 rounded-full">
+          <span className="text-sm font-normal text-muted-foreground bg-secondary px-2 py-1 rounded-full">
             {tasks.length}
           </span>
         </h2>
@@ -46,8 +46,8 @@ export function BoardColumn({
       <div
         ref={setNodeRef}
         className={`rounded-lg border-2 p-3 min-h-[500px] transition-colors ${
-          statusColors[status] || 'bg-gray-50 border-gray-300'
-        } ${isOver ? 'ring-2 ring-blue-400 border-blue-400' : ''}`}
+          statusColors[status] || 'bg-muted border-border'
+        } ${isOver ? 'ring-2 ring-primary border-primary' : ''}`}
       >
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (

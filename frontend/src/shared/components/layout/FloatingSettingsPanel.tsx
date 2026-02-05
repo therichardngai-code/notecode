@@ -68,13 +68,7 @@ function SidebarItem({ icon: Icon, label, isActive, isUser, onClick }: {
           : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10'
       )}
     >
-      {isUser ? (
-        <div className="w-5 h-5 rounded bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-xs font-medium">
-          U
-        </div>
-      ) : (
-        <Icon className="w-4 h-4" />
-      )}
+      <Icon className="w-4 h-4" />
       <span className="truncate">{label}</span>
     </button>
   );
@@ -235,11 +229,11 @@ function ProfileContent({ settings, updateSettings, isPending }: ContentProps) {
 }
 
 function PreferencesContent({ settings, updateSettings, isPending }: ContentProps) {
-  const [theme, setTheme] = useState(settings?.theme || 'system');
-  const hasChanges = theme !== (settings?.theme || 'system');
+  const [theme, setTheme] = useState<string>(settings?.theme || 'light');
+  const hasChanges = theme !== (settings?.theme || 'light');
 
   useEffect(() => {
-    setTheme(settings?.theme || 'system');
+    setTheme(settings?.theme || 'light');
   }, [settings?.theme]);
 
   return (
@@ -251,13 +245,14 @@ function PreferencesContent({ settings, updateSettings, isPending }: ContentProp
           options={[
             { id: 'light', label: 'Light' },
             { id: 'dark', label: 'Dark' },
-            { id: 'system', label: 'System' },
+            { id: 'glass-light', label: 'Glass Light' },
+            { id: 'glass-dark', label: 'Glass Dark' },
           ]}
-          onChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
+          onChange={(v) => setTheme(v)}
           disabled={isPending}
         />
       </SettingRow>
-      <SaveButton onClick={() => updateSettings({ theme: theme as 'light' | 'dark' | 'system' })} isPending={isPending} hasChanges={hasChanges} />
+      <SaveButton onClick={() => updateSettings({ theme: theme as 'light' | 'dark' | 'glass-light' | 'glass-dark' })} isPending={isPending} hasChanges={hasChanges} />
     </div>
   );
 }
@@ -668,7 +663,7 @@ export function FloatingSettingsPanel({ isOpen, onClose, onOpenFullSettings }: F
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/50" />
+      <div className="fixed inset-0 z-40 bg-black/40" />
 
       {/* Panel */}
       <div

@@ -67,13 +67,13 @@ export function AgentPicker({ value, onChange, multiSelect = false }: AgentPicke
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className="text-sm hover:bg-gray-100 px-2 py-1 rounded transition-colors"
+        className="text-sm hover:bg-accent px-2 py-1 rounded transition-colors"
       >
         {getDisplayValue()}
       </button>
 
       {showDropdown && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
+        <div className="absolute top-full left-0 mt-1 w-64 bg-popover border border-border rounded-lg shadow-lg py-1 z-20 max-h-64 overflow-y-auto">
           {agentOptions.map((agent) => {
             const Icon = agent.icon;
             const selected = isSelected(agent.id);
@@ -82,14 +82,14 @@ export function AgentPicker({ value, onChange, multiSelect = false }: AgentPicke
               <button
                 key={agent.id}
                 onClick={() => toggleAgent(agent.id)}
-                className={`w-full flex items-start gap-3 px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${
-                  selected ? 'bg-blue-50' : ''
+                className={`w-full flex items-start gap-3 px-3 py-2 text-sm hover:bg-accent transition-colors ${
+                  selected ? 'bg-primary/10' : ''
                 }`}
               >
                 {multiSelect ? (
                   <span
                     className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 mt-0.5 ${
-                      selected ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                      selected ? 'border-blue-500 bg-primary/100' : 'border-input'
                     }`}
                   >
                     {selected && <Check className="w-3 h-3 text-white" />}
@@ -97,16 +97,16 @@ export function AgentPicker({ value, onChange, multiSelect = false }: AgentPicke
                 ) : (
                   <span
                     className={`w-4 h-4 border rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                      selected ? 'border-blue-500' : 'border-gray-300'
+                      selected ? 'border-blue-500' : 'border-input'
                     }`}
                   >
-                    {selected && <span className="w-2 h-2 rounded-full bg-blue-500" />}
+                    {selected && <span className="w-2 h-2 rounded-full bg-primary/100" />}
                   </span>
                 )}
-                <Icon className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+                <Icon className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 <div className="text-left flex-1">
-                  <div className="font-medium text-gray-900">{agent.label}</div>
-                  <div className="text-xs text-gray-500">{agent.description}</div>
+                  <div className="font-medium text-foreground">{agent.label}</div>
+                  <div className="text-xs text-muted-foreground">{agent.description}</div>
                 </div>
               </button>
             );

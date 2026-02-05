@@ -102,7 +102,7 @@ export function TaskProperties({ task, isEditable = false }: TaskPropertiesProps
 
         return (
           <div key={propId} className="flex items-center gap-3 group">
-            <div className="flex items-center gap-2 w-24 text-sm text-gray-500">
+            <div className="flex items-center gap-2 w-24 text-sm text-muted-foreground">
               <Icon className="w-4 h-4" />
               <span>{propType.label}</span>
             </div>
@@ -136,7 +136,7 @@ export function TaskProperties({ task, isEditable = false }: TaskPropertiesProps
                   {task.skills.map((skill) => (
                     <span
                       key={skill}
-                      className="px-2 py-0.5 bg-gray-100 rounded text-xs"
+                      className="px-2 py-0.5 bg-secondary rounded text-xs"
                     >
                       {skill}
                     </span>
@@ -148,7 +148,7 @@ export function TaskProperties({ task, isEditable = false }: TaskPropertiesProps
                   {task.contextFiles.map((file) => (
                     <span
                       key={file}
-                      className="px-2 py-0.5 bg-gray-100 rounded text-xs font-mono"
+                      className="px-2 py-0.5 bg-secondary rounded text-xs font-mono"
                     >
                       {file}
                     </span>
@@ -159,7 +159,7 @@ export function TaskProperties({ task, isEditable = false }: TaskPropertiesProps
             {isEditable && propId !== 'status' && (
               <button
                 onClick={() => removeProperty(propId)}
-                className="p-1 rounded hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="p-1 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Trash2 className="w-3.5 h-3.5 text-gray-500" />
               </button>
@@ -172,14 +172,14 @@ export function TaskProperties({ task, isEditable = false }: TaskPropertiesProps
         <div className="relative" ref={addPropertyRef}>
           <button
             onClick={() => setShowAddProperty(!showAddProperty)}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-gray-700 transition-colors"
           >
             <Plus className="w-4 h-4" />
             <span>Add a property</span>
           </button>
 
           {showAddProperty && (
-            <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20">
+            <div className="absolute top-full left-0 mt-1 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-20">
               {propertyTypes.map((type) => {
                 const exists = visibleProperties.includes(type.id);
                 return (
@@ -189,8 +189,8 @@ export function TaskProperties({ task, isEditable = false }: TaskPropertiesProps
                     disabled={exists}
                     className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors ${
                       exists
-                        ? 'text-gray-400 cursor-not-allowed'
-                        : 'text-gray-700 hover:bg-gray-50'
+                        ? 'text-muted-foreground cursor-not-allowed'
+                        : 'text-foreground hover:bg-accent'
                     }`}
                   >
                     <type.icon className="w-4 h-4" />

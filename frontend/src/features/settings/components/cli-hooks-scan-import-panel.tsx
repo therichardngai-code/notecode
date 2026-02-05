@@ -36,7 +36,7 @@ function getHookStatus(hook: ScannedHook): HookStatus {
 function StatusBadge({ status }: { status: HookStatus }) {
   const config = {
     new: { label: 'New', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-    'exists-same': { label: 'Exists-Same', className: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
+    'exists-same': { label: 'Exists-Same', className: 'bg-secondary text-secondary-foreground' },
     'exists-changed': { label: 'Exists-Changed', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
     'db-only': { label: 'DB Only', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
     unknown: { label: 'Unknown', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
@@ -310,7 +310,7 @@ export function CliHooksScanImportPanel({ provider, scope, projectId, projectPat
 
       {/* Diff Dialog */}
       {diffHook && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-background rounded-lg shadow-xl w-[900px] max-w-[95vw] max-h-[90vh] flex flex-col">
             {/* Dialog Header */}
             <div className="flex items-center justify-between p-4 border-b border-border">

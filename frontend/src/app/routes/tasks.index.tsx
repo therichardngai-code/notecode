@@ -591,7 +591,7 @@ function TasksIndexPage() {
       {/* Project Change Confirmation Dialog */}
       {pendingProject && createPortal(
         <>
-          <div className="fixed inset-0 z-[200] bg-black/50" onClick={cancelProjectChange} />
+          <div className="fixed inset-0 z-[200] bg-black/40" onClick={cancelProjectChange} />
           <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-96 glass-strong rounded-lg shadow-xl border border-border p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center">

@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { filesApi } from '@/adapters/api';
 
 interface ContextPickerParams {
+  projectId: string | null;
   chatInput: string;
   setChatInput: (value: string) => void;
   attachedFiles: string[];
@@ -9,6 +11,7 @@ interface ContextPickerParams {
 }
 
 export function useContextPicker({
+  projectId,
   chatInput,
   setChatInput,
   attachedFiles,
@@ -20,16 +23,28 @@ export function useContextPicker({
   const [contextSearch, setContextSearch] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [contextPickerIndex, setContextPickerIndex] = useState(0);
+  const [filteredFiles, setFilteredFiles] = useState<string[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const contextPickerRef = useRef<HTMLDivElement>(null);
 
-  // TODO: Replace with actual project files from file system
-  const projectFiles = [
-    'src/index.ts', 'src/app.tsx', 'src/components/Button.tsx', 'src/components/Modal.tsx',
-    'src/hooks/useAuth.ts', 'src/utils/helpers.ts', 'package.json', 'tsconfig.json', 'README.md',
-  ];
-
-  // Filter files based on search
-  const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
+  // Debounced file search API call
+  useEffect(() => {
+    if (!showContextPicker || !projectId) {
+      setFilteredFiles([]);
+      return;
+    }
+    const query = contextSearch.trim() || '';
+    const timeoutId = setTimeout(() => {
+      setIsSearching(true);
+      filesApi.search(projectId, query)
+        .then((res: { results: Array<{ path: string; name: string }> }) => {
+          setFilteredFiles(res.results.slice(0, 10).map(f => f.path));
+        })
+        .catch(() => setFilteredFiles([]))
+        .finally(() => setIsSearching(false));
+    }, 150);
+    return () => clearTimeout(timeoutId);
+  }, [contextSearch, showContextPicker, projectId]);
 
   // Close context picker on click outside
   useEffect(() => {
@@ -111,6 +126,7 @@ export function useContextPicker({
     contextPickerIndex,
     contextPickerRef,
     filteredFiles,
+    isSearching,
     handleChatInputChange,
     handleContextPickerKeyDown,
     handlePaste,

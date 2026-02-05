@@ -91,13 +91,13 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
               'group flex items-center gap-1 pl-2 h-7 my-1 mx-0.5 text-sm whitespace-nowrap transition-colors rounded-lg',
               tabs.length === 1 ? 'pr-3' : 'pr-0.5',
               activeTabId === tab.id
-                ? 'bg-white dark:bg-white/90 text-zinc-900'
+                ? 'bg-background text-foreground'
                 : 'text-sidebar-foreground/60 hover:text-sidebar-foreground/80 hover:bg-white/10'
             )}
           >
             <span
               className={cn(
-                activeTabId === tab.id ? 'text-zinc-700' : 'text-sidebar-foreground/50'
+                activeTabId === tab.id ? 'text-foreground/70' : 'text-sidebar-foreground/50'
               )}
             >
               {getTabIcon(tab.icon)}

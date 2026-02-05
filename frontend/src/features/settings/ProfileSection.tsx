@@ -4,10 +4,10 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Loader2, User, Mail, Sun, Moon, Monitor } from 'lucide-react';
+import { Loader2, User, Mail, Sun, Moon, Sparkles } from 'lucide-react';
 import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 
-type Theme = 'light' | 'dark' | 'system';
+type Theme = 'light' | 'dark' | 'glass-light' | 'glass-dark';
 
 export function ProfileSection() {
   const { data: settings, isLoading } = useSettings();
@@ -15,7 +15,7 @@ export function ProfileSection() {
 
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
-  const [theme, setTheme] = useState<Theme>('system');
+  const [theme, setTheme] = useState<Theme>('light');
   const [hasChanges, setHasChanges] = useState(false);
 
   // Sync with API data
@@ -23,7 +23,7 @@ export function ProfileSection() {
     if (settings) {
       setUserName(settings.userName || '');
       setUserEmail(settings.userEmail || '');
-      setTheme((settings.theme as Theme) || 'system');
+      setTheme((settings.theme as Theme) || 'light');
     }
   }, [settings]);
 
@@ -47,7 +47,8 @@ export function ProfileSection() {
   const themeOptions: { value: Theme; label: string; icon: typeof Sun }[] = [
     { value: 'light', label: 'Light', icon: Sun },
     { value: 'dark', label: 'Dark', icon: Moon },
-    { value: 'system', label: 'System', icon: Monitor },
+    { value: 'glass-light', label: 'Glass Light', icon: Sparkles },
+    { value: 'glass-dark', label: 'Glass Dark', icon: Sparkles },
   ];
 
   return (

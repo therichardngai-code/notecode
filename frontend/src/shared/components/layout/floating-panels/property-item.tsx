@@ -10,8 +10,8 @@ import {
   skillsOptions,
   toolsOptions,
   permissionModeOptions,
-  mockFileSystem,
 } from '@/shared/config/property-config';
+import { filesApi } from '@/adapters/api';
 import { useProjects, useFavoriteProjects, useRecentProjects, useCreateProject } from '@/shared/hooks/use-projects-query';
 import { useFolderPicker } from '@/shared/hooks/use-folder-picker';
 import { useDiscoveredSkills, useDiscoveredAgents } from '@/shared/hooks/use-discovery';
@@ -34,6 +34,8 @@ interface PropertyItemProps {
 export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, projectId }: PropertyItemProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [contextSearchResults, setContextSearchResults] = useState<Array<{ path: string; name: string }>>([]);
+  const [isSearchingContext, setIsSearchingContext] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +85,25 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, p
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showDropdown, property.type]);
 
+  // Debounced file search for context property
+  useEffect(() => {
+    if (property.type !== 'context' || !showDropdown || !projectId || !searchQuery.trim()) {
+      setContextSearchResults([]);
+      return;
+    }
+    const timeoutId = setTimeout(() => {
+      setIsSearchingContext(true);
+      filesApi.search(projectId, searchQuery.trim())
+        .then((res: { results: Array<{ path: string; name: string }> }) => {
+          const filtered = res.results.filter((f: { path: string }) => !property.value.includes(f.path));
+          setContextSearchResults(filtered.slice(0, 8));
+        })
+        .catch(() => setContextSearchResults([]))
+        .finally(() => setIsSearchingContext(false));
+    }, 150);
+    return () => clearTimeout(timeoutId);
+  }, [property.type, searchQuery, showDropdown, projectId, property.value]);
+
   const typeConfig = propertyTypes.find((t) => t.id === property.type);
   const Icon = typeConfig?.icon || FileText;
 
@@ -130,14 +151,7 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, p
 
   const isSingleSelect = ['project', 'agent', 'provider', 'model', 'priority', 'permissionMode'].includes(property.type);
 
-  const getContextSearchResults = () => {
-    if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return mockFileSystem
-      .filter((f) => f.label.toLowerCase().includes(query) || f.path.toLowerCase().includes(query))
-      .filter((f) => !property.value.includes(f.id))
-      .slice(0, 8);
-  };
+  // Context search results now come from contextSearchResults state (API-based)
 
   const getProjectSearchResults = () => {
     if (!searchQuery.trim()) return [];
@@ -355,10 +369,8 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, p
     );
   }
 
-  // Context property with file search
+  // Context property with file search (API-based)
   if (property.type === 'context') {
-    const searchResults = getContextSearchResults();
-
     return (
       <div className="flex items-start gap-3 group">
         <div className="flex items-center gap-2 w-24 text-sm text-muted-foreground pt-1">
@@ -368,7 +380,11 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, p
         <div className="flex-1" ref={dropdownRef}>
           <div className="relative">
             <div className="flex items-center gap-2 px-2 py-1 border border-border rounded bg-muted/30">
-              <Search className="w-3.5 h-3.5 text-muted-foreground" />
+              {isSearchingContext ? (
+                <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+              ) : (
+                <Search className="w-3.5 h-3.5 text-muted-foreground" />
+              )}
               <input
                 ref={searchInputRef}
                 type="text"
@@ -383,41 +399,45 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, p
               />
             </div>
 
-            {showDropdown && searchQuery && searchResults.length > 0 && (
+            {showDropdown && searchQuery && (
               <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
-                {searchResults.map((file) => (
-                  <button
-                    key={file.id}
-                    onClick={() => addContextFile(file.id)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="truncate">{file.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {showDropdown && searchQuery && searchResults.length === 0 && (
-              <div className="absolute top-full left-0 right-0 mt-1 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-2 px-3 z-20">
-                <span className="text-sm text-muted-foreground">No files found</span>
+                {isSearchingContext ? (
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Searching...</span>
+                  </div>
+                ) : contextSearchResults.length > 0 ? (
+                  contextSearchResults.map((file) => (
+                    <button
+                      key={file.path}
+                      onClick={() => addContextFile(file.path)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors text-left"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{file.path}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="py-2 px-3">
+                    <span className="text-sm text-muted-foreground">
+                      {projectId ? 'No files found' : 'Select a project first'}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {property.value.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {property.value.map((fileId) => {
-                const file = mockFileSystem.find((f) => f.id === fileId);
-                return (
-                  <div key={fileId} className="flex items-center gap-1 px-2 py-0.5 bg-muted rounded text-xs text-foreground">
-                    <span className="truncate max-w-[120px]">{file?.label || fileId}</span>
-                    <button onClick={() => removeContextFile(fileId)} className="hover:text-destructive">
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
+              {property.value.map((filePath) => (
+                <div key={filePath} className="flex items-center gap-1 px-2 py-0.5 bg-muted rounded text-xs text-foreground">
+                  <span className="truncate max-w-[120px]">{filePath}</span>
+                  <button onClick={() => removeContextFile(filePath)} className="hover:text-destructive">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

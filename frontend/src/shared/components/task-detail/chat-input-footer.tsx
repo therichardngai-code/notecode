@@ -126,6 +126,7 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
 
     // LOCAL HOOKS - Move inside component (performance optimization)
     const contextPicker = useContextPicker({
+      projectId: task.projectId,
       chatInput,
       setChatInput,
       attachedFiles,
@@ -224,6 +225,7 @@ export const ChatInputFooter = memo(forwardRef<ChatInputFooterHandle, ChatInputF
               showContextPicker={contextPicker.showContextPicker}
               filteredFiles={contextPicker.filteredFiles}
               contextPickerIndex={contextPicker.contextPickerIndex}
+              isSearchingFiles={contextPicker.isSearching}
               chatInputRef={chatInputRef}
               contextPickerRef={contextPicker.contextPickerRef}
               onChatInputChange={contextPicker.handleChatInputChange}

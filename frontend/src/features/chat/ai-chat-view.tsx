@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { useChatSession, type ChatMessage } from '@/shared/hooks';
-import { projectsApi, sessionsApi, type Project, type Chat } from '@/adapters/api';
+import { projectsApi, sessionsApi, filesApi, type Project, type Chat } from '@/adapters/api';
 import { useUIStore } from '@/shared/stores/ui-store';
 import { ChatMessageItem } from '@/shared/components/task-detail/tabs/chat-message-item';
 import { ContentPreviewModal } from '@/shared/components/task-detail';
@@ -253,9 +253,9 @@ export function AIChatView() {
   const [contextSearch, setContextSearch] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [contextPickerIndex, setContextPickerIndex] = useState(0);
+  const [fileSearchResults, setFileSearchResults] = useState<Array<{ path: string; name: string }>>([]);
+  const [isSearchingFiles, setIsSearchingFiles] = useState(false);
   const contextPickerRef = useRef<HTMLDivElement>(null);
-  const projectFiles = ['src/index.ts', 'src/app.tsx', 'src/components/Button.tsx', 'package.json', 'tsconfig.json'];
-  const filteredFiles = projectFiles.filter(f => f.toLowerCase().includes(contextSearch.toLowerCase()));
 
   // Load pending chat from store (set by FloatingChatPanel)
   useEffect(() => {
@@ -341,6 +341,24 @@ export function AIChatView() {
 
   useEffect(() => { setContextPickerIndex(0); }, [contextSearch]);
 
+  // Debounced file search when @ context search changes
+  useEffect(() => {
+    if (!showContextPicker || !selectedProjectId) {
+      setFileSearchResults([]);
+      return;
+    }
+    // Search with query or get recent files if empty
+    const query = contextSearch.trim() || '';
+    const timeoutId = setTimeout(() => {
+      setIsSearchingFiles(true);
+      filesApi.search(selectedProjectId, query)
+        .then((res: { results: Array<{ path: string; name: string }> }) => setFileSearchResults(res.results.slice(0, 10)))
+        .catch(() => setFileSearchResults([]))
+        .finally(() => setIsSearchingFiles(false));
+    }, 150); // 150ms debounce
+    return () => clearTimeout(timeoutId);
+  }, [contextSearch, showContextPicker, selectedProjectId]);
+
   // File handlers
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) setAttachedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
@@ -386,11 +404,11 @@ export function AIChatView() {
 
   const handleContextKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!showContextPicker) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(p => Math.min(p + 1, filteredFiles.length - 1)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setContextPickerIndex(p => Math.min(p + 1, fileSearchResults.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setContextPickerIndex(p => Math.max(p - 1, 0)); }
-    else if (e.key === 'Enter' && filteredFiles.length) { e.preventDefault(); selectContextFile(filteredFiles[contextPickerIndex]); }
+    else if (e.key === 'Enter' && fileSearchResults.length) { e.preventDefault(); selectContextFile(fileSearchResults[contextPickerIndex].path); }
     else if (e.key === 'Escape') setShowContextPicker(false);
-  }, [showContextPicker, filteredFiles, contextPickerIndex, selectContextFile]);
+  }, [showContextPicker, fileSearchResults, contextPickerIndex, selectContextFile]);
 
   // Close project dropdown on click outside
   useEffect(() => {
@@ -742,14 +760,20 @@ export function AIChatView() {
                         placeholder="Type @ to add context..."
                         className="w-full bg-transparent text-foreground placeholder:text-muted-foreground/60 text-sm outline-none"
                       />
-                      {showContextPicker && filteredFiles.length > 0 && (
+                      {showContextPicker && (
                         <div ref={contextPickerRef} className="absolute bottom-full left-0 mb-1 w-64 max-h-40 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg py-1 z-30">
                           <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Files</div>
-                          {filteredFiles.slice(0, 6).map((f, i) => (
-                            <button key={f} onClick={() => selectContextFile(f)} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", i === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
-                              <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{f}</span>
-                            </button>
-                          ))}
+                          {isSearchingFiles ? (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+                          ) : fileSearchResults.length > 0 ? (
+                            fileSearchResults.slice(0, 6).map((f, i) => (
+                              <button key={f.path} onClick={() => selectContextFile(f.path)} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", i === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
+                                <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{f.path}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">Type to search files...</div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -888,14 +912,20 @@ export function AIChatView() {
                     placeholder="Type @ to add context..."
                     className="w-full bg-transparent text-foreground placeholder:text-muted-foreground/60 text-sm outline-none"
                   />
-                  {showContextPicker && filteredFiles.length > 0 && (
+                  {showContextPicker && (
                     <div ref={contextPickerRef} className="absolute bottom-full left-0 mb-1 w-64 max-h-40 overflow-y-auto bg-popover border border-border rounded-lg shadow-lg py-1 z-30">
                       <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wide">Files</div>
-                      {filteredFiles.slice(0, 6).map((f, i) => (
-                        <button key={f} type="button" onClick={() => selectContextFile(f)} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", i === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
-                          <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{f}</span>
-                        </button>
-                      ))}
+                      {isSearchingFiles ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">Searching...</div>
+                      ) : fileSearchResults.length > 0 ? (
+                        fileSearchResults.slice(0, 6).map((f, i) => (
+                          <button key={f.path} type="button" onClick={() => selectContextFile(f.path)} className={cn("w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left transition-colors", i === contextPickerIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
+                            <FileCode className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="truncate">{f.path}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">Type to search files...</div>
+                      )}
                     </div>
                   )}
                 </div>
