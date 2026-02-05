@@ -232,8 +232,8 @@ function BoardColumn({ column, sessions, onTaskClick, onOpenInNewTab, onMoveToAr
         <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">{column.tasks.length}</span>
       </div>
       <div className="space-y-2">
-        {column.tasks.map((task) => (
-          <TaskCard key={task.id} task={task} isRunning={isTaskRunning(task.id)} canArchive={canArchiveTask?.(task.id) ?? false} onClick={() => onTaskClick?.(task.id)} onOpenInNewTab={() => onOpenInNewTab?.(task.id)} onMoveToArchived={() => onMoveToArchived?.(task.id)} onDelete={() => onDelete?.(task.id)} />
+        {column.tasks.map((task, index) => (
+          <TaskCard key={task.id ?? `task-${index}`} task={task} isRunning={isTaskRunning(task.id)} canArchive={canArchiveTask?.(task.id) ?? false} onClick={() => onTaskClick?.(task.id)} onOpenInNewTab={() => onOpenInNewTab?.(task.id)} onMoveToArchived={() => onMoveToArchived?.(task.id)} onDelete={() => onDelete?.(task.id)} />
         ))}
       </div>
     </div>

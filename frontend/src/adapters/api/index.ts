@@ -12,3 +12,4 @@ export * from './system-api';
 export * from './settings-api';
 export * from './version-api';
 export * from './backup-api';
+export * from './discovery-api';

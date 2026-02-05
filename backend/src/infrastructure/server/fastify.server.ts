@@ -29,6 +29,7 @@ import {
   registerCliProviderHooksController,
   registerFilesController,
   registerAnalyticsController,
+  registerDiscoveryController,
   registerDiffController,
 } from '../../adapters/controllers/index.js';
 import { DiffRevertService } from '../../domain/services/diff-revert.service.js';
@@ -39,6 +40,8 @@ import { DiffExtractorService } from '../../adapters/gateways/diff-extractor.ser
 import { CliProviderHooksService } from '../../adapters/services/cli-provider-hooks.service.js';
 import { registerNotificationSSE } from '../../adapters/sse/notification-sse.handler.js';
 import { SessionStreamHandler } from '../../adapters/websocket/session-stream.handler.js';
+import { handleTerminalConnection } from '../../adapters/websocket/terminal-stream.handler.js';
+import { registerTerminalController } from '../../adapters/controllers/terminal.controller.js';
 import { SqliteProjectRepository } from '../../adapters/repositories/sqlite-project.repository.js';
 import { SqliteTaskRepository } from '../../adapters/repositories/sqlite-task.repository.js';
 import { SqliteSessionRepository } from '../../adapters/repositories/sqlite-session.repository.js';
@@ -341,8 +344,14 @@ export async function createServer(options: ServerOptions = {}): Promise<Fastify
   // Register files controller (file tree, file content for Explorer)
   await app.register(registerFilesController, { prefix: '/api' });
 
+  // Register terminal controller (PTY terminal sessions)
+  registerTerminalController(app, { projectRepo });
+
   // Register analytics controller (token usage, session stats)
   await app.register(registerAnalyticsController, { prefix: '/api' });
+
+  // Register discovery controller (skills/agents discovery for dropdowns)
+  await app.register(registerDiscoveryController, { prefix: '/api' });
 
   // Register settings controller (pass cliProviderHooksService for approval gate auto-provision)
   registerSettingsController(app, settingsRepo, cliProviderHooksService);
@@ -543,7 +552,16 @@ function setupWebSocket(
 
     if (url.startsWith('/ws/')) {
       wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
+        // Route to appropriate handler based on URL
+        const terminalMatch = url.match(/\/ws\/terminal\/([^/?]+)/);
+        if (terminalMatch) {
+          // Terminal WebSocket connection
+          const terminalId = terminalMatch[1];
+          handleTerminalConnection(ws, terminalId);
+        } else {
+          // Session WebSocket connection (default)
+          wss.emit('connection', ws, request);
+        }
       });
     } else {
       socket.destroy();

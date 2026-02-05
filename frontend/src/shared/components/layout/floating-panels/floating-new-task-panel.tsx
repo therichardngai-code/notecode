@@ -252,6 +252,7 @@ export function FloatingNewTaskPanel({ onCreateTask, onAutoStart, onOpenFullTask
                 onRemove={() => removeProperty(property.id)}
                 onUpdate={(values) => updateProperty(property.id, values)}
                 selectedProvider={properties.find((p) => p.type === 'provider')?.value[0]}
+                projectId={properties.find((p) => p.type === 'project')?.value[0]}
               />
             ))}
           </div>

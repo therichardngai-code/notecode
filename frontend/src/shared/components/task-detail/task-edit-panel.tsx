@@ -91,6 +91,8 @@ export function TaskEditPanel({
                   property={property as Property}
                   onRemove={() => onRemoveProperty(property.id)}
                   onUpdate={(values) => onUpdateProperty(property.id, values)}
+                  selectedProvider={task.provider ?? undefined}
+                  projectId={task.projectId ?? undefined}
                 />
               ))}
           </div>

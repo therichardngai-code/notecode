@@ -72,4 +72,39 @@ export const filesApi = {
       `/api/projects/${projectId}/files/content`,
       { path, content }
     ),
+
+  /**
+   * Create new file
+   */
+  createFile: (projectId: string, path: string, content = '') =>
+    apiClient.post<{ success: boolean; path: string }>(
+      `/api/projects/${projectId}/files/create`,
+      { path, content, type: 'file' }
+    ),
+
+  /**
+   * Create new folder
+   */
+  createFolder: (projectId: string, path: string) =>
+    apiClient.post<{ success: boolean; path: string }>(
+      `/api/projects/${projectId}/files/create`,
+      { path, type: 'directory' }
+    ),
+
+  /**
+   * Delete file or folder
+   */
+  deleteFile: (projectId: string, path: string) =>
+    apiClient.delete<{ success: boolean }>(
+      `/api/projects/${projectId}/files?path=${encodeURIComponent(path)}`
+    ),
+
+  /**
+   * Search files by name
+   */
+  search: (projectId: string, query: string) =>
+    apiClient.get<{ results: Array<{ path: string; name: string; type: string }> }>(
+      `/api/projects/${projectId}/files/search`,
+      { q: query }
+    ),
 };

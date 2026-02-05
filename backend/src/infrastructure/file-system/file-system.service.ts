@@ -29,7 +29,7 @@ export const FILE_SYSTEM_CONFIG = {
   MAX_DEPTH: 10,
   MAX_FILES: 50000, // Increased from 10k (node_modules can be large)
   MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
-  CACHE_TTL: 5 * 60 * 1000, // 5 minutes
+  CACHE_TTL: 30 * 1000, // 30 seconds (short for external changes)
   CACHE_MAX_SIZE: 100,
 };
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, ExternalLink, MoreHorizontal, Loader2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, FolderOpen, ExternalLink, MoreHorizontal, Loader2, FilePlus, FolderPlus, Trash2 } from 'lucide-react';
 
 export interface FileNode {
   name: string;
@@ -16,6 +16,9 @@ interface FileTreeItemProps {
   onOpenInNewTab?: (fileName: string, filePath: string) => void;
   onFolderExpand?: (folderPath: string) => void;
   loadingPaths?: Set<string>;
+  onCreateFile?: (parentPath: string) => void;
+  onCreateFolder?: (parentPath: string) => void;
+  onDelete?: (path: string, isFolder: boolean) => void;
 }
 
 export function FileTreeItem({
@@ -26,10 +29,15 @@ export function FileTreeItem({
   onOpenInNewTab,
   onFolderExpand,
   loadingPaths,
+  onCreateFile,
+  onCreateFolder,
+  onDelete,
 }: FileTreeItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const isFolder = node.type === 'folder';
   const paddingLeft = level * 12 + 8;
   const currentPath = path ? `${path}/${node.name}` : node.name;
@@ -39,10 +47,16 @@ export function FileTreeItem({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) setContextMenu(null);
     };
-    if (showMenu) document.addEventListener('mousedown', handleClickOutside);
+    if (showMenu || contextMenu) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMenu]);
+  }, [showMenu, contextMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
 
   const handleFolderClick = () => {
     if (needsLoad && onFolderExpand) {
@@ -58,6 +72,7 @@ export function FileTreeItem({
     <div className="relative group">
       <button
         onClick={() => (isFolder ? handleFolderClick() : onFileClick?.(node.name, currentPath))}
+        onContextMenu={handleContextMenu}
         className="w-full flex items-center gap-1 py-1 px-2 text-sm hover:bg-accent rounded-sm text-sidebar-foreground"
         style={{ paddingLeft }}
       >
@@ -109,6 +124,40 @@ export function FileTreeItem({
         </div>
       )}
 
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {isFolder && onCreateFile && (
+            <button
+              onClick={() => { onCreateFile(currentPath); setContextMenu(null); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+            >
+              <FilePlus className="w-3.5 h-3.5" /> New File
+            </button>
+          )}
+          {isFolder && onCreateFolder && (
+            <button
+              onClick={() => { onCreateFolder(currentPath); setContextMenu(null); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent"
+            >
+              <FolderPlus className="w-3.5 h-3.5" /> New Folder
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => { onDelete(currentPath, isFolder); setContextMenu(null); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent text-destructive"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
+        </div>
+      )}
+
       {isFolder && isOpen && node.children?.map((child, idx) => (
         <FileTreeItem
           key={idx}
@@ -119,6 +168,9 @@ export function FileTreeItem({
           onOpenInNewTab={onOpenInNewTab}
           onFolderExpand={onFolderExpand}
           loadingPaths={loadingPaths}
+          onCreateFile={onCreateFile}
+          onCreateFolder={onCreateFolder}
+          onDelete={onDelete}
         />
       ))}
     </div>

@@ -23,6 +23,7 @@ const routeTabConfig: Record<string, { title: string; icon: 'ai' | 'file' }> = {
   '/board': { title: 'Board', icon: 'file' },
   '/dashboard': { title: 'Dashboard', icon: 'file' },
   '/memory': { title: 'Memory', icon: 'file' },
+  '/terminal': { title: 'Terminal', icon: 'file' },
   '/settings': { title: 'Settings', icon: 'file' },
 };
 

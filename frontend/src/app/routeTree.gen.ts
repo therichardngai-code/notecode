@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkflowRouteImport } from './routes/workflow'
+import { Route as TerminalRouteImport } from './routes/terminal'
 import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SourceControlRouteImport } from './routes/source-control'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -32,6 +33,11 @@ import { Route as AgentsAgentIdRouteImport } from './routes/agents.$agentId'
 const WorkflowRoute = WorkflowRouteImport.update({
   id: '/workflow',
   path: '/workflow',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TerminalRoute = TerminalRouteImport.update({
+  id: '/terminal',
+  path: '/terminal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TasksRoute = TasksRouteImport.update({
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/source-control': typeof SourceControlRoute
   '/tasks': typeof TasksRouteWithChildren
+  '/terminal': typeof TerminalRoute
   '/workflow': typeof WorkflowRoute
   '/agents/$agentId': typeof AgentsAgentIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByTo {
   '/sessions': typeof SessionsRouteWithChildren
   '/settings': typeof SettingsRoute
   '/source-control': typeof SourceControlRoute
+  '/terminal': typeof TerminalRoute
   '/workflow': typeof WorkflowRoute
   '/agents/$agentId': typeof AgentsAgentIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/source-control': typeof SourceControlRoute
   '/tasks': typeof TasksRouteWithChildren
+  '/terminal': typeof TerminalRoute
   '/workflow': typeof WorkflowRoute
   '/agents/$agentId': typeof AgentsAgentIdRoute
   '/sessions/$sessionId': typeof SessionsSessionIdRoute
@@ -204,6 +213,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/source-control'
     | '/tasks'
+    | '/terminal'
     | '/workflow'
     | '/agents/$agentId'
     | '/sessions/$sessionId'
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
     | '/sessions'
     | '/settings'
     | '/source-control'
+    | '/terminal'
     | '/workflow'
     | '/agents/$agentId'
     | '/sessions/$sessionId'
@@ -245,6 +256,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/source-control'
     | '/tasks'
+    | '/terminal'
     | '/workflow'
     | '/agents/$agentId'
     | '/sessions/$sessionId'
@@ -267,6 +279,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SourceControlRoute: typeof SourceControlRoute
   TasksRoute: typeof TasksRouteWithChildren
+  TerminalRoute: typeof TerminalRoute
   WorkflowRoute: typeof WorkflowRoute
 }
 
@@ -277,6 +290,13 @@ declare module '@tanstack/react-router' {
       path: '/workflow'
       fullPath: '/workflow'
       preLoaderRoute: typeof WorkflowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terminal': {
+      id: '/terminal'
+      path: '/terminal'
+      fullPath: '/terminal'
+      preLoaderRoute: typeof TerminalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tasks': {
@@ -459,6 +479,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SourceControlRoute: SourceControlRoute,
   TasksRoute: TasksRouteWithChildren,
+  TerminalRoute: TerminalRoute,
   WorkflowRoute: WorkflowRoute,
 }
 export const routeTree = rootRouteImport

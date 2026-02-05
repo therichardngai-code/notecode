@@ -15,6 +15,7 @@ import {
   PanelLeft,
   MoreHorizontal,
   ExternalLink,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 import { ScrollArea } from '@radix-ui/react-scroll-area';
@@ -152,6 +153,7 @@ const navItems = [
   // { icon: Search, label: 'Search', to: '/search' },  // Demo: Not implemented
   { icon: Home, label: 'Home', to: '/' },
   { icon: FolderTree, label: 'Explorer', to: '/explorer' },
+  { icon: Terminal, label: 'Terminal', to: '/terminal' },
   // { icon: GitBranch, label: 'Source Control', to: '/source-control' },  // Demo: Not implemented
   { icon: Sparkles, label: 'AI Chat', to: '/chat' },
   // { icon: Inbox, label: 'Inbox', to: '/inbox' },  // Demo: Not implemented

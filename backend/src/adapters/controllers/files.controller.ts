@@ -7,6 +7,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import path from 'path';
+import fg from 'fast-glob';
 import { FileSystemService, PathTraversalError, FileLimitExceededError, BinaryFileError, FileTooLargeError } from '../../infrastructure/file-system/file-system.service.js';
 import { PathValidator } from '../../infrastructure/file-system/path-validator.js';
 import { SqliteProjectRepository } from '../repositories/sqlite-project.repository.js';
@@ -127,6 +129,97 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         return reply.code(500).send({ error: 'Failed to read file tree' });
+      }
+    }
+  );
+
+  /**
+   * GET /api/projects/:projectId/files/search
+   * Search files by name pattern (quick open / Ctrl+P style)
+   */
+  fastify.get<{
+    Params: { projectId: string };
+    Querystring: { q: string; limit?: string };
+  }>(
+    '/projects/:projectId/files/search',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['projectId'],
+          properties: {
+            projectId: { type: 'string' }
+          }
+        },
+        querystring: {
+          type: 'object',
+          required: ['q'],
+          properties: {
+            q: { type: 'string', description: 'Search query (filename pattern)' },
+            limit: { type: 'string', description: 'Max results (default 20)' }
+          }
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              results: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    path: { type: 'string' },
+                    name: { type: 'string' },
+                    type: { type: 'string' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { projectId } = request.params;
+      const { q: query, limit: limitStr } = request.query;
+      const limit = Math.min(parseInt(limitStr ?? '20', 10), 100);
+
+      if (!query || query.length < 1) {
+        return reply.send({ results: [] });
+      }
+
+      try {
+        const project = await projectRepo.findById(projectId);
+        if (!project) {
+          return reply.code(404).send({ error: 'Project not found' });
+        }
+
+        // Build glob pattern: *query* (case-insensitive via options)
+        const pattern = `**/*${query}*`;
+
+        // Search using fast-glob
+        // Ignore node_modules (too many files), but include dotfiles/.git
+        const files = await fg(pattern, {
+          cwd: project.path,
+          caseSensitiveMatch: false,
+          onlyFiles: false,
+          dot: true,              // Include dotfiles (.env, .gitignore, etc.)
+          ignore: ['**/node_modules/**'],  // Only ignore node_modules (too large)
+          suppressErrors: true,
+          deep: 15,
+        });
+
+        // Format results
+        const results = files.slice(0, limit).map(filePath => ({
+          path: '/' + filePath.replace(/\\/g, '/'),
+          name: path.basename(filePath),
+          type: filePath.includes('.') ? 'file' : 'directory',
+        }));
+
+        return reply.send({ results });
+      } catch (error: any) {
+        fastify.log.error('File search error:', error);
+        return reply.code(500).send({ error: 'Search failed' });
       }
     }
   );
@@ -318,6 +411,110 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   /**
+   * POST /api/projects/:projectId/files/create
+   * Create a new file or folder
+   */
+  fastify.post<{
+    Params: { projectId: string };
+    Body: { path: string; type: 'file' | 'folder'; content?: string };
+  }>(
+    '/projects/:projectId/files/create',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['projectId'],
+          properties: {
+            projectId: { type: 'string', description: 'Project ID' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['path', 'type'],
+          properties: {
+            path: { type: 'string', description: 'File/folder path relative to project' },
+            type: { type: 'string', enum: ['file', 'folder'], description: 'Create file or folder' },
+            content: { type: 'string', description: 'Initial file content (files only)' }
+          }
+        },
+        response: {
+          201: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              path: { type: 'string' },
+              type: { type: 'string' }
+            }
+          },
+          400: { type: 'object', properties: { error: { type: 'string' } } },
+          403: { type: 'object', properties: { error: { type: 'string' } } },
+          404: { type: 'object', properties: { error: { type: 'string' } } },
+          409: { type: 'object', properties: { error: { type: 'string' } } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { projectId } = request.params;
+      const { path: filePath, type, content = '' } = request.body;
+
+      if (!filePath) {
+        return reply.code(400).send({ error: 'Path is required' });
+      }
+
+      try {
+        // Find project
+        const project = await projectRepo.findById(projectId);
+        if (!project) {
+          return reply.code(404).send({ error: 'Project not found' });
+        }
+
+        // Validate path (prevents traversal attacks)
+        const absolutePath = PathValidator.validate(project.path, filePath);
+
+        // Check if already exists
+        try {
+          await fs.stat(absolutePath);
+          return reply.code(409).send({ error: 'Path already exists' });
+        } catch (err: any) {
+          if (err.code !== 'ENOENT') throw err;
+          // File doesn't exist - good, continue
+        }
+
+        if (type === 'folder') {
+          // Create folder (recursive)
+          await fs.mkdir(absolutePath, { recursive: true });
+        } else {
+          // Create file (ensure parent directory exists)
+          const parentDir = absolutePath.substring(0, absolutePath.lastIndexOf(/[\\/]/.test(absolutePath) ? absolutePath.match(/[\\/]/g)!.pop()! : '/'));
+          await fs.mkdir(parentDir, { recursive: true }).catch(() => {});
+          await fs.writeFile(absolutePath, content, 'utf-8');
+        }
+
+        // Clear file tree cache so new file appears
+        fileSystemService.clearCache();
+
+        return reply.code(201).send({
+          success: true,
+          path: filePath,
+          type
+        });
+      } catch (error: any) {
+        fastify.log.error('File create error:', error);
+
+        if (error instanceof PathTraversalError) {
+          return reply.code(403).send({ error: 'Invalid path - access denied' });
+        }
+
+        if (error.code === 'EACCES') {
+          return reply.code(403).send({ error: 'Permission denied' });
+        }
+
+        return reply.code(500).send({ error: 'Failed to create file/folder' });
+      }
+    }
+  );
+
+  /**
    * POST /api/projects/:projectId/files/open-external
    * Open file in external editor (VS Code, Cursor, or system default)
    */
@@ -438,6 +635,110 @@ export const filesRoutes: FastifyPluginAsync = async (fastify) => {
           details: error instanceof Error ? error.message : 'Unknown error'
         });
       }
+    }
+  );
+
+  /**
+   * DELETE /api/projects/:projectId/files
+   * Delete a file or folder
+   */
+  fastify.delete<{
+    Params: { projectId: string };
+    Body: { path: string };
+  }>(
+    '/projects/:projectId/files',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['projectId'],
+          properties: {
+            projectId: { type: 'string', description: 'Project ID' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['path'],
+          properties: {
+            path: { type: 'string', description: 'File/folder path to delete' }
+          }
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean' },
+              path: { type: 'string' }
+            }
+          },
+          400: { type: 'object', properties: { error: { type: 'string' } } },
+          403: { type: 'object', properties: { error: { type: 'string' } } },
+          404: { type: 'object', properties: { error: { type: 'string' } } }
+        }
+      }
+    },
+    async (request, reply) => {
+      const { projectId } = request.params;
+      const { path: filePath } = request.body;
+
+      if (!filePath) {
+        return reply.code(400).send({ error: 'Path is required' });
+      }
+
+      try {
+        // Find project
+        const project = await projectRepo.findById(projectId);
+        if (!project) {
+          return reply.code(404).send({ error: 'Project not found' });
+        }
+
+        // Validate path (prevents traversal attacks)
+        const absolutePath = PathValidator.validate(project.path, filePath);
+
+        // Check if exists
+        const stats = await fs.stat(absolutePath);
+
+        // Delete (recursive for folders)
+        await fs.rm(absolutePath, { recursive: stats.isDirectory() });
+
+        // Clear file tree cache so deleted file disappears
+        fileSystemService.clearCache();
+
+        return reply.send({
+          success: true,
+          path: filePath
+        });
+      } catch (error: any) {
+        fastify.log.error('File delete error:', error);
+
+        if (error instanceof PathTraversalError) {
+          return reply.code(403).send({ error: 'Invalid path - access denied' });
+        }
+
+        if (error.code === 'ENOENT') {
+          return reply.code(404).send({ error: 'File/folder not found' });
+        }
+
+        if (error.code === 'EACCES') {
+          return reply.code(403).send({ error: 'Permission denied' });
+        }
+
+        return reply.code(500).send({ error: 'Failed to delete' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/projects/:projectId/files/refresh
+   * Clear file tree cache (for external changes)
+   */
+  fastify.post<{
+    Params: { projectId: string };
+  }>(
+    '/projects/:projectId/files/refresh',
+    async (_request, reply) => {
+      fileSystemService.clearCache();
+      return reply.send({ success: true });
     }
   );
 };

@@ -14,6 +14,8 @@ import {
 } from '@/shared/config/property-config';
 import { useProjects, useFavoriteProjects, useRecentProjects, useCreateProject } from '@/shared/hooks/use-projects-query';
 import { useFolderPicker } from '@/shared/hooks/use-folder-picker';
+import { useDiscoveredSkills, useDiscoveredAgents } from '@/shared/hooks/use-discovery';
+import type { ProviderType } from '@/adapters/api/discovery-api';
 
 export interface Property {
   id: string;
@@ -26,13 +28,24 @@ interface PropertyItemProps {
   onRemove: () => void;
   onUpdate: (values: string[]) => void;
   selectedProvider?: string; // For filtering models by provider
+  projectId?: string; // For dynamic skills/agents discovery
 }
 
-export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }: PropertyItemProps) {
+export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, projectId }: PropertyItemProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch discovered skills and agents (only when projectId is available)
+  const { data: discoveredSkills = [], isLoading: loadingSkills } = useDiscoveredSkills({
+    projectId,
+    provider: selectedProvider as ProviderType | undefined,
+  });
+  const { data: discoveredAgents = [], isLoading: loadingAgents } = useDiscoveredAgents({
+    projectId,
+    provider: selectedProvider as ProviderType | undefined,
+  });
 
   // Fetch projects from API
   const { data: allProjects = [], isLoading: loadingAll } = useProjects(
@@ -78,6 +91,15 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
       case 'project':
         return [];
       case 'agent':
+        // Use discovered agents if projectId available, else fallback to static
+        if (projectId && discoveredAgents.length > 0) {
+          return discoveredAgents.map((a) => ({
+            id: a.name,
+            label: a.name,
+            source: a.source,
+            model: a.model,
+          }));
+        }
         return agentOptions.map((o) => ({ id: o.id, label: o.label }));
       case 'provider':
         return providerOptions;
@@ -86,6 +108,14 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
       case 'priority':
         return priorityOptions;
       case 'skills':
+        // Use discovered skills if projectId available, else fallback to static
+        if (projectId && discoveredSkills.length > 0) {
+          return discoveredSkills.map((s) => ({
+            id: s.name,
+            label: s.name,
+            source: s.source,
+          }));
+        }
         return skillsOptions;
       case 'tools':
         return toolsOptions.map((o) => ({ id: o.id, label: o.label }));
@@ -492,31 +522,61 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider }:
 
         {showDropdown && (
           <div className="absolute top-full left-0 mt-1 w-56 glass border border-white/20 dark:border-white/10 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
-            {getOptions().map((opt) => {
-              // For tools "All" option, check if all individual tools are selected
-              const isAllToolsSelected = property.type === 'tools' && opt.id === 'All' &&
-                toolsOptions.filter((t) => t.id !== 'All').every((t) => property.value.includes(t.id));
-              const isSelected = isAllToolsSelected || property.value.includes(opt.id);
+            {/* Loading state for skills/agents */}
+            {((property.type === 'skills' && loadingSkills) || (property.type === 'agent' && loadingAgents)) ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading...
+              </div>
+            ) : getOptions().length === 0 ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                {projectId ? 'No items found' : 'Select a project first'}
+              </div>
+            ) : (
+              getOptions().map((opt) => {
+                // For tools "All" option, check if all individual tools are selected
+                const isAllToolsSelected = property.type === 'tools' && opt.id === 'All' &&
+                  toolsOptions.filter((t) => t.id !== 'All').every((t) => property.value.includes(t.id));
+                const isSelected = isAllToolsSelected || property.value.includes(opt.id);
+                // Source badge for discovered items
+                const source = 'source' in opt ? (opt as { source?: string }).source : undefined;
+                const model = 'model' in opt ? (opt as { model?: string }).model : undefined;
 
-              return (
-                <button
-                  key={opt.id}
-                  onClick={() => toggleValue(opt.id)}
-                  className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors', isSelected && 'bg-white/20 dark:bg-white/10')}
-                >
-                  {isSingleSelect ? (
-                    <span className={cn('w-4 h-4 border rounded-full flex items-center justify-center', isSelected ? 'border-primary' : 'border-white/30')}>
-                      {isSelected && <span className="w-2 h-2 rounded-full bg-primary" />}
-                    </span>
-                  ) : (
-                    <span className={cn('w-4 h-4 border rounded flex items-center justify-center text-xs', isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-white/30')}>
-                      {isSelected && '✓'}
-                    </span>
-                  )}
-                  {opt.label}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => toggleValue(opt.id)}
+                    className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-white/20 dark:hover:bg-white/10 transition-colors', isSelected && 'bg-white/20 dark:bg-white/10')}
+                  >
+                    {isSingleSelect ? (
+                      <span className={cn('w-4 h-4 border rounded-full flex items-center justify-center shrink-0', isSelected ? 'border-primary' : 'border-white/30')}>
+                        {isSelected && <span className="w-2 h-2 rounded-full bg-primary" />}
+                      </span>
+                    ) : (
+                      <span className={cn('w-4 h-4 border rounded flex items-center justify-center text-xs shrink-0', isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-white/30')}>
+                        {isSelected && '✓'}
+                      </span>
+                    )}
+                    <span className="truncate flex-1 text-left">{opt.label}</span>
+                    {/* Source badge for discovered items */}
+                    {source && (
+                      <span className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded shrink-0',
+                        source === 'project' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                      )}>
+                        {source}
+                      </span>
+                    )}
+                    {/* Model badge for agents */}
+                    {model && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                        {model}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            )}
           </div>
         )}
       </div>

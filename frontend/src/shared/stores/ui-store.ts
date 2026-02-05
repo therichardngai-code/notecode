@@ -67,14 +67,18 @@ export const useUIStore = create<UIState>()(
 
       // Active Project
       activeProjectId: null,
-      setActiveProjectId: (projectId) => set({ activeProjectId: projectId }),
+      setActiveProjectId: (projectId) => set({
+        // Validate: only accept string or null (prevent SVG/object corruption)
+        activeProjectId: typeof projectId === 'string' ? projectId : null,
+      }),
 
       // Floating Panels
       isNewTaskPanelOpen: false,
       isSettingsPanelOpen: false,
       openNewTaskPanel: (projectId) => set((state) => ({
         isNewTaskPanelOpen: true,
-        activeProjectId: projectId ?? state.activeProjectId,
+        // Validate: only accept string or keep existing
+        activeProjectId: typeof projectId === 'string' ? projectId : state.activeProjectId,
       })),
       closeNewTaskPanel: () => set({ isNewTaskPanelOpen: false }),
       openSettingsPanel: () => set({ isSettingsPanelOpen: true }),
@@ -111,7 +115,8 @@ export const useUIStore = create<UIState>()(
       name: 'notecode-ui-store',
       // Only persist essential UI state, not transient panels/modals
       partialize: (state) => ({
-        activeProjectId: state.activeProjectId,
+        // Sanitize: only persist string/null activeProjectId (prevent SVG element corruption)
+        activeProjectId: typeof state.activeProjectId === 'string' ? state.activeProjectId : null,
         theme: state.theme,
         leftPanelOpen: state.leftPanelOpen,
       }),
