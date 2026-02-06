@@ -6,9 +6,6 @@ import {
   Globe,
   ArrowUp,
   X,
-  ListTodo,
-  FileSearch,
-  CheckCircle,
   Plus,
   ChevronDown,
   Square,
@@ -64,13 +61,13 @@ export const sharedChatHistory: ChatHistoryItem[] = [
   },
 ];
 
-// Quick actions
-const quickActions = [
-  { id: '1', icon: Sparkles, label: "What's new in NoteCode", prompt: "What's new in NoteCode?" },
-  { id: '2', icon: ListTodo, label: 'Write meeting agenda', prompt: 'Help me write a meeting agenda for a team standup' },
-  { id: '3', icon: FileSearch, label: 'Analyze PDFs or images', prompt: 'How can I analyze PDFs or images with AI?' },
-  { id: '4', icon: CheckCircle, label: 'Create a task tracker', prompt: 'Help me create a simple task tracker' },
-];
+// Quick actions — hidden for this release
+// const quickActions = [
+//   { id: '1', icon: Sparkles, label: "What's new in NoteCode", prompt: "What's new in NoteCode?" },
+//   { id: '2', icon: ListTodo, label: 'Write meeting agenda', prompt: 'Help me write a meeting agenda for a team standup' },
+//   { id: '3', icon: FileSearch, label: 'Analyze PDFs or images', prompt: 'How can I analyze PDFs or images with AI?' },
+//   { id: '4', icon: CheckCircle, label: 'Create a task tracker', prompt: 'Help me create a simple task tracker' },
+// ];
 
 // Mock responses removed - using real API via useChatSession hook
 
@@ -122,18 +119,8 @@ function formatDate(date: Date) {
 
 
 // Components
-function QuickActionCard({ icon: Icon, label, onClick, delay = 0 }: { icon: React.ElementType; label: string; onClick?: () => void; delay?: number }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-start gap-2.5 p-3 rounded-xl glass hover:shadow-md transition-all text-left flex-1 min-w-[140px] opacity-0"
-      style={{ animation: `float-up 0.4s ease-out ${0.4 + delay}s forwards` }}
-    >
-      <Icon className="w-4 h-4 text-muted-foreground" />
-      <span className="text-sm text-foreground leading-tight">{label}</span>
-    </button>
-  );
-}
+// QuickActionCard — hidden for this release
+// function QuickActionCard({ icon: Icon, label, onClick, delay = 0 }: { ... }) { ... }
 
 function UserMessage({ content }: { content: string }) {
   return (
@@ -156,7 +143,7 @@ function TypingIndicator() {
 export function AIChatView() {
   const [input, setInput] = useState('');
   const [_selectedMode, _setSelectedMode] = useState('auto'); // TODO: Reserved for future mode selection
-  const [showQuickActions, setShowQuickActions] = useState(true);
+  const [_showQuickActions, setShowQuickActions] = useState(true);
   const [chatTitle, setChatTitle] = useState('New chat');
   const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);

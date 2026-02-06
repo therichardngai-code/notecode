@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, useCallback } from 'react';
 import {
-  FolderOpen, Bot, Loader2, Play, Plus, MessageSquare,
+  FolderOpen, Loader2, Play, Plus, MessageSquare,
   ListTodo, Zap, DollarSign, Star, Clock, CheckCircle, FileEdit
 } from 'lucide-react';
 import { useRecentProjects, useFavoriteProjects } from '@/shared/hooks/use-projects-query';

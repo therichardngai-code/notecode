@@ -4,10 +4,10 @@
  */
 
 import { apiClient } from './api-client';
-import type { ApprovalGateConfig, ToolRule, ApprovalGateRule } from './projects-api';
+import type { ApprovalGateConfig, ToolRule } from './projects-api';
 
 // Re-export for backward compatibility
-export type { ApprovalGateConfig, ToolRule, ApprovalGateRule };
+export type { ApprovalGateConfig, ToolRule };
 
 // Types
 export interface GlobalSettings {

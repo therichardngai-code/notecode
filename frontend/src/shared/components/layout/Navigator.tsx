@@ -177,7 +177,7 @@ export function Navigator({
   const currentPath = location.pathname;
   const { data: settings } = useSettings();
   const userName = settings?.userName || 'User';
-  const { isElectron } = useElectron();
+  const { isElectron: _isElectron } = useElectron();
 
   if (isCollapsed) {
     return (

@@ -77,17 +77,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install root dependencies
-        run: npm install
+      - name: Install all dependencies
+        run: npm install --ignore-scripts
+        # --ignore-scripts: skip electron rebuild during install (done separately)
 
       - name: Install backend dependencies
-        run: npm install --prefix backend
+        run: npm install --prefix backend --ignore-scripts
 
       - name: Install frontend dependencies
         run: npm install --prefix frontend
 
       - name: Install electron dependencies
-        run: npm install --prefix electron
+        run: npm install --prefix electron --ignore-scripts
 
       - name: Build backend
         run: npm run build --prefix backend

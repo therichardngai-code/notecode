@@ -10,7 +10,7 @@ import {
   X,
   User,
   SlidersHorizontal,
-  Key,
+  // Key,  // TODO: Enable when multi-provider supported
   Settings,
   Sparkles,
   Shield,
@@ -51,7 +51,7 @@ const workspaceItems = [
   { id: 'advanced', label: 'Advanced', icon: Shield },
 ];
 
-function SidebarItem({ icon: Icon, label, isActive, isUser, onClick }: {
+function SidebarItem({ icon: Icon, label, isActive, isUser: _isUser, onClick }: {
   icon: React.ElementType;
   label: string;
   isActive?: boolean;

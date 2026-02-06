@@ -4,14 +4,10 @@ import {
   ExternalLink,
   ChevronsRight,
   Plus,
-  Search,
-  FileText,
-  CheckCircle,
   AtSign,
   Paperclip,
   Globe,
   ArrowUp,
-  ListTodo,
   Sparkles,
   X,
   FileCode,
@@ -41,18 +37,8 @@ interface ChatHistory {
 }
 
 
-// Suggestion button component
-function SuggestionButton({ icon: Icon, label, badge }: { icon: React.ElementType; label: string; badge?: string }) {
-  return (
-    <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg hover:bg-muted transition-colors text-left">
-      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-      <span className="text-sm text-foreground">{label}</span>
-      {badge && (
-        <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">{badge}</span>
-      )}
-    </button>
-  );
-}
+// Suggestion buttons — hidden for this release
+// function SuggestionButton({ ... }) { ... }
 
 interface FloatingChatPanelProps {
   onGoToFullChat?: (chatId?: string) => void;
