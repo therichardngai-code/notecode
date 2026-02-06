@@ -1,0 +1,123 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+node_modules/
+**/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# build outputs
+dist/
+**/dist/
+build/
+**/build/
+**/bin/
+!bin/
+!bin/notecode.js
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# semantic-release
+.nyc_output
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# flutter
+.dart_tool
+build
+GoogleService-Info.plist
+
+# Docker (not used for release - npm + Electron only)
+Dockerfile
+docker-compose.yml
+.dockerignore
+docker/
+
+# Electron builder output (100MB+ binaries)
+release/
+
+# Workspace symlink loops
+electron/backend/
+electron/frontend/
+
+# IDE settings
+.vscode/
+.idea/
+
+# All log files
+*.log
+
+repomix-output.xml
+.serena/cache
+plans/**/*
+!plans/templates/*
+screenshots/*
+docs/screenshots/*
+docs/research/*
+logs.txt
+test-ck
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# CK meta commands
+prompt.md
+ck.md
+
+.claude/
+.gemini/
+assets/
+docs/
+prototype/
+.agent/
+tmp/
+# Gemini CLI settings (symlink to .claude/.mcp.json)
+
+.claude/settings.bak.json
+.memory/
+.gemini/hooks/project-base-memory/node_modules/*
+CLAUDE.md
+AGENTS.md
+.repomixignore
+nul
+GEMINI.md
+show-electron.ps1
+start-electron.bat
+release-manifest.json

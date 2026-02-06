@@ -1,0 +1,195 @@
+# ==============================================
+# NoteCode Release Pipeline
+# ==============================================
+# Triggered by pushing a version tag (v*)
+# Publishes to: npm registry + GitHub Releases (Electron binaries)
+#
+# Usage:
+#   git tag v1.0.0 && git push origin main --tags
+#
+# Pre-release:
+#   git tag v1.0.0-beta.1 && git push origin main --tags
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # Required for creating GitHub Releases
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ============================================
+  # Job 1: Publish to npm registry
+  # ============================================
+  npm-publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+        # --ignore-scripts: skip electron rebuild (not needed for npm publish)
+
+      - name: Build backend
+        run: npm run build --prefix backend
+
+      - name: Build frontend
+        run: npm run build --prefix frontend
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ============================================
+  # Job 2: Build Electron (matrix: win/mac/linux)
+  # ============================================
+  electron-build:
+    name: Build Electron (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Install electron dependencies
+        run: npm ci --prefix electron
+
+      - name: Build backend
+        run: npm run build --prefix backend
+
+      - name: Build frontend
+        run: npm run build --prefix frontend
+
+      - name: Build electron
+        run: npm run build --prefix electron
+
+      - name: Package Electron (${{ matrix.platform }})
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing (optional - add when certificates are available)
+          # CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
+          # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          # WIN_CSC_LINK: ${{ secrets.WIN_CERT_PFX }}
+          # WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.yml
+            release/*.yaml
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ============================================
+  # Job 3: Create GitHub Release with artifacts
+  # ============================================
+  create-release:
+    name: Create GitHub Release
+    needs: [npm-publish, electron-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for changelog generation
+
+      - name: Download all Electron artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: electron-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/ || echo "No artifacts found"
+
+      - name: Generate changelog from commits
+        id: changelog
+        run: |
+          # Find previous tag for changelog range
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s" HEAD)
+          else
+            CHANGELOG=$(git log --oneline --pretty=format:"- %s" ${PREV_TAG}..HEAD)
+          fi
+          # Write to output (multiline safe)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "NoteCode ${{ github.ref_name }}"
+          body: |
+            ## What's Changed
+            ${{ steps.changelog.outputs.changelog }}
+
+            ## Downloads
+
+            | Platform | File |
+            |----------|------|
+            | Windows (installer) | `NoteCode-*-win-x64.exe` |
+            | Windows (portable) | `NoteCode-*-win-x64-portable.exe` |
+            | macOS (Intel) | `NoteCode-*-mac-x64.dmg` |
+            | macOS (Apple Silicon) | `NoteCode-*-mac-arm64.dmg` |
+            | Linux (AppImage) | `NoteCode-*-linux-x64.AppImage` |
+            | Linux (deb) | `NoteCode-*-linux-x64.deb` |
+            | Linux (rpm) | `NoteCode-*-linux-x64.rpm` |
+
+            ## CLI (npm)
+            ```bash
+            npx notecode@${{ github.ref_name }}
+            # or install globally
+            npm install -g notecode@${{ github.ref_name }}
+            ```
+          files: artifacts/*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
