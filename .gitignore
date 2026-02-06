@@ -59,6 +59,8 @@ next-env.d.ts
 # flutter
 .dart_tool
 build
+!electron/build/
+!electron/build/icon.*
 GoogleService-Info.plist
 
 # Docker (not used for release - npm + Electron only)
