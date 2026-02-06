@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 /** Deployment mode: npm (CLI/npx users) or electron (desktop app) */
 export type DeploymentMode = 'npm' | 'electron';
@@ -31,7 +32,7 @@ export interface VersionInfo {
 }
 
 export class VersionCheckService {
-  private static readonly NPM_REGISTRY = 'https://registry.npmjs.org/notecode';
+  private static readonly NPM_REGISTRY = 'https://registry.npmjs.org/notecode-app';
   private static readonly GITHUB_OWNER = 'therichardngai-code';
   private static readonly GITHUB_REPO = 'notecode';
   private static readonly GITHUB_API =
@@ -82,23 +83,31 @@ export class VersionCheckService {
     }
   }
 
-  /** Get current version from package.json */
+  /** Get current version from package.json (resolves relative to this file, not cwd) */
   getCurrentVersion(): string {
     if (process.env.npm_package_version) {
       return process.env.npm_package_version;
     }
 
-    try {
-      const pkgPath = path.join(process.cwd(), 'package.json');
-      if (fs.existsSync(pkgPath)) {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        if (pkg.version) return pkg.version;
+    // Try backend/package.json first (relative to this compiled file)
+    const searchPaths = [
+      path.resolve(fileURLToPath(import.meta.url), '../../../..', 'package.json'), // backend/package.json
+      path.resolve(fileURLToPath(import.meta.url), '../../../../..', 'package.json'), // root/package.json
+      path.join(process.cwd(), 'package.json'), // fallback: cwd
+    ];
+
+    for (const pkgPath of searchPaths) {
+      try {
+        if (fs.existsSync(pkgPath)) {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          if (pkg.version) return pkg.version;
+        }
+      } catch {
+        // Try next path
       }
-    } catch {
-      // Ignore — fall through to default
     }
 
-    return '0.1.0';
+    return '0.0.0';
   }
 
   /** Get update instructions based on deployment mode */
@@ -116,9 +125,9 @@ export class VersionCheckService {
     const githubUrl = `https://github.com/${VersionCheckService.GITHUB_OWNER}/${VersionCheckService.GITHUB_REPO}/releases/${releaseTag}`;
 
     return {
-      npx: 'npx notecode@latest',
-      npmUpdate: 'npm update -g notecode',
-      npmInstall: `npm install -g notecode@${ver}`,
+      npx: 'npx notecode-app@latest',
+      npmUpdate: 'npm update -g notecode-app',
+      npmInstall: `npm install -g notecode-app@${ver}`,
       electron: githubUrl,
       deploymentMode: mode,
       recommended: mode === 'electron' ? 'electron' : 'npx',
