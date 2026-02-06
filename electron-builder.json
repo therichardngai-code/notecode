@@ -105,7 +105,12 @@
   "appImage": {
     "license": "LICENSE"
   },
-  "publish": null,
+  "publish": {
+    "provider": "github",
+    "owner": "therichardngai-code",
+    "repo": "notecode",
+    "releaseType": "release"
+  },
   "compression": "maximum",
   "asar": true,
   "asarUnpack": [
