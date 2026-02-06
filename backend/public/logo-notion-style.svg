@@ -1,9 +1,0 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Notion-inspired: Clean "N" with slash through (Note + Code) -->
-
-  <!-- Outer rounded square outline only -->
-  <rect x="56" y="56" width="400" height="400" rx="48" stroke="#06B6D4" stroke-width="24" fill="none"/>
-
-  <!-- Minimal "N" with unique cut -->
-  <path d="M168 352 L168 160 L280 160 L344 352 L344 160" stroke="#06B6D4" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-</svg>
