@@ -1,8 +1,11 @@
 {
-  "name": "notecode",
+  "name": "notecode-app",
   "version": "0.1.0-beta.1",
   "description": "NoteCode - AI Task Management with Electron Desktop Support",
-  "author": "NoteCode Team",
+  "author": {
+    "name": "NoteCode Team",
+    "email": "team@notecode.app"
+  },
   "license": "BSL-1.1",
   "main": "electron/dist/main.js",
   "type": "commonjs",

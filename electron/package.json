@@ -3,7 +3,10 @@
   "version": "0.1.0-beta.1",
   "description": "NoteCode Desktop Application",
   "main": "dist/main.js",
-  "author": "NoteCode Team",
+  "author": {
+    "name": "NoteCode Team",
+    "email": "team@notecode.app"
+  },
   "license": "MIT",
   "private": true,
   "scripts": {
