@@ -193,25 +193,39 @@ export function AIChatView() {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load projects on mount and sync with active project
+  const [projectsValidated, setProjectsValidated] = useState(false);
+
+  // Load projects on mount and sync with active project — validate stale IDs
   useEffect(() => {
     projectsApi.getRecent(10).then(res => {
       setProjects(res.projects);
-      if (res.projects.length > 0 && !selectedProjectId) {
-        // Use active project if available and exists in list, else first project
-        const projectExists = activeProjectId && res.projects.some(p => p.id === activeProjectId);
-        setSelectedProjectId(projectExists ? activeProjectId : res.projects[0].id);
+      if (res.projects.length > 0) {
+        const currentValid = selectedProjectId && res.projects.some(p => p.id === selectedProjectId);
+        if (!currentValid) {
+          const activeValid = activeProjectId && res.projects.some(p => p.id === activeProjectId);
+          setSelectedProjectId(activeValid ? activeProjectId : res.projects[0].id);
+        }
+      } else {
+        setSelectedProjectId(null);
       }
+      setProjectsValidated(true);
     }).catch(console.error);
   }, [activeProjectId]);
 
-  // Load chat history when project changes
+  // Load chat history only AFTER projects are validated (prevents 404 on stale IDs)
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!projectsValidated || !selectedProjectId) return;
     projectsApi.listChats(selectedProjectId).then(res => {
       setChatHistory(res.chats);
-    }).catch(console.error);
-  }, [selectedProjectId]);
+    }).catch((err) => {
+      if (err?.statusCode === 404) {
+        setSelectedProjectId(null);
+        setChatHistory([]);
+      } else {
+        console.error(err);
+      }
+    });
+  }, [projectsValidated, selectedProjectId]);
 
   // Chat session hook (real API)
   const {
@@ -269,25 +283,26 @@ export function AIChatView() {
         resetChat();
         setPendingChatId(null); // Clear after consuming
 
-        // Load historical messages from backend
-        if (chat.lastSession?.id) {
-          sessionsApi.getMessages(chat.lastSession.id)
-            .then(res => {
+        // Load historical messages from ALL sessions for this chat
+        sessionsApi.list({ taskId: chat.id })
+          .then(async (sessionsRes) => {
+            const sorted = sessionsRes.sessions.sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+            const all: ChatMessage[] = [];
+            for (const s of sorted) {
+              const res = await sessionsApi.getMessages(s.id, 200);
               const converted = res.messages
                 .filter(m => m.role === 'user' || m.role === 'assistant')
-                .map(m => {
-                  const chat = messageToChat(m);
-                  return { ...chat, timestamp: new Date(m.timestamp) } as ChatMessage;
-                });
-              setHistoricalMessages(converted);
-            })
-            .catch(err => {
-              console.error('Failed to load chat messages:', err);
-              setHistoricalMessages([]);
-            });
-        } else {
-          setHistoricalMessages([]);
-        }
+                .map(m => ({ ...messageToChat(m), timestamp: new Date(m.timestamp) } as ChatMessage));
+              all.push(...converted);
+            }
+            setHistoricalMessages(all);
+          })
+          .catch(err => {
+            console.error('Failed to load chat messages:', err);
+            setHistoricalMessages([]);
+          });
 
         setTimeout(() => setIsAnimating(false), 600);
       }
@@ -506,22 +521,23 @@ export function AIChatView() {
     setShowHistoryPanel(false);
     resetChat(); // Clear active session messages
 
-    // Load historical messages from backend if session exists
-    if (chat.lastSession?.id) {
-      try {
-        const res = await sessionsApi.getMessages(chat.lastSession.id);
+    // Load historical messages from ALL sessions for this chat
+    try {
+      const sessionsRes = await sessionsApi.list({ taskId: chat.id });
+      const sorted = sessionsRes.sessions.sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const all: ChatMessage[] = [];
+      for (const s of sorted) {
+        const res = await sessionsApi.getMessages(s.id, 200);
         const converted = res.messages
           .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => {
-            const chat = messageToChat(m);
-            return { ...chat, timestamp: new Date(m.timestamp) } as ChatMessage;
-          });
-        setHistoricalMessages(converted);
-      } catch (err) {
-        console.error('Failed to load chat messages:', err);
-        setHistoricalMessages([]);
+          .map(m => ({ ...messageToChat(m), timestamp: new Date(m.timestamp) } as ChatMessage));
+        all.push(...converted);
       }
-    } else {
+      setHistoricalMessages(all);
+    } catch (err) {
+      console.error('Failed to load chat messages:', err);
       setHistoricalMessages([]);
     }
 
@@ -821,22 +837,7 @@ export function AIChatView() {
                   </form>
                 </div>
 
-                {/* Quick Actions */}
-                {showQuickActions && (
-                  <div className="mt-6 animate-float-up" style={{ animationDelay: '0.3s' }}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-medium text-muted-foreground">Get started</span>
-                      <button onClick={() => setShowQuickActions(false)} className="p-0.5 rounded hover:bg-muted">
-                        <X className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      {quickActions.map((action, i) => (
-                        <QuickActionCard key={action.id} icon={action.icon} label={action.label} onClick={() => sendMessage(action.prompt)} delay={i * 0.05} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Quick Actions — hidden for this release */}
               </div>
             </div>
           ) : (

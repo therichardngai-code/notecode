@@ -63,7 +63,7 @@ export function DataRetentionSection() {
           }`}
         >
           <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+            className={`absolute left-0 top-1 h-4 w-4 rounded-full bg-white shadow-md transition-transform ${
               enabled ? 'translate-x-6' : 'translate-x-1'
             }`}
           />

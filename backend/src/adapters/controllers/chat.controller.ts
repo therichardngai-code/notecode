@@ -12,7 +12,6 @@ import { ISessionRepository } from '../../domain/ports/repositories/session.repo
 import { Task } from '../../domain/entities/task.entity.js';
 import {
   TaskStatus,
-  TaskPriority,
   ProviderType,
 } from '../../domain/value-objects/task-status.vo.js';
 import { StartSessionUseCase } from '../../use-cases/sessions/start-session.use-case.js';
@@ -116,7 +115,7 @@ export function registerChatController(
       generateChatTitle(body.message),
       body.message, // Store original message in description
       TaskStatus.IN_PROGRESS,
-      TaskPriority.MEDIUM,
+      null, // Priority: user chooses
       null, // assignee
       null, // dueDate
       null, // agentRole

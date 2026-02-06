@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
+import { useElectron } from '@/shared/hooks/use-electron';
 import {
   // Search,      // Demo: Not implemented
   Home,
@@ -11,7 +12,6 @@ import {
   BarChart3,
   // Brain,       // Demo: Not implemented
   Settings,
-  ChevronDown,
   PanelLeft,
   MoreHorizontal,
   ExternalLink,
@@ -173,11 +173,11 @@ export function Navigator({
   onPanelItemDoubleClick,
   activePanelRoute
 }: NavigatorProps) {
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const location = useLocation();
   const currentPath = location.pathname;
   const { data: settings } = useSettings();
   const userName = settings?.userName || 'User';
+  const { isElectron } = useElectron();
 
   if (isCollapsed) {
     return (
@@ -197,18 +197,18 @@ export function Navigator({
 
   return (
     <div className="w-60 glass-subtle border-r border-sidebar-border/50 flex flex-col h-full">
-      {/* Top Row: App Logo + Name + Toggle */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/50">
-        <div className="flex items-center gap-2">
+      {/* Top Row: App Logo + Name + Toggle — drag region for Electron */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/50 electron-drag-region">
+        <div className="flex items-center gap-2 electron-no-drag">
           <div className="w-6 h-6 rounded-md overflow-hidden">
             <img src="/logo.svg" alt="NoteCode" className="w-full h-full" />
           </div>
-          <span className="font-semibold text-sm text-sidebar-foreground">NoteCode</span>
+          <span className="font-semibold text-sm text-sidebar-foreground select-none">NoteCode</span>
         </div>
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="w-7 h-7 flex items-center justify-center rounded hover:bg-sidebar-accent"
+            className="w-7 h-7 flex items-center justify-center rounded hover:bg-sidebar-accent electron-no-drag"
             title="Collapse sidebar"
           >
             <PanelLeft className="w-4 h-4 text-sidebar-foreground/70" />
@@ -232,12 +232,6 @@ export function Navigator({
               </svg>
             </button>
           )}
-          <button
-            onClick={() => setWorkspaceOpen(!workspaceOpen)}
-            className="w-6 h-6 flex items-center justify-center rounded hover:bg-sidebar-accent"
-          >
-            <ChevronDown className="w-3.5 h-3.5 text-sidebar-foreground/60" />
-          </button>
         </div>
       </div>
 

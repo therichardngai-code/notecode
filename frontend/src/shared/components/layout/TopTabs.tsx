@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, X, Plus, FileText, Sparkles } from 'lucide-react';
+import { ElectronWindowControls } from './electron-window-controls';
 import { cn } from '@/shared/lib/utils';
 import { NewTabPanel } from './NewTabPanel';
 
@@ -58,9 +59,9 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
   };
 
   return (
-    <div className="h-9 flex items-center glass-subtle border-b border-sidebar-border/50 relative">
+    <div className="h-9 flex items-center glass-subtle border-b border-sidebar-border/50 relative electron-drag-region">
       {/* Navigation Arrows */}
-      <div className="flex items-center gap-0.5 px-2 border-r border-sidebar-border/50 h-full">
+      <div className="flex items-center gap-0.5 px-2 border-r border-sidebar-border/50 h-full electron-no-drag">
         <button
           type="button"
           onClick={goToPrevTab}
@@ -77,7 +78,7 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
         </button>
       </div>
 
-      {/* Tabs Container */}
+      {/* Tabs Container — no electron-no-drag so empty space inherits drag region from parent */}
       <div
         className="flex-1 flex items-center overflow-x-auto"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -88,7 +89,7 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
             type="button"
             onClick={() => onTabClick(tab.id)}
             className={cn(
-              'group flex items-center gap-1 pl-2 h-7 my-1 mx-0.5 text-sm whitespace-nowrap transition-colors rounded-lg',
+              'group flex items-center gap-1 pl-2 h-7 my-1 mx-0.5 text-sm whitespace-nowrap transition-colors rounded-lg electron-no-drag',
               tabs.length === 1 ? 'pr-3' : 'pr-0.5',
               activeTabId === tab.id
                 ? 'bg-background text-foreground'
@@ -136,11 +137,14 @@ export function TopTabs({ tabs, activeTabId, onTabClick, onTabClose, onAddTab }:
         <button
           type="button"
           onClick={handleAddTabClick}
-          className="w-7 h-7 my-1 mx-0.5 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground shrink-0"
+          className="w-7 h-7 my-1 mx-0.5 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground shrink-0 electron-no-drag"
         >
           <Plus className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Electron window controls (minimize/maximize/close) */}
+      <ElectronWindowControls />
 
       {/* New Tab Panel */}
       <NewTabPanel

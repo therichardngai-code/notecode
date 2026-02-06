@@ -417,33 +417,36 @@ export class CliProviderHooksService {
                          hook.script.trim().startsWith('#!/bin/sh');
     const ext = isBashScript ? 'sh' : 'cjs';
 
-    // Build command with %CLAUDE_PROJECT_DIR% for portability
-    const hookPath = `"%CLAUDE_PROJECT_DIR%"/.claude/hooks/${hook.name}.${ext}`;
+    // Build command path based on scope:
+    // - Global hooks: use absolute path to home dir (hook file lives in ~/.claude/hooks/)
+    // - Project hooks: use %CLAUDE_PROJECT_DIR% (Claude CLI substitutes with project path)
+    const hookPath = hook.scope === 'global'
+      ? `"${join(homedir(), '.claude', 'hooks', `${hook.name}.${ext}`).replace(/\\/g, '/')}"`
+      : `"%CLAUDE_PROJECT_DIR%"/.claude/hooks/${hook.name}.${ext}`;
     const hookCommand = isBashScript ? `bash ${hookPath}` : `node ${hookPath}`;
 
-    // Check if hook already registered
+    // Check if hook already registered (match by hook name to handle path changes)
     const existingIndex = settings.hooks[hook.hookType].findIndex(config =>
-      config.hooks?.some(h => h.command === hookCommand)
+      config.hooks?.some(h => h.command?.includes(`${hook.name}.`))
     );
 
-    if (existingIndex === -1 && hook.enabled) {
-      // Build hook entry - only include timeout if configured
-      const hookEntry: { type: 'command'; command: string; timeout?: number } = {
-        type: 'command',
-        command: hookCommand,
-      };
+    // Build hook entry - only include timeout if configured
+    const hookEntry: { type: 'command'; command: string; timeout?: number } = {
+      type: 'command',
+      command: hookCommand,
+    };
+    if (hook.timeout) hookEntry.timeout = hook.timeout;
 
-      // Add timeout only if configured on hook
-      if (hook.timeout) hookEntry.timeout = hook.timeout;
+    // Build hook config - only include matcher if configured
+    const hookConfig: ClaudeHookConfig = { hooks: [hookEntry] };
+    if (hook.matcher) hookConfig.matcher = hook.matcher;
 
-      // Build hook config - only include matcher if configured
-      const hookConfig: ClaudeHookConfig = {
-        hooks: [hookEntry],
-      };
-
-      // Add matcher only if configured on hook
-      if (hook.matcher) hookConfig.matcher = hook.matcher;
-
+    if (existingIndex !== -1 && hook.enabled) {
+      // Update existing entry (path or matcher may have changed)
+      settings.hooks[hook.hookType][existingIndex] = hookConfig;
+      console.log(`[CLI Hooks] Updated "${hook.name}" in settings.json for ${hook.hookType}`);
+    } else if (existingIndex === -1 && hook.enabled) {
+      // Register new hook entry
       settings.hooks[hook.hookType].push(hookConfig);
       console.log(`[CLI Hooks] Registered "${hook.name}" in settings.json for ${hook.hookType}`);
     }

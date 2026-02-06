@@ -119,8 +119,8 @@ export function CreateProjectDialog({
             >
               <span
                 className={cn(
-                  "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
-                  setAsActive ? "translate-x-5" : "translate-x-1"
+                  "absolute left-0 top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-md transition-transform",
+                  setAsActive ? "translate-x-[18px]" : "translate-x-1"
                 )}
               />
             </button>

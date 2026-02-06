@@ -177,9 +177,17 @@
     transition: background 0.4s ease;
   }
 
-  /* Electron mode: Transparent background to show user's desktop */
+  /* Electron mode: prevent body overflow (frameless window scrollbar fix) */
   body.electron-mode {
-    background: transparent !important;
+    overflow: hidden;
+  }
+
+  /* Electron frameless window: drag regions for custom title bar */
+  body.electron-mode .electron-drag-region {
+    -webkit-app-region: drag;
+  }
+  body.electron-mode .electron-no-drag {
+    -webkit-app-region: no-drag;
   }
 }
 

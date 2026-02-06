@@ -59,7 +59,7 @@ export function YoloModeToggle() {
             }`}
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              className={`absolute left-0 top-1 h-4 w-4 rounded-full bg-white shadow-md transition-transform ${
                 yoloMode ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
@@ -78,7 +78,7 @@ export function YoloModeToggle() {
         )}
       </div>
 
-      {/* Auto Extract Summary */}
+      {/* Auto Extract Summary — hidden until feature is ready
       <div className="space-y-3 pt-4 border-t border-border">
         <div>
           <h3 className="text-base font-semibold text-foreground mb-1">Auto Extract Summary</h3>
@@ -98,7 +98,7 @@ export function YoloModeToggle() {
             }`}
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              className={`absolute left-0 top-1 h-4 w-4 rounded-full bg-white shadow-md transition-transform ${
                 autoExtractSummary ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
@@ -108,6 +108,7 @@ export function YoloModeToggle() {
           </span>
         </div>
       </div>
+      */}
 
       {/* Save Button */}
       <div className="flex items-center gap-3 pt-4">

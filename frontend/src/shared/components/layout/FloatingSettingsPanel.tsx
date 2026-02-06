@@ -47,7 +47,7 @@ const accountItems = [
 const workspaceItems = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'ai-settings', label: 'AI Settings', icon: Sparkles },
-  { id: 'api-keys', label: 'API Keys', icon: Key },
+  // { id: 'api-keys', label: 'API Keys', icon: Key },  // TODO: Enable when multi-provider supported
   { id: 'advanced', label: 'Advanced', icon: Shield },
 ];
 
@@ -96,14 +96,14 @@ function Toggle({ value, onChange, disabled }: { value: boolean; onChange: (v: b
       onClick={() => !disabled && onChange(!value)}
       disabled={disabled}
       className={cn(
-        'w-10 h-6 rounded-full transition-all relative shrink-0',
+        'w-11 h-6 rounded-full transition-all relative shrink-0',
         value ? 'bg-primary' : 'bg-black/10 dark:bg-white/15',
         disabled && 'opacity-50 cursor-not-allowed'
       )}
     >
       <span className={cn(
-        'absolute top-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform',
-        value ? 'translate-x-5' : 'translate-x-1'
+        'absolute left-0 top-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform',
+        value ? 'translate-x-6' : 'translate-x-1'
       )} />
     </button>
   );
@@ -228,12 +228,15 @@ function ProfileContent({ settings, updateSettings, isPending }: ContentProps) {
   );
 }
 
+const validThemes = ['light', 'dark', 'glass-light', 'glass-dark'];
+const resolveTheme = (t?: string) => (t && validThemes.includes(t) ? t : 'glass-dark');
+
 function PreferencesContent({ settings, updateSettings, isPending }: ContentProps) {
-  const [theme, setTheme] = useState<string>(settings?.theme || 'light');
-  const hasChanges = theme !== (settings?.theme || 'light');
+  const [theme, setTheme] = useState<string>(resolveTheme(settings?.theme));
+  const hasChanges = theme !== resolveTheme(settings?.theme);
 
   useEffect(() => {
-    setTheme(settings?.theme || 'light');
+    setTheme(resolveTheme(settings?.theme));
   }, [settings?.theme]);
 
   return (
@@ -308,8 +311,8 @@ function AISettingsContent({ settings, updateSettings, isPending }: ContentProps
           value={provider}
           options={[
             { id: 'anthropic', label: 'Anthropic' },
-            { id: 'google', label: 'Google' },
-            { id: 'openai', label: 'OpenAI' },
+            // { id: 'google', label: 'Google' },     // TODO: Enable when supported
+            // { id: 'openai', label: 'OpenAI' },     // TODO: Enable when supported
           ]}
           onChange={(v) => setProvider(v)}
           disabled={isPending}
@@ -422,24 +425,42 @@ function CompactBuiltinDisplay({ patterns }: { type: 'commands' | 'files'; patte
 function AdvancedContent({ settings, updateSettings, isPending }: ContentProps) {
   const [autoExtract, setAutoExtract] = useState(settings?.autoExtractSummary || false);
   const [approvalEnabled, setApprovalEnabled] = useState(settings?.approvalGate?.enabled || false);
-  const [toolRules, setToolRules] = useState<ToolRule[]>(settings?.approvalGate?.toolRules || []);
-  const [dangerousCommands, setDangerousCommands] = useState<string[]>(settings?.approvalGate?.dangerousCommands || []);
-  const [dangerousFiles, setDangerousFiles] = useState<string[]>(settings?.approvalGate?.dangerousFiles || []);
+  // Convert backend arrays → UI tool rules
+  const backendToToolRules = (autoAllow: string[] = [], requireApproval: string[] = []): ToolRule[] => {
+    const rules: ToolRule[] = [];
+    autoAllow.forEach(tool => rules.push({ tool, action: 'approve' }));
+    requireApproval.forEach(tool => rules.push({ tool, action: 'ask' }));
+    return rules;
+  };
+
+  const [toolRules, setToolRules] = useState<ToolRule[]>(backendToToolRules(
+    settings?.approvalGate?.autoAllowTools,
+    settings?.approvalGate?.requireApprovalTools,
+  ));
+  const [dangerousCommands, setDangerousCommands] = useState<string[]>(settings?.approvalGate?.dangerousPatterns?.commands || []);
+  const [dangerousFiles, setDangerousFiles] = useState<string[]>(settings?.approvalGate?.dangerousPatterns?.files || []);
 
   const hasInvalidPatterns = [...dangerousCommands, ...dangerousFiles].some(p => !isValidRegex(p));
 
+  const serverToolRules = backendToToolRules(
+    settings?.approvalGate?.autoAllowTools,
+    settings?.approvalGate?.requireApprovalTools,
+  );
   const hasChanges = autoExtract !== (settings?.autoExtractSummary || false) ||
     approvalEnabled !== (settings?.approvalGate?.enabled || false) ||
-    JSON.stringify(toolRules) !== JSON.stringify(settings?.approvalGate?.toolRules || []) ||
-    JSON.stringify(dangerousCommands) !== JSON.stringify(settings?.approvalGate?.dangerousCommands || []) ||
-    JSON.stringify(dangerousFiles) !== JSON.stringify(settings?.approvalGate?.dangerousFiles || []);
+    JSON.stringify(toolRules) !== JSON.stringify(serverToolRules) ||
+    JSON.stringify(dangerousCommands) !== JSON.stringify(settings?.approvalGate?.dangerousPatterns?.commands || []) ||
+    JSON.stringify(dangerousFiles) !== JSON.stringify(settings?.approvalGate?.dangerousPatterns?.files || []);
 
   useEffect(() => {
     setAutoExtract(settings?.autoExtractSummary || false);
     setApprovalEnabled(settings?.approvalGate?.enabled || false);
-    setToolRules(settings?.approvalGate?.toolRules || []);
-    setDangerousCommands(settings?.approvalGate?.dangerousCommands || []);
-    setDangerousFiles(settings?.approvalGate?.dangerousFiles || []);
+    setToolRules(backendToToolRules(
+      settings?.approvalGate?.autoAllowTools,
+      settings?.approvalGate?.requireApprovalTools,
+    ));
+    setDangerousCommands(settings?.approvalGate?.dangerousPatterns?.commands || []);
+    setDangerousFiles(settings?.approvalGate?.dangerousPatterns?.files || []);
   }, [settings?.autoExtractSummary, settings?.approvalGate]);
 
   // Tool rules handlers
@@ -471,13 +492,19 @@ function AdvancedContent({ settings, updateSettings, isPending }: ContentProps) 
   const handleSave = () => {
     const validCommands = dangerousCommands.filter(p => p.trim() && isValidRegex(p));
     const validFiles = dangerousFiles.filter(p => p.trim() && isValidRegex(p));
+    // Convert UI tool rules → backend arrays
+    const autoAllowTools = toolRules.filter(r => r.action === 'approve').map(r => r.tool);
+    const requireApprovalTools = toolRules.filter(r => r.action === 'ask').map(r => r.tool);
     updateSettings({
       autoExtractSummary: autoExtract,
       approvalGate: approvalEnabled ? {
         enabled: true,
-        toolRules: toolRules.length > 0 ? toolRules : undefined,
-        dangerousCommands: validCommands.length > 0 ? validCommands : undefined,
-        dangerousFiles: validFiles.length > 0 ? validFiles : undefined,
+        autoAllowTools: autoAllowTools.length > 0 ? autoAllowTools : undefined,
+        requireApprovalTools: requireApprovalTools.length > 0 ? requireApprovalTools : undefined,
+        dangerousPatterns: (validCommands.length > 0 || validFiles.length > 0) ? {
+          commands: validCommands.length > 0 ? validCommands : undefined,
+          files: validFiles.length > 0 ? validFiles : undefined,
+        } : undefined,
       } : null,
     });
   };
@@ -486,9 +513,11 @@ function AdvancedContent({ settings, updateSettings, isPending }: ContentProps) 
     <div>
       <h2 className="text-lg font-medium text-foreground mb-4">Advanced</h2>
 
+      {/* Auto-extract Summary — hidden until feature is ready
       <SettingRow label="Auto-extract Summary" description="Automatically extract task summaries">
         <Toggle value={autoExtract} onChange={(v) => setAutoExtract(v)} disabled={isPending} />
       </SettingRow>
+      */}
 
       {/* Global Approval Gate - 3 Section Structure */}
       <div className="border-t border-border dark:border-white/10 mt-4 pt-4">

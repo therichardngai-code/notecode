@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { settings } from '../../infrastructure/database/schema.js';
 import { getDatabase } from '../../infrastructure/database/connection.js';
 import { encrypt, decrypt, isEncryptionConfigured } from '../../infrastructure/crypto/index.js';
+import { PlanType } from '../../domain/value-objects/license-plan.vo.js';
 
 /**
  * User-configurable Approval Gate settings
@@ -41,6 +42,10 @@ export interface GlobalSettings {
   dataRetentionEnabled: boolean;
   dataRetentionDays: number; // Days before auto-delete inactive tasks (default 90)
   approvalGate?: ApprovalGateConfig | null;
+  licensePlan: PlanType;
+  licenseKey?: string;
+  licenseJwt?: string;
+  licenseValidatedAt?: string;
 }
 
 export interface ISettingsRepository {
@@ -69,6 +74,7 @@ export class SqliteSettingsRepository implements ISettingsRepository {
         autoExtractSummary: false,
         dataRetentionEnabled: false,
         dataRetentionDays: 90,
+        licensePlan: 'free',
       };
       await db.insert(settings).values({
         id: 'global',
@@ -101,6 +107,10 @@ export class SqliteSettingsRepository implements ISettingsRepository {
       dataRetentionEnabled: row.dataRetentionEnabled ?? false,
       dataRetentionDays: row.dataRetentionDays ?? 90,
       approvalGate: row.approvalGate ? JSON.parse(row.approvalGate) : null,
+      licensePlan: (row.licensePlan as PlanType) ?? 'free',
+      licenseKey: row.licenseKey ?? undefined,
+      licenseJwt: row.licenseJwt ?? undefined,
+      licenseValidatedAt: row.licenseValidatedAt ?? undefined,
     };
   }
 
@@ -122,6 +132,10 @@ export class SqliteSettingsRepository implements ISettingsRepository {
     if (updates.dataRetentionEnabled !== undefined) data.dataRetentionEnabled = updates.dataRetentionEnabled;
     if (updates.dataRetentionDays !== undefined) data.dataRetentionDays = updates.dataRetentionDays;
     if (updates.approvalGate !== undefined) data.approvalGate = updates.approvalGate ? JSON.stringify(updates.approvalGate) : null;
+    if (updates.licensePlan !== undefined) data.licensePlan = updates.licensePlan;
+    if (updates.licenseKey !== undefined) data.licenseKey = updates.licenseKey;
+    if (updates.licenseJwt !== undefined) data.licenseJwt = updates.licenseJwt;
+    if (updates.licenseValidatedAt !== undefined) data.licenseValidatedAt = updates.licenseValidatedAt;
 
     await db
       .update(settings)

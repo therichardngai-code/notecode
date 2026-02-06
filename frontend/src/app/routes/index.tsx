@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, useCallback } from 'react';
 import {
-  FolderOpen, GitBranch, Bot, Loader2, Play, Plus, MessageSquare,
+  FolderOpen, Bot, Loader2, Play, Plus, MessageSquare,
   ListTodo, Zap, DollarSign, Star, Clock, CheckCircle, FileEdit
 } from 'lucide-react';
 import { useRecentProjects, useFavoriteProjects } from '@/shared/hooks/use-projects-query';
+import { useAnalyticsOverview } from '@/features/analytics/use-analytics';
 import { useRunningSessions, useSessions } from '@/shared/hooks/use-sessions-query';
 import { useFloatingPanels, useFolderPicker } from '@/shared/hooks';
 import { useUpdateSettings } from '@/shared/hooks/use-settings';
@@ -12,6 +13,7 @@ import { tasksApi, projectsApi } from '@/adapters/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/shared/lib/utils';
 import { CreateProjectDialog } from '@/shared/components/dialogs/create-project-dialog';
+import { OnboardingWelcome } from '@/shared/components/onboarding-welcome';
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -120,6 +122,7 @@ function HomePage() {
   const { data: favoriteProjects } = useFavoriteProjects();
   const { data: runningSessions } = useRunningSessions();
   const { data: recentSessions } = useSessions({ limit: 10 });
+  const { data: analyticsOverview } = useAnalyticsOverview(); // All projects overview
   const { openNewTaskPanel, openChatPanel } = useFloatingPanels();
   const updateSettings = useUpdateSettings();
 
@@ -224,7 +227,7 @@ function HomePage() {
   // Calculate stats from real data
   const totalTasks = tasksData?.length || 0;
   const activeSessions = runningSessions?.length || 0;
-  const totalCost = recentSessions?.reduce((sum, s) => sum + (s.estimatedCostUsd || 0), 0) || 0;
+  const totalCost = analyticsOverview?.totalCostUsd || 0;
 
   // Build recent activity from sessions
   const recentActivity = (recentSessions || []).slice(0, 5).map((session) => {
@@ -250,25 +253,16 @@ function HomePage() {
     );
   }
 
-  // Empty state - Welcome view
+  // Empty state - New user onboarding
   if (!recentProjects || recentProjects.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="flex flex-col items-center gap-6 max-w-md text-center p-8 glass rounded-2xl animate-float-up">
-          <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center">
-            <Bot className="w-8 h-8 text-foreground/60" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground mb-2">Welcome to NoteCode</h1>
-            <p className="text-base text-muted-foreground">
-              Your AI-powered coding workspace. Start by opening a folder or chatting with AI.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <QuickAction icon={FolderOpen} label="Open Folder" onClick={handleOpenFolder} loading={isSelectingFolder} />
-            <QuickAction icon={Bot} label="Start Chat" onClick={openChatPanel} primary />
-          </div>
-        </div>
+      <>
+        <OnboardingWelcome
+          onOpenFolder={handleOpenFolder}
+          onNewTask={openNewTaskPanel}
+          onStartChat={openChatPanel}
+          isSelectingFolder={isSelectingFolder}
+        />
 
         {/* Create Project Dialog */}
         <CreateProjectDialog
@@ -279,7 +273,7 @@ function HomePage() {
           onCancel={handleCancelCreateProject}
           isLoading={isCreatingProject}
         />
-      </div>
+      </>
     );
   }
 
@@ -298,7 +292,7 @@ function HomePage() {
           <StatCard icon={ListTodo} label="Total Tasks" value={totalTasks} color="bg-blue-500/20 text-blue-400" />
           <StatCard icon={Zap} label="Active Sessions" value={activeSessions} color="bg-green-500/20 text-green-400" />
           <StatCard icon={DollarSign} label="Total Cost" value={`$${totalCost.toFixed(2)}`} color="bg-orange-500/20 text-orange-400" />
-          <StatCard icon={MessageSquare} label="Sessions" value={recentSessions?.length || 0} color="bg-purple-500/20 text-purple-400" />
+          <StatCard icon={MessageSquare} label="Sessions" value={analyticsOverview?.totalSessions || 0} color="bg-purple-500/20 text-purple-400" />
         </div>
 
         {/* Quick Actions */}
@@ -317,7 +311,6 @@ function HomePage() {
             <QuickAction icon={Plus} label="New Task" onClick={openNewTaskPanel} />
             <QuickAction icon={MessageSquare} label="AI Chat" onClick={openChatPanel} />
             <QuickAction icon={FolderOpen} label="Open Folder" onClick={handleOpenFolder} loading={isSelectingFolder} />
-            <QuickAction icon={GitBranch} label="Clone Repository" />
           </div>
         </div>
 
@@ -336,7 +329,10 @@ function HomePage() {
                   ))}
                 </div>
               )}
-              <button className="w-full mt-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <button
+                onClick={() => navigate({ to: '/tasks', search: { view: 'sessions' } })}
+                className="w-full mt-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
                 View all activity →
               </button>
             </div>

@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { TerminalPanel } from '@/features/terminal';
-import { useSettings } from '@/shared/hooks/use-settings';
+import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 import { useQuery } from '@tanstack/react-query';
 import { projectsApi } from '@/adapters/api/projects-api';
 import { Terminal } from 'lucide-react';
@@ -11,15 +11,28 @@ export const Route = createFileRoute('/terminal')({
 
 function TerminalPage() {
   const { data: settings } = useSettings();
+  const updateSettings = useUpdateSettings();
   const activeProjectId = settings?.currentActiveProjectId;
 
   const { data: projectData } = useQuery({
     queryKey: ['project', activeProjectId],
-    queryFn: () => projectsApi.getById(activeProjectId!),
+    queryFn: async () => {
+      try {
+        return await projectsApi.getById(activeProjectId!);
+      } catch (err: unknown) {
+        // Clear stale project ID on 404 (DB reset)
+        if (err && typeof err === 'object' && 'statusCode' in err && (err as { statusCode: number }).statusCode === 404) {
+          updateSettings.mutate({ currentActiveProjectId: null });
+          return null;
+        }
+        throw err;
+      }
+    },
     enabled: !!activeProjectId,
+    retry: false,
   });
 
-  const activeProject = projectData?.project;
+  const activeProject = projectData?.project ?? null;
 
   if (!activeProjectId) {
     return (

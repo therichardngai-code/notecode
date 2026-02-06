@@ -102,7 +102,7 @@ async function runMigrations(): Promise<void> {
       title TEXT NOT NULL,
       description TEXT,
       status TEXT DEFAULT 'not-started',
-      priority TEXT DEFAULT 'medium',
+      priority TEXT,
       assignee TEXT,
       due_date TEXT,
       agent_role TEXT,
@@ -217,6 +217,37 @@ async function runMigrations(): Promise<void> {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS hooks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      event TEXT NOT NULL,
+      type TEXT NOT NULL,
+      config TEXT NOT NULL,
+      filters TEXT,
+      enabled INTEGER DEFAULT 1,
+      priority INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS git_commit_approvals (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+      attempt_number INTEGER DEFAULT 1,
+      status TEXT DEFAULT 'pending',
+      commit_message TEXT,
+      files_changed TEXT,
+      diff_summary TEXT,
+      commit_sha TEXT,
+      created_at TEXT NOT NULL,
+      resolved_at TEXT,
+      pushed_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS cli_provider_settings (
       id TEXT PRIMARY KEY,
       project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
@@ -307,6 +338,12 @@ function runSchemaMigrations(): void {
   addColumnIfNotExists('settings', 'data_retention_enabled', 'INTEGER DEFAULT 0');
   addColumnIfNotExists('settings', 'data_retention_days', 'INTEGER DEFAULT 90');
   addColumnIfNotExists('settings', 'user_email', 'TEXT');
+
+  // License columns (Phase 1 — feature gating)
+  addColumnIfNotExists('settings', 'license_plan', "TEXT DEFAULT 'free'");
+  addColumnIfNotExists('settings', 'license_key', 'TEXT');
+  addColumnIfNotExists('settings', 'license_jwt', 'TEXT');
+  addColumnIfNotExists('settings', 'license_validated_at', 'TEXT');
 
   // Messages table migrations
   addColumnIfNotExists('messages', 'approval_id', 'TEXT');

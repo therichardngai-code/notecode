@@ -24,6 +24,7 @@ export function GitCommitApprovalDialog({
   const [processing, setProcessing] = useState<'approve' | 'reject' | null>(null);
   const [discardChanges, setDiscardChanges] = useState(false);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Fetch full approval details with diffs
   useEffect(() => {
@@ -51,17 +52,30 @@ export function GitCommitApprovalDialog({
       setDiffs([]);
       setDiscardChanges(false);
       setExpandedFiles(new Set());
+      setErrorMessage(null);
     }
   }, [isOpen]);
 
   const handleApprove = async () => {
     if (!approval) return;
     setProcessing('approve');
+    setErrorMessage(null);
     try {
       await gitApi.approveCommit(approval.id, { commitMessage });
       onApproved?.();
       onClose();
-    } catch (err) {
+    } catch (err: unknown) {
+      const errorCode = (err as { code?: string })?.code;
+      if (errorCode === 'GIT_NOT_INITIALIZED') {
+        setErrorMessage('Git is not initialized in this project. Please initialize git first.');
+      } else if (errorCode === 'NO_CHANGES') {
+        // All changes already committed — auto-dismiss the approval
+        setErrorMessage(null);
+        onApproved?.();
+        onClose();
+      } else {
+        setErrorMessage('Failed to approve commit. Please try again.');
+      }
       console.error('Failed to approve commit:', err);
     } finally {
       setProcessing(null);
@@ -206,6 +220,12 @@ export function GitCommitApprovalDialog({
 
           {/* Footer */}
           <div className="border-t border-border px-4 py-3">
+            {/* Error message */}
+            {errorMessage && (
+              <div className="mb-3 px-3 py-2 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+                {errorMessage}
+              </div>
+            )}
             <div className="flex items-center justify-between">
               {/* Reject Options */}
               <label className="flex items-center gap-2 text-sm text-muted-foreground">

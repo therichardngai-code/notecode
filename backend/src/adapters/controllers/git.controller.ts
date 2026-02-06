@@ -107,6 +107,34 @@ export function registerGitController(
     }
   });
 
+  // GET /api/projects/:projectId/git/branch - Get git branch info for status bar
+  // Returns: isGitRepo, branch name, clean/dirty status (like VS Code footer)
+  app.get('/api/projects/:projectId/git/branch', async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+
+    const project = await projectRepo.findById(projectId);
+    if (!project?.path) {
+      return reply.send({ isGitRepo: false, branch: null, isDirty: false });
+    }
+
+    try {
+      const isRepo = await gitService.isGitRepo(project.path);
+      if (!isRepo) {
+        return reply.send({ isGitRepo: false, branch: null, isDirty: false });
+      }
+
+      const status = await gitService.getStatus(project.path);
+      return reply.send({
+        isGitRepo: true,
+        branch: status.currentBranch,
+        isDirty: !status.isClean,
+      });
+    } catch (error) {
+      // Graceful fallback — don't break the footer for git errors
+      return reply.send({ isGitRepo: false, branch: null, isDirty: false });
+    }
+  });
+
   // GET /api/tasks/:taskId/git/approvals - Get task git commit approvals
   app.get('/api/tasks/:taskId/git/approvals', async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
@@ -292,10 +320,22 @@ export function registerGitController(
     }
 
     try {
+      // Guard: check if git is initialized
+      const isRepo = await gitService.isGitRepo(project.path);
+      if (!isRepo) {
+        return reply.status(400).send({
+          error: 'Git not initialized',
+          code: 'GIT_NOT_INITIALIZED',
+        });
+      }
+
       // Check if there are changes to commit
       const hasChanges = await gitService.hasChanges(project.path);
       if (!hasChanges) {
-        return reply.status(400).send({ error: 'No changes to commit' });
+        return reply.status(400).send({
+          error: 'No changes to commit',
+          code: 'NO_CHANGES',
+        });
       }
 
       // 1. Approve all diffs for session (Combined Approval: commit approval = batch approve all diffs)
@@ -385,8 +425,12 @@ export function registerGitController(
       // 2. Discard git changes if requested (fallback for non-diff tracked changes)
       let changesDiscarded = false;
       if (body.discardChanges && project?.path) {
-        await gitService.discardChanges(project.path);
-        changesDiscarded = true;
+        // Guard: only discard if git is initialized
+        const isRepo = await gitService.isGitRepo(project.path);
+        if (isRepo) {
+          await gitService.discardChanges(project.path);
+          changesDiscarded = true;
+        }
       }
 
       // 3. Update approval
@@ -414,6 +458,7 @@ export function registerGitController(
         message: 'Commit rejected and all diffs reverted',
       });
     } catch (error) {
+      console.error('[Git] Reject approval failed:', error instanceof Error ? error.message : error);
       return reply.status(500).send({
         error: 'Failed to reject',
         details: error instanceof Error ? error.message : 'Unknown error',
@@ -495,6 +540,13 @@ export async function createGitCommitApproval(
   projectPath: string,
   eventBus: IEventBus
 ): Promise<GitCommitApproval | null> {
+  // Guard: skip commit approval if project folder has no git initialized
+  const isRepo = await gitService.isGitRepo(projectPath);
+  if (!isRepo) {
+    console.log(`[Git] Skipping commit approval — not a git repo: ${projectPath}`);
+    return null;
+  }
+
   // Get uncommitted diffs for this task (pending or approved, not applied/rejected)
   const allDiffs = await diffRepo.findByTaskId(task.id);
   const uncommittedDiffs = allDiffs.filter(d =>

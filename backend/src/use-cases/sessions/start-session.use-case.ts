@@ -245,8 +245,17 @@ export class StartSessionUseCase {
     );
 
     // 9. Build initial prompt from task title + description + context files + skills (first user message)
-    const contextFilesSection = task.contextFiles.length > 0
-      ? `\n\n<context-files>\n${task.contextFiles.map(f => `@${f}`).join('\n')}\n</context-files>`
+    // Separate images from code files for semantic prompt structure
+    const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+    const isImage = (path: string) => imageExtensions.some(ext => path.toLowerCase().endsWith(ext));
+    const codeFiles = task.contextFiles.filter(f => !isImage(f));
+    const imageFiles = task.contextFiles.filter(f => isImage(f));
+
+    const contextFilesSection = codeFiles.length > 0
+      ? `\n\n<context-files>\n${codeFiles.map(f => `@${f}`).join('\n')}\n</context-files>`
+      : '';
+    const imageFilesSection = imageFiles.length > 0
+      ? `\n\n<attached-images>\n${imageFiles.map(f => `@${f}`).join('\n')}\n</attached-images>`
       : '';
 
     // Add skill files as context with priority-based path resolution
@@ -281,13 +290,13 @@ export class StartSessionUseCase {
         // Don't store again - inherit from chain
       } else {
         // No previous prompt found, fall back to task description
-        effectivePrompt = `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${skillFilesSection}`;
+        effectivePrompt = `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${imageFilesSection}${skillFilesSection}`;
         displayPrompt = task.description || task.title || 'Start task';
       }
     } else {
       // New session - build from task description
       // CLI gets full XML with context, display gets plain description
-      effectivePrompt = `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${skillFilesSection}`;
+      effectivePrompt = `<task>\n<title>${task.title}</title>\n<description>${task.description || 'No description'}</description>\n</task>${contextFilesSection}${imageFilesSection}${skillFilesSection}`;
       displayPrompt = task.description || task.title || 'Start task';
       storedPrompt = displayPrompt;  // Store user-friendly version for retry
     }

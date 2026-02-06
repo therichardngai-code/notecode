@@ -74,8 +74,8 @@ export function DefaultModelSection() {
             className="w-full px-3 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="anthropic">Claude (Anthropic)</option>
-            <option value="google">Gemini (Google)</option>
-            <option value="openai">Codex (OpenAI)</option>
+            {/* <option value="google">Gemini (Google)</option> */}
+            {/* <option value="openai">Codex (OpenAI)</option> */}
           </select>
         </div>
 

@@ -108,11 +108,11 @@ export const modelsByProvider: Record<string, { id: string; label: string }[]> =
   ],
 };
 
-// All model options (flat list for backwards compatibility)
+// All model options — Anthropic only for this release
 export const modelOptions = [
   ...modelsByProvider.anthropic,
-  ...modelsByProvider.google,
-  ...modelsByProvider.openai,
+  // ...modelsByProvider.google,   // TODO: Enable when Google provider is supported
+  // ...modelsByProvider.openai,   // TODO: Enable when OpenAI provider is supported
 ];
 
 // Get models filtered by provider (returns all if no provider specified)

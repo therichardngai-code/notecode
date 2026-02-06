@@ -136,6 +136,8 @@ export function GlobalApprovalGateSection() {
   const updateSettings = useUpdateSettings();
 
   const [enabled, setEnabled] = useState(false);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(120);
+  const [defaultOnTimeout, setDefaultOnTimeout] = useState<'approve' | 'deny'>('deny');
   const [toolRules, setToolRules] = useState<ToolRule[]>([]);
   const [dangerousCommands, setDangerousCommands] = useState<string[]>([]);
   const [dangerousFiles, setDangerousFiles] = useState<string[]>([]);
@@ -144,14 +146,26 @@ export function GlobalApprovalGateSection() {
   // Check if all patterns are valid
   const hasInvalidPatterns = [...dangerousCommands, ...dangerousFiles].some(p => !isValidRegex(p));
 
-  // Sync with API data
+  // Convert backend arrays → UI tool rules for display
+  const backendToToolRules = (autoAllow: string[] = [], requireApproval: string[] = []): ToolRule[] => {
+    const rules: ToolRule[] = [];
+    autoAllow.forEach(tool => rules.push({ tool, action: 'approve' }));
+    requireApproval.forEach(tool => rules.push({ tool, action: 'ask' }));
+    return rules;
+  };
+
+  // Sync with API data (skip if user has unsaved changes)
   useEffect(() => {
-    if (settings) {
+    if (settings && !hasChanges) {
       setEnabled(settings.approvalGate?.enabled || false);
-      setToolRules(settings.approvalGate?.toolRules || []);
-      setDangerousCommands(settings.approvalGate?.dangerousCommands || []);
-      setDangerousFiles(settings.approvalGate?.dangerousFiles || []);
-      setHasChanges(false);
+      setTimeoutSeconds(settings.approvalGate?.timeoutSeconds || 120);
+      setDefaultOnTimeout(settings.approvalGate?.defaultOnTimeout || 'deny');
+      setToolRules(backendToToolRules(
+        settings.approvalGate?.autoAllowTools,
+        settings.approvalGate?.requireApprovalTools,
+      ));
+      setDangerousCommands(settings.approvalGate?.dangerousPatterns?.commands || []);
+      setDangerousFiles(settings.approvalGate?.dangerousPatterns?.files || []);
     }
   }, [settings]);
 
@@ -160,12 +174,21 @@ export function GlobalApprovalGateSection() {
     const validCommands = dangerousCommands.filter(p => p.trim() && isValidRegex(p));
     const validFiles = dangerousFiles.filter(p => p.trim() && isValidRegex(p));
 
+    // Convert UI tool rules → backend arrays
+    const autoAllowTools = toolRules.filter(r => r.action === 'approve').map(r => r.tool);
+    const requireApprovalTools = toolRules.filter(r => r.action === 'ask').map(r => r.tool);
+
     updateSettings.mutate({
       approvalGate: enabled ? {
         enabled,
-        toolRules: toolRules.length > 0 ? toolRules : undefined,
-        dangerousCommands: validCommands.length > 0 ? validCommands : undefined,
-        dangerousFiles: validFiles.length > 0 ? validFiles : undefined,
+        timeoutSeconds,
+        defaultOnTimeout,
+        autoAllowTools: autoAllowTools.length > 0 ? autoAllowTools : undefined,
+        requireApprovalTools: requireApprovalTools.length > 0 ? requireApprovalTools : undefined,
+        dangerousPatterns: (validCommands.length > 0 || validFiles.length > 0) ? {
+          commands: validCommands.length > 0 ? validCommands : undefined,
+          files: validFiles.length > 0 ? validFiles : undefined,
+        } : undefined,
       } : null,
     });
     setHasChanges(false);
@@ -256,15 +279,48 @@ export function GlobalApprovalGateSection() {
           )}
         >
           <span className={cn(
-            'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+            'absolute left-0 top-1 w-4 h-4 rounded-full bg-white transition-transform',
             enabled ? 'translate-x-6' : 'translate-x-1'
           )} />
         </button>
       </div>
 
-      {/* 3 Sections when enabled */}
+      {/* Sections when enabled */}
       {enabled && (
         <div className="space-y-6 pl-2 border-l-2 border-primary/20">
+
+          {/* Timeout Settings */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">Timeout Settings</span>
+            </div>
+            <div className="grid grid-cols-2 gap-4 pl-6">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Timeout (seconds)</label>
+                <input
+                  type="number"
+                  min={10}
+                  max={3600}
+                  value={timeoutSeconds || ''}
+                  onChange={(e) => { setTimeoutSeconds(e.target.value === '' ? 0 : Number(e.target.value)); setHasChanges(true); }}
+                  onBlur={() => { if (!timeoutSeconds || timeoutSeconds < 10) setTimeoutSeconds(10); if (timeoutSeconds > 3600) setTimeoutSeconds(3600); }}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Default on Timeout</label>
+                <select
+                  value={defaultOnTimeout}
+                  onChange={(e) => { setDefaultOnTimeout(e.target.value as 'approve' | 'deny'); setHasChanges(true); }}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                >
+                  <option value="deny">Deny</option>
+                  <option value="approve">Approve</option>
+                </select>
+              </div>
+            </div>
+          </div>
 
           {/* Section 1: Tool Rules */}
           <div className="space-y-3">
@@ -297,7 +353,6 @@ export function GlobalApprovalGateSection() {
                     >
                       <option value="ask">Ask</option>
                       <option value="approve">Auto Approve</option>
-                      <option value="deny">Deny</option>
                     </select>
                     <button
                       onClick={() => removeToolRule(index)}

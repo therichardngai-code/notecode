@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { UpdateBanner } from '../UpdateBanner';
+import { UpdateDialog } from '../update-dialog';
 
 interface AppShellProps {
   children: ReactNode;
@@ -8,7 +8,7 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
-      <UpdateBanner />
+      <UpdateDialog />
       {children}
     </div>
   );

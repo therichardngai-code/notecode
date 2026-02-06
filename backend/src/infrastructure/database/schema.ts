@@ -59,7 +59,7 @@ export const tasks = sqliteTable('tasks', {
   title: text('title').notNull(),
   description: text('description'),
   status: text('status').default('not-started'),
-  priority: text('priority').default('medium'),
+  priority: text('priority'),
   assignee: text('assignee'),
   dueDate: text('due_date'),
   agentRole: text('agent_role'),
@@ -158,6 +158,10 @@ export const settings = sqliteTable('settings', {
   yoloMode: integer('yolo_mode', { mode: 'boolean' }).default(false),
   approvalGate: text('approval_gate'), // JSON ApprovalGateConfig
   autoExtractSummary: integer('auto_extract_summary', { mode: 'boolean' }).default(true),
+  licensePlan: text('license_plan').default('free'), // 'free' | 'pro'
+  licenseKey: text('license_key'), // NC-XXXX-XXXX-XXXX-XXXX (encrypted)
+  licenseJwt: text('license_jwt'), // Signed JWT token for offline verification
+  licenseValidatedAt: text('license_validated_at'), // Last refresh timestamp
   currentActiveProjectId: text('current_active_project_id').references(() => projects.id, { onDelete: 'set null' }),
   dataRetentionEnabled: integer('data_retention_enabled', { mode: 'boolean' }).default(false),
   dataRetentionDays: integer('data_retention_days').default(90), // Days before auto-delete inactive tasks

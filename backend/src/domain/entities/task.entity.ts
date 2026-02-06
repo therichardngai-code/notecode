@@ -35,7 +35,7 @@ export class Task {
     public title: string,
     public description: string,
     public status: TaskStatus,
-    public priority: TaskPriority,
+    public priority: TaskPriority | null,
     public assignee: string | null,
     public dueDate: Date | null,
     public agentRole: AgentRole | null,

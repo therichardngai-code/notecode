@@ -33,9 +33,9 @@ const createTaskSchema = z.object({
   dependencies: z.array(z.string().uuid()).optional().default([]), // Task IDs that must complete first
   title: z.string().min(1),
   description: z.string().optional().default(''),
-  priority: z.enum(['high', 'medium', 'low']).default('medium'),
+  priority: z.enum(['high', 'medium', 'low']).nullable().default(null),
   agentId: z.string().uuid().optional(),
-  agentRole: z.enum(['researcher', 'planner', 'coder', 'reviewer', 'tester']).optional(),
+  agentRole: z.string().optional(),
   provider: z.enum(['anthropic', 'google', 'openai']).optional(),
   model: z.string().optional(),
   skills: z.array(z.string()).optional().default([]),
@@ -44,6 +44,8 @@ const createTaskSchema = z.object({
     tools: z.array(z.string()),
   }).optional(),
   contextFiles: z.array(z.string()).optional().default([]),
+  // Uploaded file paths (images + files) — merged into contextFiles on save
+  attachments: z.array(z.string()).optional().default([]),
   subagentDelegates: z.boolean().optional().default(false),
   // Git config
   autoBranch: z.boolean().optional().default(false),
@@ -60,7 +62,7 @@ const updateTaskSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   dependencies: z.array(z.string().uuid()).optional(),
   agentId: z.string().uuid().nullable().optional(),
-  agentRole: z.enum(['researcher', 'planner', 'coder', 'reviewer', 'tester']).nullable().optional(),
+  agentRole: z.string().nullable().optional(),
   provider: z.enum(['anthropic', 'google', 'openai']).nullable().optional(),
   model: z.string().nullable().optional(),
   // Skills, tools, context
@@ -70,6 +72,8 @@ const updateTaskSchema = z.object({
     tools: z.array(z.string()),
   }).nullable().optional(),
   contextFiles: z.array(z.string()).optional(),
+  // Uploaded file paths (images + files) — merged into contextFiles on save
+  attachments: z.array(z.string()).optional(),
   subagentDelegates: z.boolean().optional(),
   // Git config
   autoBranch: z.boolean().optional(),
@@ -204,6 +208,9 @@ export function registerTaskController(
       return reply.status(400).send({ error: 'projectId required (no active project set)' });
     }
 
+    // Merge attachments (uploaded files) into contextFiles (deduplicated)
+    const mergedContextFiles = [...new Set([...(body.contextFiles ?? []), ...(body.attachments ?? [])])];
+
     const task = new Task(
       randomUUID(),
       projectId,
@@ -221,7 +228,7 @@ export function registerTaskController(
       body.model ?? null,
       body.skills,
       body.tools ?? null,
-      body.contextFiles,
+      mergedContextFiles,
       null,
       body.subagentDelegates ?? false,
       // Git config
@@ -290,8 +297,11 @@ export function registerTaskController(
     if (body.tools !== undefined) {
       task.setTools(body.tools);
     }
-    if (body.contextFiles !== undefined) {
-      task.setContextFiles(body.contextFiles);
+    if (body.contextFiles !== undefined || body.attachments !== undefined) {
+      // Merge contextFiles + attachments (deduplicated)
+      const base = body.contextFiles ?? task.contextFiles;
+      const uploads = body.attachments ?? [];
+      task.setContextFiles([...new Set([...base, ...uploads])]);
     }
     if (body.subagentDelegates !== undefined) {
       task.subagentDelegates = body.subagentDelegates;

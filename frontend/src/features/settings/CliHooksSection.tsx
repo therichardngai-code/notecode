@@ -15,8 +15,8 @@ import { CliHookEditorDialog } from './components/cli-hook-editor-dialog';
 
 const PROVIDERS: { id: CliProvider; label: string }[] = [
   { id: 'claude', label: 'Claude' },
-  { id: 'gemini', label: 'Gemini' },
-  { id: 'codex', label: 'Codex' },
+  // { id: 'gemini', label: 'Gemini' },  // TODO: Enable when supported
+  // { id: 'codex', label: 'Codex' },    // TODO: Enable when supported
 ];
 
 export function CliHooksSection() {

@@ -67,6 +67,11 @@ export function registerSettingsController(
       ...settings,
       apiKeys: apiKeysStatus,
       encryptionConfigured: isEncryptionConfigured(),
+      // Expose plan status but never raw key/jwt
+      licensePlan: settings.licensePlan ?? 'free',
+      hasLicenseKey: !!settings.licenseKey,
+      licenseKey: undefined,
+      licenseJwt: undefined,
     });
   });
 

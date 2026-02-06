@@ -15,7 +15,7 @@ import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 import { DeleteConfirmationDialog } from '@/shared/components/dialogs';
 
 // Search params for handling ?id=taskId, ?session=sessionId, ?projectId=projectId
-type TasksSearch = { id?: string; session?: string; projectId?: string };
+type TasksSearch = { id?: string; session?: string; projectId?: string; view?: 'board' | 'sessions' };
 
 export const Route = createFileRoute('/tasks/')({
   component: TasksIndexPage,
@@ -23,6 +23,7 @@ export const Route = createFileRoute('/tasks/')({
     id: typeof search.id === 'string' ? search.id : undefined,
     session: typeof search.session === 'string' ? search.session : undefined,
     projectId: typeof search.projectId === 'string' ? search.projectId : undefined,
+    view: search.view === 'sessions' ? 'sessions' : undefined,
   }),
 });
 
@@ -113,7 +114,8 @@ function FilterDropdown({
 
 function TasksIndexPage() {
   const { openNewTaskPanel, openTaskDetailPanel, openTaskAsTab, setActiveProjectId } = useUIStore();
-  const [viewMode, setViewMode] = useState<ViewMode>('board');
+  const { view: initialView } = Route.useSearch();
+  const [viewMode, setViewMode] = useState<ViewMode>(initialView || 'board');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Record<string, string[]>>({});

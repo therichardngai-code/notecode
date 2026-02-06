@@ -60,6 +60,13 @@ export interface TaskGitStatus {
   } | null;
 }
 
+// Project git branch response (lightweight, never errors)
+export interface GitBranchStatus {
+  isGitRepo: boolean;
+  branch: string | null;
+  isDirty: boolean;
+}
+
 // Project git status response
 export interface ProjectGitStatus {
   currentBranch: string;
@@ -139,6 +146,12 @@ export const gitApi = {
    */
   getTaskApprovals: (taskId: string) =>
     apiClient.get<TaskApprovalsResponse>(`/api/tasks/${taskId}/git/approvals`),
+
+  /**
+   * Get project git branch (lightweight, safe to poll)
+   */
+  getProjectBranch: (projectId: string) =>
+    apiClient.get<GitBranchStatus>(`/api/projects/${projectId}/git/branch`),
 
   /**
    * Get project git status

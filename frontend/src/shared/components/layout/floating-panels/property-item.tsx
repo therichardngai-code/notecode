@@ -514,8 +514,8 @@ export function PropertyItem({ property, onRemove, onUpdate, selectedProvider, p
         >
           <span
             className={cn(
-              'pointer-events-none h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform',
-              isEnabled ? 'translate-x-4' : 'translate-x-0'
+              'pointer-events-none absolute left-0 top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-lg ring-0 transition-transform',
+              isEnabled ? 'translate-x-[18px]' : 'translate-x-1'
             )}
           />
         </button>

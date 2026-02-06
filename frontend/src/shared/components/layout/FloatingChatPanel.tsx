@@ -80,26 +80,41 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
 
   // Chat history state
   const [chatHistory, setChatHistory] = useState<Chat[]>([]);
+  const [projectsValidated, setProjectsValidated] = useState(false);
 
-  // Load projects on mount and sync with active project
+  // Load projects on mount and sync with active project — validate stale IDs
   useEffect(() => {
     projectsApi.getRecent(10).then(res => {
       setProjects(res.projects);
-      if (res.projects.length > 0 && !selectedProjectId) {
-        // Use active project if available and exists in list, else first project
-        const projectExists = activeProjectId && res.projects.some(p => p.id === activeProjectId);
-        setSelectedProjectId(projectExists ? activeProjectId : res.projects[0].id);
+      if (res.projects.length > 0) {
+        // Validate current selection exists in actual projects (handles DB reset)
+        const currentValid = selectedProjectId && res.projects.some(p => p.id === selectedProjectId);
+        if (!currentValid) {
+          const activeValid = activeProjectId && res.projects.some(p => p.id === activeProjectId);
+          setSelectedProjectId(activeValid ? activeProjectId : res.projects[0].id);
+        }
+      } else {
+        // No projects exist — clear stale selection
+        setSelectedProjectId(null);
       }
+      setProjectsValidated(true);
     }).catch(console.error);
   }, [activeProjectId]);
 
-  // Load chat history when project changes
+  // Load chat history when panel opens (re-fetches every open for fresh data)
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!projectsValidated || !selectedProjectId || !isOpen) return;
     projectsApi.listChats(selectedProjectId).then(res => {
       setChatHistory(res.chats);
-    }).catch(console.error);
-  }, [selectedProjectId]);
+    }).catch((err) => {
+      if (err?.statusCode === 404) {
+        setSelectedProjectId(null);
+        setChatHistory([]);
+      } else {
+        console.error(err);
+      }
+    });
+  }, [projectsValidated, selectedProjectId, isOpen]);
 
   // Chat session hook (real API)
   const {
@@ -337,21 +352,23 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
     setShowHistory(false);
     resetChat();
 
-    if (chat.lastSession?.id) {
-      try {
-        const res = await sessionsApi.getMessages(chat.lastSession.id);
+    // Load historical messages from ALL sessions for this chat
+    try {
+      const sessionsRes = await sessionsApi.list({ taskId: chat.id });
+      const sorted = sessionsRes.sessions.sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const all: ChatMessage[] = [];
+      for (const s of sorted) {
+        const res = await sessionsApi.getMessages(s.id, 200);
         const converted = res.messages
           .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => {
-            const chat = messageToChat(m);
-            return { ...chat, timestamp: new Date(m.timestamp) } as ChatMessage;
-          });
-        setHistoricalMessages(converted);
-      } catch (err) {
-        console.error('Failed to load chat messages:', err);
-        setHistoricalMessages([]);
+          .map(m => ({ ...messageToChat(m), timestamp: new Date(m.timestamp) } as ChatMessage));
+        all.push(...converted);
       }
-    } else {
+      setHistoricalMessages(all);
+    } catch (err) {
+      console.error('Failed to load chat messages:', err);
       setHistoricalMessages([]);
     }
   };
@@ -516,12 +533,7 @@ export function FloatingChatPanel({ onGoToFullChat }: FloatingChatPanelProps) {
                 <Sparkles className="w-6 h-6 text-foreground" />
               </div>
               <h2 className="text-lg font-medium text-foreground mb-8">How can I help you today?</h2>
-              <div className="w-full max-w-xs space-y-1">
-                <SuggestionButton icon={Search} label="Search for anything" />
-                <SuggestionButton icon={ListTodo} label="Write meeting agenda" />
-                <SuggestionButton icon={FileText} label="Analyze PDFs or images" />
-                <SuggestionButton icon={CheckCircle} label="Create a task tracker" badge="New" />
-              </div>
+              {/* Suggestion buttons — hidden for this release */}
             </div>
           ) : (
             /* Messages */

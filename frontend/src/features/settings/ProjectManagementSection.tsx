@@ -113,9 +113,20 @@ function ProjectCard({ project, onUpdate, onDelete, isUpdating }: {
   const [expanded, setExpanded] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState(project.systemPrompt || '');
   const [approvalEnabled, setApprovalEnabled] = useState(project.approvalGate?.enabled || false);
-  const [toolRules, setToolRules] = useState<ToolRule[]>(project.approvalGate?.toolRules || []);
-  const [dangerousCommands, setDangerousCommands] = useState<string[]>(project.approvalGate?.dangerousCommands || []);
-  const [dangerousFiles, setDangerousFiles] = useState<string[]>(project.approvalGate?.dangerousFiles || []);
+  // Convert backend arrays → UI tool rules
+  const backendToToolRules = (autoAllow: string[] = [], requireApproval: string[] = []): ToolRule[] => {
+    const rules: ToolRule[] = [];
+    autoAllow.forEach(tool => rules.push({ tool, action: 'approve' }));
+    requireApproval.forEach(tool => rules.push({ tool, action: 'ask' }));
+    return rules;
+  };
+
+  const [toolRules, setToolRules] = useState<ToolRule[]>(backendToToolRules(
+    project.approvalGate?.autoAllowTools,
+    project.approvalGate?.requireApprovalTools,
+  ));
+  const [dangerousCommands, setDangerousCommands] = useState<string[]>(project.approvalGate?.dangerousPatterns?.commands || []);
+  const [dangerousFiles, setDangerousFiles] = useState<string[]>(project.approvalGate?.dangerousPatterns?.files || []);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Check if all patterns are valid
@@ -124,22 +135,30 @@ function ProjectCard({ project, onUpdate, onDelete, isUpdating }: {
   useEffect(() => {
     setSystemPrompt(project.systemPrompt || '');
     setApprovalEnabled(project.approvalGate?.enabled || false);
-    setToolRules(project.approvalGate?.toolRules || []);
-    setDangerousCommands(project.approvalGate?.dangerousCommands || []);
-    setDangerousFiles(project.approvalGate?.dangerousFiles || []);
+    setToolRules(backendToToolRules(
+      project.approvalGate?.autoAllowTools,
+      project.approvalGate?.requireApprovalTools,
+    ));
+    setDangerousCommands(project.approvalGate?.dangerousPatterns?.commands || []);
+    setDangerousFiles(project.approvalGate?.dangerousPatterns?.files || []);
     setHasChanges(false);
   }, [project]);
 
   const handleSave = () => {
-    // Filter out empty and invalid patterns
     const validCommands = dangerousCommands.filter(p => p.trim() && isValidRegex(p));
     const validFiles = dangerousFiles.filter(p => p.trim() && isValidRegex(p));
+    // Convert UI tool rules → backend arrays
+    const autoAllowTools = toolRules.filter(r => r.action === 'approve').map(r => r.tool);
+    const requireApprovalTools = toolRules.filter(r => r.action === 'ask').map(r => r.tool);
 
     const approvalGate: ApprovalGateConfig = {
       enabled: approvalEnabled,
-      toolRules: toolRules.length > 0 ? toolRules : undefined,
-      dangerousCommands: validCommands.length > 0 ? validCommands : undefined,
-      dangerousFiles: validFiles.length > 0 ? validFiles : undefined,
+      autoAllowTools: autoAllowTools.length > 0 ? autoAllowTools : undefined,
+      requireApprovalTools: requireApprovalTools.length > 0 ? requireApprovalTools : undefined,
+      dangerousPatterns: (validCommands.length > 0 || validFiles.length > 0) ? {
+        commands: validCommands.length > 0 ? validCommands : undefined,
+        files: validFiles.length > 0 ? validFiles : undefined,
+      } : undefined,
     };
     onUpdate({
       systemPrompt: systemPrompt || null,
@@ -262,13 +281,13 @@ function ProjectCard({ project, onUpdate, onDelete, isUpdating }: {
               <button
                 onClick={() => { setApprovalEnabled(!approvalEnabled); setHasChanges(true); }}
                 className={cn(
-                  'w-10 h-6 rounded-full transition-colors relative',
+                  'w-11 h-6 rounded-full transition-colors relative',
                   approvalEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
                 )}
               >
                 <span className={cn(
-                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
-                  approvalEnabled ? 'translate-x-5' : 'translate-x-1'
+                  'absolute left-0 top-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform',
+                  approvalEnabled ? 'translate-x-6' : 'translate-x-1'
                 )} />
               </button>
             </div>

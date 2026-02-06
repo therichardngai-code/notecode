@@ -26,7 +26,7 @@ interface Tab {
 
 const tabs: Tab[] = [
   { id: 'general', label: 'General' },
-  { id: 'api-keys', label: 'API Keys' },
+  // { id: 'api-keys', label: 'API Keys' },  // TODO: Enable when multi-provider supported
   { id: 'prompts', label: 'Prompts' },
   { id: 'projects', label: 'Projects' },
   { id: 'cli-hooks', label: 'CLI Hooks' },

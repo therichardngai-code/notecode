@@ -200,6 +200,12 @@ export class GitService {
    * Get diff summary (number of files, additions, deletions)
    */
   async getDiffSummary(workingDir: string): Promise<GitDiffSummary> {
+    // Guard: return empty summary if not a git repo
+    const isRepo = await this.isGitRepo(workingDir);
+    if (!isRepo) {
+      return { files: 0, additions: 0, deletions: 0 };
+    }
+
     // Get stats for staged + unstaged changes
     const { stdout } = await execAsync('git diff --stat HEAD', { cwd: workingDir });
 

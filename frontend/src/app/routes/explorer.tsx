@@ -1,14 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { FileEditor } from '@/features/explorer';
 import { useState, useCallback, useEffect } from 'react';
-import { useSettings } from '@/shared/hooks/use-settings';
+import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 import { useQuery } from '@tanstack/react-query';
 import { projectsApi } from '@/adapters/api/projects-api';
 import { filesApi } from '@/adapters/api/files-api';
 import { Search, Plus, RefreshCw, Eye, EyeOff, FilePlus, FolderPlus, File } from 'lucide-react';
 import { FileTreeItem, type FileNode } from '@/shared/components/layout/panels/file-tree-item';
 import { useUIStore } from '@/shared/stores';
-import { API_BASE_URL } from '@/shared/lib/api-config';
+import { getApiBaseUrl } from '@/shared/lib/api-config';
 import { CreateFileDialog, DeleteConfirmationDialog } from '@/shared/components/dialogs';
 
 export const Route = createFileRoute('/explorer')({
@@ -75,13 +75,26 @@ function ExplorerPage() {
   const { data: settings } = useSettings();
   const activeProjectId = settings?.currentActiveProjectId;
 
+  const updateSettings = useUpdateSettings();
   const { data: projectData } = useQuery({
     queryKey: ['project', activeProjectId],
-    queryFn: () => projectsApi.getById(activeProjectId!),
+    queryFn: async () => {
+      try {
+        return await projectsApi.getById(activeProjectId!);
+      } catch (err: unknown) {
+        // Clear stale project ID on 404 (DB reset)
+        if (err && typeof err === 'object' && 'statusCode' in err && (err as { statusCode: number }).statusCode === 404) {
+          updateSettings.mutate({ currentActiveProjectId: null });
+          return null;
+        }
+        throw err;
+      }
+    },
     enabled: !!activeProjectId,
+    retry: false,
   });
 
-  const activeProject = projectData?.project;
+  const activeProject = projectData?.project ?? null;
 
   // Get function to open file in new tab
   const openFileAsTab = useUIStore((state) => state.openFileAsTab);
@@ -247,7 +260,7 @@ function ExplorerPage() {
     if (!activeProjectId) return;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/projects/${activeProjectId}/files/open-external`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/projects/${activeProjectId}/files/open-external`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath }),
