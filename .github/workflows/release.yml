@@ -39,7 +39,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: npm install --ignore-scripts
         # --ignore-scripts: skip electron rebuild (not needed for npm publish)
 
       - name: Build backend
@@ -78,16 +78,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install root dependencies
-        run: npm ci
+        run: npm install
 
       - name: Install backend dependencies
-        run: npm ci --prefix backend
+        run: npm install --prefix backend
 
       - name: Install frontend dependencies
-        run: npm ci --prefix frontend
+        run: npm install --prefix frontend
 
       - name: Install electron dependencies
-        run: npm ci --prefix electron
+        run: npm install --prefix electron
 
       - name: Build backend
         run: npm run build --prefix backend
