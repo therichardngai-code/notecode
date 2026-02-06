@@ -1,0 +1,42 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:           NoteCode Team (therichardngai-code)
+Licensed Work:      NoteCode v0.1.0-beta.1 and later versions
+                    The Licensed Work is (c) 2026 NoteCode Team
+
+Additional Use Grant:
+  You may use the Licensed Work for any purpose, including production use,
+  provided that you do not use the Licensed Work for a Competing Product.
+
+  A "Competing Product" means a product or service that is substantially
+  similar to the Licensed Work and is offered to third parties as a
+  managed service, hosted solution, or commercial distribution.
+
+  Individual and non-commercial use is always permitted.
+
+Change Date:        2030-02-07 (four years from initial release)
+
+Change License:     Apache License, Version 2.0
+
+Notice
+
+The Business Source License (this document, or the "License") is not an
+Open Source license. However, the Licensed Work will eventually be made
+available under an Open Source License, as stated in this License.
+
+For the full BSL 1.1 legal text, see: https://mariadb.com/bsl11/
+
+Summary of Rights
+
+  Non-production use:     ALLOWED (always)
+  Production use:         ALLOWED (non-competing)
+  Competing product:      REQUIRES commercial license
+  Modification:           ALLOWED (subject to above)
+  Distribution:           ALLOWED (must include this license)
+  After Change Date:      Converts to Apache 2.0 (full open source)
+
+Contact
+
+  For commercial licensing inquiries: https://github.com/therichardngai-code/notecode
