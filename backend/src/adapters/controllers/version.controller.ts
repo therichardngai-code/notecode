@@ -41,6 +41,8 @@ export function registerVersionController(
       version: versionService.getCurrentVersion(),
       node: process.version,
       platform: process.platform,
+      arch: process.arch,
+      deploymentMode: versionService.getDeploymentMode(),
     });
   });
 }

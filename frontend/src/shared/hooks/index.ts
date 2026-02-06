@@ -28,3 +28,4 @@ export { useApprovalState, gitApprovalKeys } from './use-approval-state';
 export { useApprovalHandlers } from './use-approval-handlers';
 export { useSessionStartHandler } from './use-session-start-handler';
 export { useGitApprovalSSE } from './use-git-approval-sse';
+export { useElectron } from './use-electron';

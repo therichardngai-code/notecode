@@ -6,6 +6,11 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import { ChildProcess, spawn } from 'child_process';
+import { initAutoUpdater } from './auto-updater.js';
+
+// Ensure GPU hardware acceleration is enabled
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
@@ -41,10 +46,11 @@ async function startBackendServer(): Promise<number> {
     console.log('[Electron] Backend script:', backendScript);
     console.log('[Electron] Mode:', isDevMode ? 'development' : 'production');
 
-    // Start backend process with Node.js (not tsx)
-    // Use process.execPath to ensure we find Node.js on Windows
-    // This requires backend to be built first
-    backendProcess = spawn(process.execPath, [backendScript], {
+    // Start backend as child process
+    // Dev: use system 'node' (matches system Node ABI — no native module rebuild needed)
+    // Prod: use process.execPath (Electron's Node — CI/CD rebuilds native modules for it)
+    const nodeExe = isDevMode ? 'node' : process.execPath;
+    backendProcess = spawn(nodeExe, [backendScript], {
       cwd: backendPath,
       env: {
         ...process.env,
@@ -116,7 +122,7 @@ async function createWindow(): Promise<void> {
     const port = await startBackendServer();
     console.log('[Electron] Backend running on port:', port);
 
-    // Create browser window
+    // Create browser window with frameless + transparency for custom title bar
     mainWindow = new BrowserWindow({
       width: 1400,
       height: 900,
@@ -128,31 +134,42 @@ async function createWindow(): Promise<void> {
         nodeIntegration: false,
         sandbox: false,
       },
-      titleBarStyle: 'hiddenInset', // macOS-style title bar
-      frame: process.platform !== 'darwin',
-      show: true, // Show immediately so window is always visible
-      center: true, // Center on screen
-      x: undefined, // Don't set position - use default
+      titleBarStyle: 'hidden',       // Hidden title bar — custom title bar in frontend
+      frame: false,                   // Frameless on all platforms
+      show: true,
+      center: true,
+      x: undefined,
       y: undefined,
     });
 
-    // Load frontend
+    // Load frontend with backend port as query param (avoids race condition)
+    const backendUrl = `http://localhost:${port}`;
     const frontendUrl = isDev()
-      ? 'http://localhost:5173' // Vite dev server
-      : `file://${path.join(__dirname, '../../frontend/dist/index.html')}`;
+      ? `http://localhost:5173?backendUrl=${encodeURIComponent(backendUrl)}`
+      : `file://${path.join(__dirname, '../../frontend/dist/index.html')}?backendUrl=${encodeURIComponent(backendUrl)}`;
 
     console.log('[Electron] Loading frontend from:', frontendUrl);
     await mainWindow.loadURL(frontendUrl);
 
-    // Inject backend URL after page loads
+    // Also send via IPC for hot-reload scenarios
     mainWindow.webContents.on('did-finish-load', () => {
-      mainWindow?.webContents.send('backend-url', `http://localhost:${port}`);
-      console.log('[Electron] Backend URL sent to renderer:', `http://localhost:${port}`);
+      mainWindow?.webContents.send('backend-url', backendUrl);
+      console.log('[Electron] Backend URL sent to renderer:', backendUrl);
     });
 
-    // Open DevTools in development
-    if (isDev()) {
-      mainWindow.webContents.openDevTools();
+    // Notify renderer when maximize state changes (for window control icon toggle)
+    mainWindow.on('maximize', () => {
+      mainWindow?.webContents.send('window:maximized-changed', true);
+    });
+    mainWindow.on('unmaximize', () => {
+      mainWindow?.webContents.send('window:maximized-changed', false);
+    });
+
+    // DevTools available via Ctrl+Shift+I (not auto-opened to avoid perf lag)
+
+    // Initialize auto-updater in production only (needs packaged app + GitHub Releases)
+    if (!isDev()) {
+      initAutoUpdater(mainWindow);
     }
 
     // Handle window close
@@ -250,11 +267,21 @@ ipcMain.on('window:close', () => {
   mainWindow?.close();
 });
 
+// Check if window is currently maximized
+ipcMain.handle('window:isMaximized', () => {
+  return mainWindow?.isMaximized() ?? false;
+});
+
 /**
  * Error handlers
  */
 
 process.on('uncaughtException', (error) => {
+  // EPIPE occurs during shutdown when backend process is already gone — harmless
+  if ((error as NodeJS.ErrnoException).code === 'EPIPE') {
+    console.warn('[Electron] EPIPE ignored (backend already exited)');
+    return;
+  }
   console.error('[Electron] Uncaught exception:', error);
   dialog.showErrorBox('Error', `Uncaught exception: ${error.message}`);
 });

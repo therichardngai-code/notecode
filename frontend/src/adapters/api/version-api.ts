@@ -10,8 +10,13 @@ export interface VersionInfo {
   current: string;
   latest: string;
   hasUpdate: boolean;
+  deploymentMode: 'npm' | 'electron';
   releaseNotes?: string;
   publishedAt?: string;
+  downloadUrl?: string;
+  downloadSize?: number;
+  checkFailed?: boolean;
+  checkError?: string;
 }
 
 export interface UpdateInstructions {
@@ -19,12 +24,16 @@ export interface UpdateInstructions {
   npmUpdate: string;
   npmInstall: string;
   electron: string;
+  deploymentMode: 'npm' | 'electron';
+  recommended: string;
 }
 
 export interface CurrentVersionInfo {
   version: string;
   node: string;
   platform: string;
+  arch: string;
+  deploymentMode: 'npm' | 'electron';
 }
 
 /**

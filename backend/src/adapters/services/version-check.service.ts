@@ -1,74 +1,93 @@
 /**
  * Version Check Service
- * Checks npm registry for available updates
+ * Dual-source version checking: npm registry (CLI) + GitHub Releases (Electron)
  */
 
 import fs from 'fs';
 import path from 'path';
 
+/** Deployment mode: npm (CLI/npx users) or electron (desktop app) */
+export type DeploymentMode = 'npm' | 'electron';
+
+/** GitHub release asset info */
+interface ReleaseAsset {
+  name: string;
+  url: string;
+  size: number;
+}
+
+/** Version check result with deployment-aware fields */
 export interface VersionInfo {
   current: string;
   latest: string;
   hasUpdate: boolean;
+  deploymentMode: DeploymentMode;
   releaseNotes?: string;
   publishedAt?: string;
+  downloadUrl?: string;   // Platform-specific download (Electron only)
+  downloadSize?: number;  // Asset size in bytes (Electron only)
+  checkFailed?: boolean;  // True when version fetch failed
+  checkError?: string;    // Error description when checkFailed
 }
 
 export class VersionCheckService {
   private static readonly NPM_REGISTRY = 'https://registry.npmjs.org/notecode';
+  private static readonly GITHUB_OWNER = 'therichardngai-code';
+  private static readonly GITHUB_REPO = 'notecode';
+  private static readonly GITHUB_API =
+    `https://api.github.com/repos/${VersionCheckService.GITHUB_OWNER}/${VersionCheckService.GITHUB_REPO}/releases/latest`;
   private static readonly CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-  private cachedInfo: VersionInfo | null = null;
-  private lastCheckTime: number = 0;
+  /** Separate caches for npm and GitHub sources */
+  private cache: Record<DeploymentMode, { info: VersionInfo | null; lastCheck: number }> = {
+    npm: { info: null, lastCheck: 0 },
+    electron: { info: null, lastCheck: 0 },
+  };
 
-  /**
-   * Check for updates (cached for 24 hours)
-   */
+  /** Detect deployment mode — Electron sets IS_ELECTRON=true in main.ts */
+  getDeploymentMode(): DeploymentMode {
+    return process.env.IS_ELECTRON === 'true' ? 'electron' : 'npm';
+  }
+
+  /** Check for updates (cached 24h per deployment mode) */
   async checkForUpdates(forceRefresh = false): Promise<VersionInfo> {
+    const mode = this.getDeploymentMode();
     const now = Date.now();
+    const modeCache = this.cache[mode];
 
     // Return cached if within interval and not forced
-    if (!forceRefresh && this.cachedInfo && (now - this.lastCheckTime) < VersionCheckService.CHECK_INTERVAL_MS) {
-      return this.cachedInfo;
+    if (!forceRefresh && modeCache.info && (now - modeCache.lastCheck) < VersionCheckService.CHECK_INTERVAL_MS) {
+      return modeCache.info;
     }
 
     const current = this.getCurrentVersion();
 
     try {
-      const latest = await this.fetchLatestVersion();
+      const info = mode === 'electron'
+        ? await this.checkGitHub(current, mode)
+        : await this.checkNpm(current, mode);
 
-      const info: VersionInfo = {
-        current,
-        latest: latest.version,
-        hasUpdate: this.isNewerVersion(latest.version, current),
-        releaseNotes: latest.releaseNotes,
-        publishedAt: latest.publishedAt,
-      };
-
-      this.cachedInfo = info;
-      this.lastCheckTime = now;
-
+      this.cache[mode] = { info, lastCheck: now };
       return info;
     } catch (error) {
-      console.warn('[VersionCheck] Failed to check for updates:', error);
+      console.warn(`[VersionCheck] Failed to check ${mode} updates:`, error);
       return {
         current,
         latest: current,
         hasUpdate: false,
+        deploymentMode: mode,
+        checkFailed: true,
+        checkError: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
 
-  /**
-   * Get current version from package.json
-   */
+  /** Get current version from package.json */
   getCurrentVersion(): string {
-    // Try npm_package_version (set when running via npm/npx)
     if (process.env.npm_package_version) {
       return process.env.npm_package_version;
     }
 
-    // Try reading package.json
     try {
       const pkgPath = path.join(process.cwd(), 'package.json');
       if (fs.existsSync(pkgPath)) {
@@ -76,26 +95,46 @@ export class VersionCheckService {
         if (pkg.version) return pkg.version;
       }
     } catch {
-      // Ignore
+      // Ignore — fall through to default
     }
 
     return '0.1.0';
   }
 
-  /**
-   * Fetch latest version from npm registry
-   */
-  private async fetchLatestVersion(): Promise<{
-    version: string;
-    releaseNotes?: string;
-    publishedAt?: string;
-  }> {
+  /** Get update instructions based on deployment mode */
+  getUpdateInstructions(version?: string): {
+    npx: string;
+    npmUpdate: string;
+    npmInstall: string;
+    electron: string;
+    deploymentMode: DeploymentMode;
+    recommended: string;
+  } {
+    const ver = version ?? 'latest';
+    const mode = this.getDeploymentMode();
+    const releaseTag = ver === 'latest' ? 'latest' : `v${ver}`;
+    const githubUrl = `https://github.com/${VersionCheckService.GITHUB_OWNER}/${VersionCheckService.GITHUB_REPO}/releases/${releaseTag}`;
+
+    return {
+      npx: 'npx notecode@latest',
+      npmUpdate: 'npm update -g notecode',
+      npmInstall: `npm install -g notecode@${ver}`,
+      electron: githubUrl,
+      deploymentMode: mode,
+      recommended: mode === 'electron' ? 'electron' : 'npx',
+    };
+  }
+
+  // ── Private: npm source ──────────────────────────────────────────
+
+  /** Fetch latest version from npm registry */
+  private async checkNpm(current: string, mode: DeploymentMode): Promise<VersionInfo> {
     const response = await fetch(VersionCheckService.NPM_REGISTRY, {
       headers: { 'Accept': 'application/json' },
     });
 
     if (!response.ok) {
-      throw new Error(`Registry fetch failed: ${response.statusText}`);
+      throw new Error(`npm registry: ${response.statusText}`);
     }
 
     const data = await response.json() as {
@@ -109,39 +148,83 @@ export class VersionCheckService {
     const versionData = data.versions[latest];
 
     return {
-      version: latest,
+      current,
+      latest,
+      hasUpdate: this.isNewerVersion(latest, current),
+      deploymentMode: mode,
       releaseNotes: versionData?.releaseNotes ?? data.readme?.slice(0, 500),
       publishedAt: data.time[latest],
     };
   }
 
-  /**
-   * Compare semantic versions
-   */
-  private isNewerVersion(latest: string, current: string): boolean {
-    const [latestMajor, latestMinor, latestPatch] = latest.split('.').map(Number);
-    const [currMajor, currMinor, currPatch] = current.split('.').map(Number);
+  // ── Private: GitHub source ───────────────────────────────────────
 
-    if (latestMajor !== currMajor) return latestMajor > currMajor;
-    if (latestMinor !== currMinor) return latestMinor > currMinor;
-    return latestPatch > currPatch;
+  /** Fetch latest release from GitHub Releases API */
+  private async checkGitHub(current: string, mode: DeploymentMode): Promise<VersionInfo> {
+    const response = await fetch(VersionCheckService.GITHUB_API, {
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'notecode-updater',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub API: ${response.status} ${response.statusText}`);
+    }
+
+    const release = await response.json() as {
+      tag_name: string;
+      body?: string;
+      published_at?: string;
+      assets: Array<{ name: string; browser_download_url: string; size: number }>;
+    };
+
+    const version = release.tag_name.replace(/^v/, '');
+    const assets: ReleaseAsset[] = release.assets.map(a => ({
+      name: a.name,
+      url: a.browser_download_url,
+      size: a.size,
+    }));
+    const platformAsset = this.getAssetForPlatform(assets);
+
+    return {
+      current,
+      latest: version,
+      hasUpdate: this.isNewerVersion(version, current),
+      deploymentMode: mode,
+      releaseNotes: release.body,
+      publishedAt: release.published_at,
+      downloadUrl: platformAsset?.url,
+      downloadSize: platformAsset?.size,
+    };
   }
 
-  /**
-   * Get update instructions
-   */
-  getUpdateInstructions(version?: string): {
-    npx: string;
-    npmUpdate: string;
-    npmInstall: string;
-    electron: string;
-  } {
-    const ver = version ?? 'latest';
-    return {
-      npx: 'npx notecode@latest',
-      npmUpdate: 'npm update -g notecode',
-      npmInstall: `npm install -g notecode@${ver}`,
-      electron: `https://github.com/org/notecode/releases/${ver === 'latest' ? 'latest' : `v${ver}`}`,
+  /** Match release asset to current platform + architecture */
+  private getAssetForPlatform(assets: ReleaseAsset[]): ReleaseAsset | undefined {
+    const key = `${process.platform}-${process.arch}`;
+    const patterns: Record<string, RegExp> = {
+      'win32-x64': /win.*x64.*\.(exe|nsis)/i,
+      'win32-ia32': /win.*(ia32|x86).*\.(exe|nsis)/i,
+      'darwin-x64': /mac.*x64.*\.(dmg|zip)/i,
+      'darwin-arm64': /mac.*arm64.*\.(dmg|zip)/i,
+      'linux-x64': /linux.*x64.*\.(AppImage|deb)/i,
+      'linux-arm64': /linux.*arm64.*\.(AppImage|deb)/i,
     };
+
+    const pattern = patterns[key];
+    return pattern ? assets.find(a => pattern.test(a.name)) : undefined;
+  }
+
+  // ── Private: Semver comparison ───────────────────────────────────
+
+  /** Compare semantic versions (handles pre-release tags like 1.2.3-beta.1) */
+  private isNewerVersion(latest: string, current: string): boolean {
+    const clean = (v: string) => v.replace(/-.*$/, '');
+    const [lM, lm, lp] = clean(latest).split('.').map(Number);
+    const [cM, cm, cp] = clean(current).split('.').map(Number);
+
+    if (lM !== cM) return lM > cM;
+    if (lm !== cm) return lm > cm;
+    return lp > cp;
   }
 }

@@ -1,4 +1,6 @@
 export { AppShell } from './AppShell';
+export { ElectronTitleBar } from './electron-title-bar';
+export { ElectronWindowControls } from './electron-window-controls';
 export { Navigator } from './Navigator';
 export { Sidebar } from './Sidebar';
 export { Panel } from './Panel';

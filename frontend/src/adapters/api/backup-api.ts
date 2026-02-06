@@ -3,7 +3,7 @@
  * HTTP client for backup/export endpoints
  */
 
-import { API_BASE_URL } from '@/shared/lib/api-config';
+import { getApiBaseUrl } from '@/shared/lib/api-config';
 
 // Types
 export interface ExportOptions {
@@ -22,7 +22,7 @@ export interface ExportOptions {
 export const backupApi = {
   /** Export all data as JSON blob */
   exportAll: async (): Promise<Blob> => {
-    const response = await fetch(`${API_BASE_URL}/api/backup/export`, {
+    const response = await fetch(`${getApiBaseUrl()}/api/backup/export`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
     });
@@ -32,7 +32,7 @@ export const backupApi = {
 
   /** Export with custom options */
   exportWithOptions: async (options: ExportOptions): Promise<Blob> => {
-    const response = await fetch(`${API_BASE_URL}/api/backup/export`, {
+    const response = await fetch(`${getApiBaseUrl()}/api/backup/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(options),

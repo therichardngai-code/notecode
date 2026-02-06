@@ -9,17 +9,20 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc && electron .",
-    "rebuild": "npx @electron/rebuild -f -m ../backend",
+    "rebuild": "npx @electron/rebuild -f -m ../backend -o better-sqlite3",
     "postinstall": "npm run rebuild",
     "package": "electron-builder",
     "package:win": "electron-builder --win",
     "package:mac": "electron-builder --mac",
     "package:linux": "electron-builder --linux"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
+  },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
     "@types/node": "^20.0.0",
-    "electron": "^28.0.0",
+    "electron": "^33.4.11",
     "electron-builder": "^24.0.0",
     "electron-rebuild": "^3.2.9",
     "typescript": "^5.4.0"

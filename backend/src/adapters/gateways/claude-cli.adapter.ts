@@ -20,14 +20,23 @@ export class ClaudeCliAdapter implements ICliExecutor {
   // Callbacks for when CLI session ID is captured
   private sessionIdCallbacks = new Map<string, (cliSessionId: string) => void>();
 
-  // Backend URL for hook communication (from env or default, uses port 41920)
-  private backendUrl: string = process.env.NOTECODE_BACKEND_URL
-    ?? `http://localhost:${process.env.NOTECODE_PORT ?? process.env.PORT ?? 41920}`;
+  /**
+   * Resolve backend URL lazily (at spawn time, not construction time).
+   * In Electron mode, NOTECODE_PORT is set AFTER server.listen() — so reading
+   * env at construction time would capture PORT=0 instead of the actual port.
+   */
+  private getBackendUrl(): string {
+    return process.env.NOTECODE_BACKEND_URL
+      ?? `http://localhost:${process.env.NOTECODE_PORT ?? process.env.PORT ?? 41920}`;
+  }
 
   async spawn(config: CliSpawnConfig): Promise<CliProcess> {
     const args = this.buildArgs(config);
     // debugLog('[ClaudeCliAdapter] Spawning with args:', args.slice(0, 5).join(' '), '...');
     // debugLog('[ClaudeCliAdapter] Working dir:', config.workingDir);
+
+    // Resolve backend URL at spawn time (not construction time) for Electron PORT=0 support
+    const backendUrl = this.getBackendUrl();
 
     // Pass session ID and backend URL to hooks via environment
     const proc = spawn('npx', args, {
@@ -36,7 +45,7 @@ export class ClaudeCliAdapter implements ICliExecutor {
         ...process.env,
         FORCE_COLOR: '0',
         NOTECODE_SESSION_ID: config.sessionId ?? '',
-        NOTECODE_BACKEND_URL: this.backendUrl,
+        NOTECODE_BACKEND_URL: backendUrl,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,

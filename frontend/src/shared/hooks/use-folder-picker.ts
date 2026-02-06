@@ -1,6 +1,7 @@
 /**
  * Folder Picker Hook
- * Wrapper for native OS folder picker via backend API
+ * Uses native Electron IPC dialog when available (instant, no network roundtrip).
+ * Falls back to backend REST API in web browser mode.
  */
 
 import { useState, useCallback } from 'react';
@@ -20,7 +21,24 @@ export function useFolderPicker(options: UseFolderPickerOptions = {}) {
     setIsSelecting(true);
 
     try {
-      const result = await systemApi.selectFolder({ title, initialPath });
+      let result: SelectFolderResponse;
+
+      // Use native IPC in Electron (faster — no HTTP roundtrip)
+      if (window.electronAPI?.selectFolder) {
+        const ipcResult = await window.electronAPI.selectFolder({
+          title,
+          defaultPath: initialPath,
+        });
+        result = {
+          path: ipcResult.path,
+          name: ipcResult.path ? ipcResult.path.split(/[/\\]/).pop() || null : null,
+          cancelled: ipcResult.cancelled,
+        };
+      } else {
+        // Fallback to REST API for web browser
+        result = await systemApi.selectFolder({ title, initialPath });
+      }
+
       setLastResult(result);
 
       if (result.cancelled) {

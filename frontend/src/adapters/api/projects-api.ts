@@ -4,28 +4,27 @@
  */
 
 import { apiClient } from './api-client';
-import { API_BASE_URL } from '@/shared/lib/api-config';
+import { getApiBaseUrl } from '@/shared/lib/api-config';
 import type { Session } from './sessions-api';
 
-// Tool-level approval rule (e.g., Bash → ask)
-export interface ToolRule {
-  tool: string;  // Tool name: Bash, Write, Edit, Read, Glob, etc.
-  action: 'approve' | 'deny' | 'ask';
-}
-
-// Project/Global approval gate configuration
+// Project/Global approval gate configuration (matches backend domain VO)
 export interface ApprovalGateConfig {
   enabled: boolean;
-  // Tool-level rules
-  toolRules?: ToolRule[];
-  // Custom dangerous command patterns (regex, e.g., rm\s+-rf)
-  dangerousCommands?: string[];
-  // Custom dangerous file patterns (regex, e.g., \.env$)
-  dangerousFiles?: string[];
+  timeoutSeconds?: number;
+  defaultOnTimeout?: 'approve' | 'deny';
+  autoAllowTools?: string[];        // Tools auto-approved (Read, Glob, etc.)
+  requireApprovalTools?: string[];  // Tools requiring user approval (Bash, Write, etc.)
+  dangerousPatterns?: {
+    commands?: string[];  // Regex patterns for dangerous bash commands
+    files?: string[];     // Regex patterns for sensitive file paths
+  };
 }
 
-// Backward compatibility alias
-export type ApprovalGateRule = ToolRule;
+// UI-only type for per-tool action display (not sent to backend)
+export interface ToolRule {
+  tool: string;
+  action: 'approve' | 'ask';
+}
 
 // Types matching backend entities
 export interface Project {
@@ -217,7 +216,7 @@ export const projectsApi = {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/uploads`, {
+    const response = await fetch(`${getApiBaseUrl()}/api/projects/${projectId}/uploads`, {
       method: 'POST',
       body: formData,
     });

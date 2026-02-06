@@ -7,25 +7,14 @@
  * Electron: Uses dynamic URL from main process
  */
 
-import { API_BASE_URL as CONFIG_BASE_URL } from '@/shared/lib/api-config';
+import { getApiBaseUrl, setApiBaseUrl } from '@/shared/lib/api-config';
 
-// Extend window interface for Electron API
-declare global {
-  interface Window {
-    electronAPI?: {
-      onBackendUrl: (callback: (url: string) => void) => void;
-    };
-  }
-}
+// ElectronAPI type is declared globally in use-electron.ts
 
-// Mutable base URL - can be overridden by Electron
-let API_BASE_URL = CONFIG_BASE_URL;
-
-// Check for Electron and listen for dynamic port
+// Listen for Electron dynamic port and update the centralized base URL
 if (typeof window !== 'undefined' && window.electronAPI) {
   window.electronAPI.onBackendUrl((url: string) => {
-    console.log('[API Client] Received dynamic backend URL:', url);
-    API_BASE_URL = url;
+    setApiBaseUrl(url);
   });
 }
 
@@ -50,8 +39,9 @@ interface RequestOptions extends RequestInit {
  * Handles both absolute URLs (dev/Electron) and relative URLs (prod)
  */
 function buildUrl(endpoint: string, params?: Record<string, string | number | boolean | undefined>): string {
+  const apiBaseUrl = getApiBaseUrl();
   // For relative URLs (prod mode), use current origin as base
-  const baseUrl = API_BASE_URL || window.location.origin;
+  const baseUrl = apiBaseUrl || window.location.origin;
   const url = new URL(`${baseUrl}${endpoint}`);
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
@@ -60,8 +50,8 @@ function buildUrl(endpoint: string, params?: Record<string, string | number | bo
       }
     });
   }
-  // Return relative path if no API_BASE_URL (prod mode)
-  return API_BASE_URL ? url.toString() : `${url.pathname}${url.search}`;
+  // Return relative path if no base URL (prod mode)
+  return apiBaseUrl ? url.toString() : `${url.pathname}${url.search}`;
 }
 
 /**

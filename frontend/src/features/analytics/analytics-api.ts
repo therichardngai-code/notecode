@@ -1,7 +1,5 @@
 // Analytics API client for dashboard data
-import { API_BASE_URL } from '@/shared/lib/api-config';
-
-const API_BASE = API_BASE_URL;
+import { getApiBaseUrl } from '@/shared/lib/api-config';
 
 export interface OverviewStats {
   totalTokens: number;
@@ -41,24 +39,24 @@ export interface RecentActivity {
 export const analyticsApi = {
   getOverview: async (projectId?: string): Promise<OverviewStats> => {
     const url = projectId
-      ? `${API_BASE}/api/analytics/overview?projectId=${projectId}`
-      : `${API_BASE}/api/analytics/overview`;
+      ? `${getApiBaseUrl()}/api/analytics/overview?projectId=${projectId}`
+      : `${getApiBaseUrl()}/api/analytics/overview`;
     const res = await fetch(url);
     return res.json();
   },
 
   getDailyUsage: async (projectId?: string): Promise<DailyUsage[]> => {
     const url = projectId
-      ? `${API_BASE}/api/analytics/daily-usage?projectId=${projectId}`
-      : `${API_BASE}/api/analytics/daily-usage`;
+      ? `${getApiBaseUrl()}/api/analytics/daily-usage?projectId=${projectId}`
+      : `${getApiBaseUrl()}/api/analytics/daily-usage`;
     const res = await fetch(url);
     return res.json();
   },
 
   getModelDistribution: async (projectId?: string): Promise<ModelUsage[]> => {
     const url = projectId
-      ? `${API_BASE}/api/analytics/model-distribution?projectId=${projectId}`
-      : `${API_BASE}/api/analytics/model-distribution`;
+      ? `${getApiBaseUrl()}/api/analytics/model-distribution?projectId=${projectId}`
+      : `${getApiBaseUrl()}/api/analytics/model-distribution`;
     const res = await fetch(url);
     return res.json();
   },
@@ -67,7 +65,7 @@ export const analyticsApi = {
     const params = new URLSearchParams();
     if (projectId) params.set('projectId', projectId);
     params.set('limit', String(limit));
-    const res = await fetch(`${API_BASE}/api/analytics/recent-activity?${params}`);
+    const res = await fetch(`${getApiBaseUrl()}/api/analytics/recent-activity?${params}`);
     return res.json();
   },
 };
