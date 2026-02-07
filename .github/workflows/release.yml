@@ -69,7 +69,7 @@ jobs:
   # ============================================
   electron-build:
     name: Build Electron (${{ matrix.platform }})
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

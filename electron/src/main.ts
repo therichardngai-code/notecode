@@ -144,10 +144,10 @@ async function createWindow(): Promise<void> {
 
     // Load frontend with backend port as query param (avoids race condition)
     const backendUrl = `http://localhost:${port}`;
-    // In production, frontend is in extraResources/frontend/dist
+    // In production, frontend is built into backend/public (vite outputs there)
     const frontendPath = isDev()
       ? null
-      : path.join(process.resourcesPath, 'frontend', 'dist', 'index.html');
+      : path.join(process.resourcesPath, 'backend', 'public', 'index.html');
 
     const frontendUrl = isDev()
       ? `http://localhost:5173?backendUrl=${encodeURIComponent(backendUrl)}`
