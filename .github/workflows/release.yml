@@ -131,6 +131,10 @@ jobs:
       - name: Install electron dependencies
         run: npm install --prefix electron --ignore-scripts
 
+      # CRITICAL: Rebuild native modules (better-sqlite3) for Electron runtime
+      - name: Rebuild native modules for Electron
+        run: cd electron && npx @electron/rebuild -f -m ../backend -o better-sqlite3
+
       - name: Build backend
         run: cd backend && npm run build
 
