@@ -135,6 +135,9 @@ jobs:
       - name: Build electron
         run: cd electron && npm run build
 
+      - name: Prune backend dev dependencies
+        run: cd backend && npm prune --omit=dev
+
       - name: Package Electron (${{ matrix.platform }})
         run: cd electron && npx electron-builder --${{ matrix.platform }} --publish never
         env:
