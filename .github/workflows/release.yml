@@ -135,11 +135,8 @@ jobs:
       - name: Build electron
         run: cd electron && npm run build
 
-      - name: Prune backend dev dependencies
-        run: cd backend && npm prune --omit=dev --ignore-scripts
-
       - name: Package Electron (${{ matrix.platform }})
-        run: cd electron && npx electron-builder --${{ matrix.platform }} --publish never
+        run: cd electron && npx --no-install electron-builder --${{ matrix.platform }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Code signing (optional - add when certificates are available)
