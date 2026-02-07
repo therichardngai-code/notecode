@@ -133,28 +133,6 @@ jobs:
       - name: Install electron dependencies
         run: npm install --prefix electron --ignore-scripts
 
-      # Copy electron-updater and deps from root to electron/node_modules (bypass workspace hoisting)
-      - name: Copy electron-updater to electron/node_modules
-        run: |
-          node -e "
-          const fs = require('fs');
-          const path = require('path');
-          const deps = ['electron-updater', 'builder-util-runtime', 'fs-extra', 'graceful-fs', 'jsonfile', 'universalify', 'js-yaml', 'argparse', 'lazy-val', 'lodash.escaperegexp', 'lodash.isequal', 'semver', 'tiny-typed-emitter'];
-          const target = 'electron/node_modules';
-          fs.mkdirSync(target, { recursive: true });
-          deps.forEach(dep => {
-            const src = path.join('node_modules', dep);
-            const dest = path.join(target, dep);
-            const srcExists = fs.existsSync(src);
-            console.log(dep + ': src=' + srcExists);
-            if (srcExists) {
-              fs.rmSync(dest, { recursive: true, force: true });
-              fs.cpSync(src, dest, { recursive: true });
-              console.log('  -> Copied to ' + dest);
-            }
-          });
-          "
-
       - name: Build backend
         run: cd backend && npm run build
 
