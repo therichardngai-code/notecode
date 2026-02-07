@@ -29,7 +29,7 @@
     "directories": {
       "output": "../release"
     },
-    "compression": "normal",
+    "compression": "store",
     "electronVersion": "33.4.11",
     "asar": true,
     "files": [
