@@ -1,12 +1,13 @@
 {
   "name": "notecode-electron",
-  "version": "0.1.0-beta.6",
+  "version": "0.1.0-beta.7",
   "description": "NoteCode Desktop Application",
   "main": "dist/main.js",
   "author": {
     "name": "NoteCode Team",
     "email": "team@notecode.app"
   },
+  "homepage": "https://github.com/therichardngai-code/notecode",
   "license": "MIT",
   "private": true,
   "scripts": {

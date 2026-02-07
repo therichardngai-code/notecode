@@ -127,13 +127,13 @@ jobs:
         run: npm install --prefix electron --ignore-scripts
 
       - name: Build backend
-        run: npm run build --prefix backend
+        run: cd backend && npm run build
 
       - name: Build frontend
-        run: npm run build --prefix frontend
+        run: cd frontend && npm run build
 
       - name: Build electron
-        run: npm run build --prefix electron
+        run: cd electron && npm run build
 
       - name: Package Electron (${{ matrix.platform }})
         run: cd electron && npx electron-builder --${{ matrix.platform }} --publish never
