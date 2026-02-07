@@ -6,7 +6,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import { ChildProcess, spawn } from 'child_process';
-import { initAutoUpdater } from './auto-updater.js';
+import { initAutoUpdater } from './auto-updater';
 
 // Ensure GPU hardware acceleration is enabled
 app.commandLine.appendSwitch('enable-gpu-rasterization');
