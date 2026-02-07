@@ -146,9 +146,10 @@ jobs:
         run: node -e "console.log(require('fs').readdirSync('electron/dist').join('\\n'))"
 
       # Remove workspace symlinks that cause infinite traversal in 7z/electron-builder
-      - name: Remove workspace symlinks from backend node_modules
+      # CRITICAL: Must remove from BOTH backend AND electron node_modules
+      - name: Remove workspace symlinks from backend AND electron node_modules
         run: |
-          node -e "const fs=require('fs'); ['notecode','notecode-app'].forEach(p => { const t='backend/node_modules/'+p; try { fs.rmSync(t,{recursive:true,force:true}); console.log('Removed',t); } catch(e) { console.log('Skip',t,e.message); } });"
+          node -e "const fs=require('fs'); ['notecode','notecode-app'].forEach(p => { ['backend/node_modules/','electron/node_modules/'].forEach(d => { const t=d+p; try { fs.rmSync(t,{recursive:true,force:true}); console.log('Removed',t); } catch(e) { console.log('Skip',t,e.message); } }); });"
 
       - name: Package Electron (${{ matrix.platform }})
         run: cd electron && npx --no-install electron-builder --${{ matrix.platform }} --publish never
