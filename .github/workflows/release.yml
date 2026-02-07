@@ -139,6 +139,7 @@ jobs:
         run: cd electron && npx --no-install electron-builder --${{ matrix.platform }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEBUG: electron-builder
           # Code signing (optional - add when certificates are available)
           # CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
           # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
