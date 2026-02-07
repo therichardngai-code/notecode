@@ -98,21 +98,19 @@ jobs:
             backend/node_modules
             frontend/node_modules
             electron/node_modules
-          key: electron-deps-${{ runner.os }}-${{ hashFiles('package.json', 'backend/package.json', 'frontend/package.json', 'electron/package.json') }}
-          restore-keys: electron-deps-${{ runner.os }}-
+          key: electron-deps-v2-${{ runner.os }}-${{ hashFiles('package.json', 'backend/package.json', 'frontend/package.json', 'electron/package.json') }}
+          # NO restore-keys fallback - ensure exact match only
 
+      # Cache ONLY Electron binaries (not electron-builder cache - causes stale asar issues)
       - name: Cache Electron binaries
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/electron
-            ~/.cache/electron-builder
             ~/AppData/Local/electron/Cache
-            ~/AppData/Local/electron-builder/Cache
             ~/Library/Caches/electron
-            ~/Library/Caches/electron-builder
-          key: electron-bin-${{ runner.os }}-${{ hashFiles('electron/package.json') }}
-          restore-keys: electron-bin-${{ runner.os }}-
+          key: electron-bin-v2-${{ runner.os }}-${{ hashFiles('electron/package.json') }}
+          # NO restore-keys fallback - ensure exact match only
 
       # Disable Windows Defender real-time scanning — causes massive I/O slowdown
       # when 7z processes thousands of small files in node_modules
@@ -142,14 +140,61 @@ jobs:
       - name: Build electron
         run: cd electron && npm run build
 
-      - name: Verify electron dist (should only have main.js and preload.js)
-        run: node -e "console.log(require('fs').readdirSync('electron/dist').join('\\n'))"
+      # CRITICAL: Strict verification - FAIL if unexpected files or bundling failed
+      - name: Verify electron dist (STRICT)
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const distDir = 'electron/dist';
+            const files = fs.readdirSync(distDir);
+            const expected = ['main.js', 'preload.js'];
+
+            console.log('Files in dist:', files);
+
+            // Check for unexpected files
+            const unexpected = files.filter(f => !expected.includes(f));
+            if (unexpected.length > 0) {
+              console.error('FATAL: Unexpected files in dist:', unexpected);
+              console.error('This indicates tsc output mixed with esbuild output!');
+              process.exit(1);
+            }
+
+            // Verify main.js is bundled (should be > 500KB with electron-updater inlined)
+            const mainSize = fs.statSync(path.join(distDir, 'main.js')).size;
+            console.log('main.js size:', mainSize, 'bytes');
+            if (mainSize < 500000) {
+              console.error('FATAL: main.js too small (' + mainSize + ' bytes)');
+              console.error('electron-updater may not be bundled!');
+              process.exit(1);
+            }
+
+            console.log('✓ Verification passed: only main.js and preload.js, bundled correctly');
+          "
 
       # Remove workspace symlinks that cause infinite traversal in 7z/electron-builder
-      # CRITICAL: Must remove from BOTH backend AND electron node_modules
-      - name: Remove workspace symlinks from backend AND electron node_modules
+      - name: Remove workspace symlinks
         run: |
           node -e "const fs=require('fs'); ['notecode','notecode-app'].forEach(p => { ['backend/node_modules/','electron/node_modules/'].forEach(d => { const t=d+p; try { fs.rmSync(t,{recursive:true,force:true}); console.log('Removed',t); } catch(e) { console.log('Skip',t,e.message); } }); });"
+
+      # Clear electron-builder cache to prevent stale asar content
+      - name: Clear electron-builder cache
+        run: |
+          node -e "
+            const fs = require('fs');
+            const os = require('os');
+            const path = require('path');
+            const caches = [
+              path.join(os.homedir(), '.cache', 'electron-builder'),
+              path.join(os.homedir(), 'AppData', 'Local', 'electron-builder', 'Cache'),
+              path.join(os.homedir(), 'Library', 'Caches', 'electron-builder'),
+              path.join('..', 'release')
+            ];
+            caches.forEach(c => {
+              try { fs.rmSync(c, {recursive:true,force:true}); console.log('Cleared:', c); }
+              catch(e) { console.log('Skip:', c); }
+            });
+          "
 
       - name: Package Electron (${{ matrix.platform }})
         run: cd electron && npx --no-install electron-builder --${{ matrix.platform }} --publish never

@@ -1,6 +1,6 @@
 {
   "name": "notecode-electron",
-  "version": "0.1.0-beta.12",
+  "version": "0.1.0-beta.13",
   "description": "NoteCode Desktop Application",
   "main": "dist/main.js",
   "author": {
@@ -22,7 +22,8 @@
     "package:linux": "electron-builder --linux"
   },
   "dependencies": {
-    "electron-updater": "^6.3.0"
+    "electron-updater": "^6.3.0",
+    "notecode-app": "file:.."
   },
   "build": {
     "appId": "app.notecode.desktop",
@@ -109,10 +110,10 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
     "@types/node": "^20.0.0",
-    "esbuild": "^0.20.0",
     "electron": "^33.4.11",
     "electron-builder": "^24.0.0",
     "electron-rebuild": "^3.2.9",
+    "esbuild": "^0.20.0",
     "typescript": "^5.4.0"
   }
 }
