@@ -145,8 +145,7 @@ jobs:
       # Remove workspace symlinks that cause infinite traversal in 7z/electron-builder
       - name: Remove workspace symlinks from backend node_modules
         run: |
-          rm -rf backend/node_modules/notecode
-          rm -rf backend/node_modules/notecode-app
+          node -e "const fs=require('fs'); ['notecode','notecode-app'].forEach(p => { const t='backend/node_modules/'+p; try { fs.rmSync(t,{recursive:true,force:true}); console.log('Removed',t); } catch(e) { console.log('Skip',t,e.message); } });"
 
       - name: Package Electron (${{ matrix.platform }})
         run: cd electron && npx --no-install electron-builder --${{ matrix.platform }} --publish never
