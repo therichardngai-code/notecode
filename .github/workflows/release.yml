@@ -142,6 +142,17 @@ jobs:
       - name: Build electron
         run: cd electron && npm run build
 
+      # Log payload size before packaging to detect regressions
+      - name: Check backend node_modules for symlinks (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "=== Checking for reparse points (symlinks/junctions) ==="
+          Get-ChildItem backend\node_modules -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "SYMLINK: $($_.FullName)" }
+          echo "=== Backend node_modules size ==="
+          $stats = Get-ChildItem backend\node_modules -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum
+          Write-Host "Files: $($stats.Count), Size: $([math]::Round($stats.Sum / 1MB, 1)) MB"
+        shell: powershell
+
       - name: Package Electron (${{ matrix.platform }})
         run: cd electron && npx --no-install electron-builder --${{ matrix.platform }} --publish never
         env:
