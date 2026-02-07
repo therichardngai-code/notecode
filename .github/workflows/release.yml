@@ -133,6 +133,10 @@ jobs:
       - name: Install electron dependencies
         run: npm install --prefix electron --ignore-scripts
 
+      # Install electron-updater locally (bypass workspace hoisting)
+      - name: Install electron-updater in electron/node_modules
+        run: cd electron && npm install electron-updater --no-save
+
       - name: Build backend
         run: cd backend && npm run build
 
