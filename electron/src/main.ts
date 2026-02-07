@@ -5,7 +5,7 @@
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
-import { ChildProcess, spawn, fork } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import { initAutoUpdater } from './auto-updater';
 
 // Ensure GPU hardware acceleration is enabled
@@ -47,31 +47,23 @@ async function startBackendServer(): Promise<number> {
     console.log('[Electron] Mode:', isDevMode ? 'development' : 'production');
 
     // Start backend as child process
-    // Dev: use spawn('node') - system Node matches system ABI (no rebuild needed)
-    // Prod: use fork() - uses Electron's embedded Node runtime (CI rebuilds native modules for it)
-    // WARNING: Do NOT use spawn(process.execPath) in prod - it spawns another Electron app!
+    // Dev: spawn('node') - system Node matches system ABI (no rebuild needed)
+    // Prod: spawn(process.execPath) with ELECTRON_RUN_AS_NODE=1 - runs as Node, not Electron
     const backendEnv = {
       ...process.env,
       NODE_ENV: isDevMode ? 'development' : 'production',
       PORT: '0', // Random available port
       IS_ELECTRON: 'true',
+      // CRITICAL: Tell Electron to run as Node.js, not as Electron app
+      ...(isDevMode ? {} : { ELECTRON_RUN_AS_NODE: '1' }),
     };
 
-    if (isDevMode) {
-      // Development: use system node
-      backendProcess = spawn('node', [backendScript], {
-        cwd: backendPath,
-        env: backendEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-    } else {
-      // Production: use fork() which uses Electron's embedded Node.js
-      backendProcess = fork(backendScript, [], {
-        cwd: backendPath,
-        env: backendEnv,
-        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      });
-    }
+    const nodeExe = isDevMode ? 'node' : process.execPath;
+    backendProcess = spawn(nodeExe, [backendScript], {
+      cwd: backendPath,
+      env: backendEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     // Capture backend output to detect port
     let portDetected = false;

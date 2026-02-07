@@ -138,8 +138,8 @@ jobs:
       - name: Build backend
         run: cd backend && npm run build
 
-      - name: Build frontend
-        run: cd frontend && npm run build
+      - name: Build frontend (production → backend/public/)
+        run: cd frontend && npm run build:prod
 
       - name: Build electron
         run: cd electron && npm run build
