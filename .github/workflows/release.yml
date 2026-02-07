@@ -141,13 +141,16 @@ jobs:
           const path = require('path');
           const deps = ['electron-updater', 'builder-util-runtime', 'fs-extra', 'graceful-fs', 'jsonfile', 'universalify', 'js-yaml', 'argparse', 'lazy-val', 'lodash.escaperegexp', 'lodash.isequal', 'semver', 'tiny-typed-emitter'];
           const target = 'electron/node_modules';
-          if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+          fs.mkdirSync(target, { recursive: true });
           deps.forEach(dep => {
             const src = path.join('node_modules', dep);
             const dest = path.join(target, dep);
-            if (fs.existsSync(src) && !fs.existsSync(dest)) {
+            const srcExists = fs.existsSync(src);
+            console.log(dep + ': src=' + srcExists);
+            if (srcExists) {
+              fs.rmSync(dest, { recursive: true, force: true });
               fs.cpSync(src, dest, { recursive: true });
-              console.log('Copied', dep);
+              console.log('  -> Copied to ' + dest);
             }
           });
           "
