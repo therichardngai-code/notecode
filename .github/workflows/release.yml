@@ -136,7 +136,7 @@ jobs:
         run: npm run build --prefix electron
 
       - name: Package Electron (${{ matrix.platform }})
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+        run: cd electron && npx electron-builder --${{ matrix.platform }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Code signing (optional - add when certificates are available)
