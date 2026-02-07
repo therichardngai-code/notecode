@@ -30,6 +30,7 @@ jobs:
   npm-publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +38,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            backend/node_modules
+            frontend/node_modules
+          key: npm-publish-${{ runner.os }}-${{ hashFiles('package.json', 'backend/package.json', 'frontend/package.json') }}
+          restore-keys: npm-publish-${{ runner.os }}-
 
       - name: Install dependencies
         run: npm install --ignore-scripts
@@ -58,6 +69,7 @@ jobs:
   # ============================================
   electron-build:
     name: Build Electron (${{ matrix.platform }})
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -77,9 +89,33 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # Cache node_modules and Electron binaries per OS
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            backend/node_modules
+            frontend/node_modules
+            electron/node_modules
+          key: electron-deps-${{ runner.os }}-${{ hashFiles('package.json', 'backend/package.json', 'frontend/package.json', 'electron/package.json') }}
+          restore-keys: electron-deps-${{ runner.os }}-
+
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-bin-${{ runner.os }}-${{ hashFiles('electron/package.json') }}
+          restore-keys: electron-bin-${{ runner.os }}-
+
       - name: Install all dependencies
         run: npm install --ignore-scripts
-        # --ignore-scripts: skip electron rebuild during install (done separately)
 
       - name: Install backend dependencies
         run: npm install --prefix backend --ignore-scripts
@@ -132,6 +168,7 @@ jobs:
     name: Create GitHub Release
     needs: [npm-publish, electron-build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:

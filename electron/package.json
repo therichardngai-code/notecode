@@ -1,6 +1,6 @@
 {
   "name": "notecode-electron",
-  "version": "0.1.0-beta.4",
+  "version": "0.1.0-beta.5",
   "description": "NoteCode Desktop Application",
   "main": "dist/main.js",
   "author": {
@@ -21,6 +21,92 @@
   },
   "dependencies": {
     "electron-updater": "^6.3.0"
+  },
+  "build": {
+    "appId": "app.notecode.desktop",
+    "productName": "NoteCode",
+    "directories": {
+      "output": "../release"
+    },
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "!node_modules"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist",
+        "to": "backend/dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../backend/node_modules",
+        "to": "backend/node_modules",
+        "filter": [
+          "**/*",
+          "!**/*.ts",
+          "!**/*.map",
+          "!**/test/**",
+          "!**/tests/**",
+          "!**/.github/**",
+          "!**/docs/**",
+          "!**/*.md"
+        ]
+      },
+      {
+        "from": "../backend/package.json",
+        "to": "backend/package.json"
+      },
+      {
+        "from": "../backend/public",
+        "to": "backend/public",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Development",
+      "maintainer": "NoteCode Team <team@notecode.app>"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "therichardngai-code",
+      "repo": "notecode"
+    }
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",

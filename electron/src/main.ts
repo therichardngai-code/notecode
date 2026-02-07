@@ -144,9 +144,14 @@ async function createWindow(): Promise<void> {
 
     // Load frontend with backend port as query param (avoids race condition)
     const backendUrl = `http://localhost:${port}`;
+    // In production, frontend is in extraResources/frontend/dist
+    const frontendPath = isDev()
+      ? null
+      : path.join(process.resourcesPath, 'frontend', 'dist', 'index.html');
+
     const frontendUrl = isDev()
       ? `http://localhost:5173?backendUrl=${encodeURIComponent(backendUrl)}`
-      : `file://${path.join(__dirname, '../../frontend/dist/index.html')}?backendUrl=${encodeURIComponent(backendUrl)}`;
+      : `file://${frontendPath}?backendUrl=${encodeURIComponent(backendUrl)}`;
 
     console.log('[Electron] Loading frontend from:', frontendUrl);
     await mainWindow.loadURL(frontendUrl);
