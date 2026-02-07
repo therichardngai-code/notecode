@@ -114,6 +114,13 @@ jobs:
           key: electron-bin-${{ runner.os }}-${{ hashFiles('electron/package.json') }}
           restore-keys: electron-bin-${{ runner.os }}-
 
+      # Disable Windows Defender real-time scanning — causes massive I/O slowdown
+      # when 7z processes thousands of small files in node_modules
+      - name: Disable Windows Defender (Windows only)
+        if: runner.os == 'Windows'
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+        shell: powershell
+
       - name: Install all dependencies
         run: npm install --ignore-scripts
 
@@ -140,7 +147,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEBUG: electron-builder
-          ELECTRON_BUILDER_COMPRESSION_LEVEL: 1
+          ELECTRON_BUILDER_COMPRESSION_LEVEL: 0
           # Code signing (optional - add when certificates are available)
           # CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
           # CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
