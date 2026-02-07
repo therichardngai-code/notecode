@@ -142,6 +142,9 @@ jobs:
       - name: Build electron
         run: cd electron && npm run build
 
+      - name: Verify electron dist (should only have main.js and preload.js)
+        run: ls -la electron/dist/
+
       # Remove workspace symlinks that cause infinite traversal in 7z/electron-builder
       - name: Remove workspace symlinks from backend node_modules
         run: |
