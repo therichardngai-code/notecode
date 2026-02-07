@@ -5,6 +5,8 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
+  // CRITICAL: Use relative paths for Electron file:// protocol
+  base: mode === 'production' ? './' : '/',
   plugins: [
     TanStackRouterVite({
       routesDirectory: './src/app/routes',
