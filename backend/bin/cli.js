@@ -407,13 +407,252 @@ async function sessionGet(sessionId, options) {
 }
 
 // ============================================================================
+// Approval Commands (Phase 2)
+// ============================================================================
+
+async function approvalList(options) {
+  try {
+    const data = await apiRequest(options.apiUrl, 'GET', '/api/approvals/pending');
+    
+    if (options.json) {
+      formatJson(data.approvals);
+    } else {
+      if (data.approvals.length === 0) {
+        console.log('No pending approvals');
+        return;
+      }
+      
+      const rows = data.approvals.map(a => ({
+        id: a.id.slice(0, 8),
+        type: a.type ?? '-',
+        tool: a.payload?.toolName ?? '-',
+        category: a.category ?? '-',
+        session: a.sessionId?.slice(0, 8) ?? '-',
+        timeout: a.timeoutAt ? formatDate(a.timeoutAt) : '-',
+      }));
+      formatTable(rows, [
+        { key: 'id', header: 'ID' },
+        { key: 'type', header: 'Type' },
+        { key: 'tool', header: 'Tool' },
+        { key: 'category', header: 'Category' },
+        { key: 'session', header: 'Session' },
+        { key: 'timeout', header: 'Timeout' },
+      ]);
+      console.log(`\n${data.approvals.length} pending approval(s)`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+async function approvalGet(approvalId, options) {
+  try {
+    const data = await apiRequest(options.apiUrl, 'GET', `/api/approvals/${approvalId}`);
+    
+    if (options.json) {
+      formatJson(data);
+    } else {
+      const a = data.approval;
+      console.log(`Approval: ${a.id}`);
+      console.log(`${'─'.repeat(60)}`);
+      console.log(`Status:      ${a.status}`);
+      console.log(`Type:        ${a.type ?? '(none)'}`);
+      console.log(`Category:    ${a.category ?? '(none)'}`);
+      console.log(`Session ID:  ${a.sessionId ?? '(none)'}`);
+      console.log(`Created:     ${formatDate(a.createdAt)}`);
+      if (a.timeoutAt) console.log(`Timeout At:  ${formatDate(a.timeoutAt)}`);
+      if (a.payload) {
+        console.log(`\nPayload:`);
+        console.log(`  Tool:      ${a.payload.toolName ?? '(none)'}`);
+        if (a.payload.toolInput) {
+          console.log(`  Input:     ${JSON.stringify(a.payload.toolInput).slice(0, 100)}...`);
+        }
+      }
+      if (data.diffs && data.diffs.length > 0) {
+        console.log(`\nRelated Diffs: ${data.diffs.length}`);
+        for (const diff of data.diffs) {
+          console.log(`  - ${diff.filePath} (${diff.operation})`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// Watch Command (Phase 2)
+// ============================================================================
+
+async function watchSessions(options) {
+  const pollInterval = parseInt(options.interval, 10) || 2000;
+  let lastSessions = [];
+  let isFirstRun = true;
+  
+  console.log(`Watching NoteCode sessions (polling every ${pollInterval}ms)...`);
+  console.log('Press Ctrl+C to stop\n');
+  
+  const poll = async () => {
+    try {
+      const [sessionsData, approvalsData] = await Promise.all([
+        apiRequest(options.apiUrl, 'GET', '/api/sessions?limit=10'),
+        apiRequest(options.apiUrl, 'GET', '/api/approvals/pending'),
+      ]);
+      
+      const sessions = sessionsData.sessions || [];
+      const approvals = approvalsData.approvals || [];
+      
+      if (options.json) {
+        console.log(JSON.stringify({ timestamp: new Date().toISOString(), sessions, approvals }));
+      } else {
+        // Check for changes
+        const currentIds = sessions.map(s => `${s.id}:${s.status}`).join(',');
+        const lastIds = lastSessions.map(s => `${s.id}:${s.status}`).join(',');
+        
+        if (currentIds !== lastIds || isFirstRun) {
+          console.log(`\n[${new Date().toLocaleTimeString()}] Session Update`);
+          console.log('─'.repeat(60));
+          
+          // Show running sessions
+          const running = sessions.filter(s => s.status === 'running');
+          if (running.length > 0) {
+            console.log(`🟢 Running: ${running.length}`);
+            for (const s of running) {
+              console.log(`   ${s.id.slice(0, 8)} - ${s.provider ?? 'unknown'}`);
+            }
+          }
+          
+          // Show pending approvals
+          if (approvals.length > 0) {
+            console.log(`\n⚠️  Pending Approvals: ${approvals.length}`);
+            for (const a of approvals) {
+              console.log(`   ${a.id.slice(0, 8)} - ${a.payload?.toolName ?? 'unknown'} (${a.category})`);
+            }
+          }
+          
+          // Show recent completed
+          const completed = sessions.filter(s => s.status === 'completed').slice(0, 3);
+          if (completed.length > 0) {
+            console.log(`\n✅ Recent Completed: ${completed.length}`);
+            for (const s of completed) {
+              console.log(`   ${s.id.slice(0, 8)} - ${formatDate(s.endedAt)}`);
+            }
+          }
+          
+          lastSessions = sessions;
+          isFirstRun = false;
+        }
+      }
+    } catch (error) {
+      console.error(`[${new Date().toLocaleTimeString()}] Error: ${error.message}`);
+    }
+  };
+  
+  // Initial poll
+  await poll();
+  
+  // Set up interval
+  const intervalId = setInterval(poll, pollInterval);
+  
+  // Handle graceful shutdown
+  process.on('SIGINT', () => {
+    clearInterval(intervalId);
+    console.log('\n\n👋 Watch stopped');
+    process.exit(0);
+  });
+}
+
+// ============================================================================
+// Status Command (Phase 2)
+// ============================================================================
+
+async function showStatus(options) {
+  try {
+    // Fetch multiple endpoints in parallel
+    const [platformData, sessionsData, tasksData, approvalsData] = await Promise.all([
+      apiRequest(options.apiUrl, 'GET', '/api/system/platform').catch(() => null),
+      apiRequest(options.apiUrl, 'GET', '/api/sessions?limit=100').catch(() => ({ sessions: [] })),
+      apiRequest(options.apiUrl, 'GET', '/api/tasks').catch(() => ({ tasks: [] })),
+      apiRequest(options.apiUrl, 'GET', '/api/approvals/pending').catch(() => ({ approvals: [] })),
+    ]);
+    
+    const sessions = sessionsData.sessions || [];
+    const tasks = tasksData.tasks || [];
+    const approvals = approvalsData.approvals || [];
+    
+    // Count by status
+    const sessionsByStatus = sessions.reduce((acc, s) => {
+      acc[s.status] = (acc[s.status] || 0) + 1;
+      return acc;
+    }, {});
+    
+    const tasksByStatus = tasks.reduce((acc, t) => {
+      acc[t.status] = (acc[t.status] || 0) + 1;
+      return acc;
+    }, {});
+    
+    if (options.json) {
+      formatJson({
+        server: { url: options.apiUrl, platform: platformData },
+        sessions: { total: sessions.length, byStatus: sessionsByStatus },
+        tasks: { total: tasks.length, byStatus: tasksByStatus },
+        pendingApprovals: approvals.length,
+      });
+    } else {
+      console.log('NoteCode Server Status');
+      console.log('─'.repeat(40));
+      console.log(`Server:      ${options.apiUrl}`);
+      if (platformData) {
+        console.log(`Platform:    ${platformData.platform} (${platformData.arch})`);
+      }
+      console.log('');
+      
+      console.log('Sessions');
+      console.log('─'.repeat(40));
+      console.log(`Total:       ${sessions.length}`);
+      if (sessionsByStatus.running) console.log(`  Running:   ${sessionsByStatus.running}`);
+      if (sessionsByStatus.completed) console.log(`  Completed: ${sessionsByStatus.completed}`);
+      if (sessionsByStatus.failed) console.log(`  Failed:    ${sessionsByStatus.failed}`);
+      console.log('');
+      
+      console.log('Tasks');
+      console.log('─'.repeat(40));
+      console.log(`Total:       ${tasks.length}`);
+      if (tasksByStatus['not-started']) console.log(`  Not Started: ${tasksByStatus['not-started']}`);
+      if (tasksByStatus['in-progress']) console.log(`  In Progress: ${tasksByStatus['in-progress']}`);
+      if (tasksByStatus.review) console.log(`  Review:      ${tasksByStatus.review}`);
+      if (tasksByStatus.done) console.log(`  Done:        ${tasksByStatus.done}`);
+      console.log('');
+      
+      console.log('Approvals');
+      console.log('─'.repeat(40));
+      console.log(`Pending:     ${approvals.length}`);
+      if (approvals.length > 0) {
+        console.log('');
+        for (const a of approvals.slice(0, 3)) {
+          console.log(`  ⚠️  ${a.id.slice(0, 8)} - ${a.payload?.toolName ?? 'unknown'}`);
+        }
+        if (approvals.length > 3) {
+          console.log(`  ... and ${approvals.length - 3} more`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
 // Main Program
 // ============================================================================
 
 // Check for legacy invocation BEFORE commander parses
 // Legacy: notecode, notecode -p 5000, notecode --no-browser
 const args = process.argv.slice(2);
-const knownCommands = ['server', 'task', 'session', 'help', '--help', '-h', '--version', '-V'];
+const knownCommands = ['server', 'task', 'session', 'approval', 'watch', 'status', 'help', '--help', '-h', '--version', '-V'];
 const isLegacyInvocation = args.length === 0 || 
   (args[0] === '-p' || args[0] === '--port' || args[0] === '--no-browser') ||
   (!knownCommands.includes(args[0]) && !args[0].startsWith('--api-url'));
@@ -530,6 +769,50 @@ if (isLegacyInvocation && !args.includes('--help') && !args.includes('-h')) {
     .action((sessionId, options) => {
       options.apiUrl = program.opts().apiUrl;
       sessionGet(sessionId, options);
+    });
+
+  // Approval commands (Phase 2)
+  const approvalCmd = program
+    .command('approval')
+    .description('Approval management');
+
+  approvalCmd
+    .command('list')
+    .description('List pending approvals')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      approvalList(options);
+    });
+
+  approvalCmd
+    .command('get <approval-id>')
+    .description('Get approval details')
+    .option('--json', 'Output as JSON')
+    .action((approvalId, options) => {
+      options.apiUrl = program.opts().apiUrl;
+      approvalGet(approvalId, options);
+    });
+
+  // Watch command (Phase 2)
+  program
+    .command('watch')
+    .description('Watch sessions and approvals in real-time')
+    .option('--interval <ms>', 'Poll interval in milliseconds', '2000')
+    .option('--json', 'Output as JSON (one line per update)')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      watchSessions(options);
+    });
+
+  // Status command (Phase 2)
+  program
+    .command('status')
+    .description('Show server status overview')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      showStatus(options);
     });
 
   program.parse();
