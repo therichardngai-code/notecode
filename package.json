@@ -23,7 +23,7 @@
     "frontend/dist/**"
   ],
   "scripts": {
-    "postinstall": "npm rebuild better-sqlite3",
+    "postinstall": "npm rebuild better-sqlite3 || true",
     "electron:install": "cd electron && npm install",
     "electron:rebuild": "cd electron && npm run rebuild",
     "electron:build": "cd electron && npm run build",
