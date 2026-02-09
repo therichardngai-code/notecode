@@ -78,9 +78,14 @@ export class ClaudeCliAdapter implements ICliExecutor {
       }
     });
 
-    // Handle spawn errors
+    // Handle spawn errors - trigger exit callbacks to update session status in DB
     proc.on('error', (err) => {
       console.error('[ClaudeCliAdapter] Spawn error:', err.message);
+      // Trigger exit callbacks with error code to ensure session status is updated
+      // This prevents stale session states when spawn fails before exit handlers are set up
+      const callbacks = this.exitCallbacks.get(processId);
+      callbacks?.forEach(cb => cb(1)); // Exit code 1 indicates failure
+      this.cleanup(processId);
     });
 
     // Capture stderr for debugging
