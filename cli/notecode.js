@@ -13,11 +13,20 @@
  *   notecode task update <id> [options]   Update a task
  *   notecode session list [--task-id <id>]  List sessions
  *   notecode session status <id>          Get session details
+ *   notecode approval list [--session <id>]  List pending approvals
+ *   notecode approval get <id>            Get approval details
+ *   notecode approval approve <id>        Approve a request
+ *   notecode approval reject <id> -r      Reject a request (reason required)
+ *   notecode watch [--json]               Real-time activity monitoring
+ *   notecode status [--json]              Show system status summary
  */
 
 import { Command } from 'commander';
 import { createTaskCommands } from './src/commands/task.js';
 import { createSessionCommands } from './src/commands/session.js';
+import { createApprovalCommands } from './src/commands/approval.js';
+import { createWatchCommand } from './src/commands/watch.js';
+import { createStatusCommand } from './src/commands/status.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -53,7 +62,7 @@ function startServer(args = []) {
 // Check if we should start the server (no subcommand, or server-related flags)
 const args = process.argv.slice(2);
 const serverFlags = ['-p', '--port', '--no-browser'];
-const subcommands = ['task', 'session', 'serve', 'help', '--help', '-h', '--version', '-V'];
+const subcommands = ['task', 'session', 'approval', 'watch', 'status', 'serve', 'help', '--help', '-h', '--version', '-V'];
 
 // If no args, or only server flags, start the server
 const hasSubcommand = args.some(arg => subcommands.includes(arg));
@@ -89,6 +98,9 @@ if (args.length === 0 || (hasOnlyServerFlags && !hasSubcommand)) {
   // Register management subcommands
   program.addCommand(createTaskCommands());
   program.addCommand(createSessionCommands());
+  program.addCommand(createApprovalCommands());
+  program.addCommand(createWatchCommand());
+  program.addCommand(createStatusCommand());
 
   // Parse and execute
   program.parse();

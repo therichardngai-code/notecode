@@ -280,3 +280,106 @@ export function printError(message) {
 export function printSuccess(message) {
   console.log(`${colors.green}✓${colors.reset} ${message}`);
 }
+
+/**
+ * Format approval status with color
+ */
+function formatApprovalStatus(status) {
+  const statusMap = {
+    pending: colors.yellow + 'pending' + colors.reset,
+    approved: colors.green + 'approved' + colors.reset,
+    rejected: colors.red + 'rejected' + colors.reset,
+    timeout: colors.gray + 'timeout' + colors.reset,
+  };
+  return statusMap[status] || status;
+}
+
+/**
+ * Format approval category with color
+ */
+function formatCategory(category) {
+  const categoryMap = {
+    safe: colors.green + 'safe' + colors.reset,
+    dangerous: colors.red + 'dangerous' + colors.reset,
+    'requires-approval': colors.yellow + 'requires-approval' + colors.reset,
+  };
+  return categoryMap[category] || category;
+}
+
+/**
+ * Format approval for list display
+ */
+export function formatApprovalRow(approval) {
+  const id = colors.dim + approval.id.slice(0, 8) + colors.reset;
+  const status = formatApprovalStatus(approval.status);
+  const toolName = approval.payload?.toolName || '-';
+  const category = formatCategory(approval.category);
+  const sessionId = colors.dim + (approval.sessionId?.slice(0, 8) || '-') + colors.reset;
+  const remaining = approval.remainingTimeMs
+    ? `${Math.ceil(approval.remainingTimeMs / 1000)}s`
+    : '-';
+  
+  return `${id}  ${status.padEnd(20)}  ${toolName.padEnd(15)}  ${category.padEnd(28)}  ${sessionId}  ${remaining}`;
+}
+
+/**
+ * Format approval list header
+ */
+export function formatApprovalHeader() {
+  return `${colors.bold}${'ID'.padEnd(10)}  ${'STATUS'.padEnd(12)}  ${'TOOL'.padEnd(15)}  ${'CATEGORY'.padEnd(20)}  ${'SESSION'.padEnd(10)}  ${'TIMEOUT'}${colors.reset}`;
+}
+
+/**
+ * Format full approval details
+ */
+export function formatApprovalDetails(approval, diffs = []) {
+  const lines = [
+    `${colors.bold}Approval: ${approval.id}${colors.reset}`,
+    '',
+    `  ${colors.cyan}Status:${colors.reset}     ${formatApprovalStatus(approval.status)}`,
+    `  ${colors.cyan}Category:${colors.reset}   ${formatCategory(approval.category)}`,
+    `  ${colors.cyan}Session:${colors.reset}    ${approval.sessionId}`,
+    `  ${colors.cyan}Type:${colors.reset}       ${approval.type}`,
+  ];
+  
+  // Payload info
+  if (approval.payload) {
+    const { toolName, toolInput, matchedPattern } = approval.payload;
+    lines.push('');
+    lines.push(`  ${colors.cyan}Tool:${colors.reset}       ${toolName || '-'}`);
+    
+    if (matchedPattern) {
+      lines.push(`  ${colors.cyan}Matched:${colors.reset}    ${colors.red}${matchedPattern}${colors.reset}`);
+    }
+    
+    if (toolInput) {
+      lines.push('');
+      lines.push(`  ${colors.cyan}Tool Input:${colors.reset}`);
+      const inputStr = JSON.stringify(toolInput, null, 2)
+        .split('\n')
+        .map(line => '    ' + line)
+        .join('\n');
+      lines.push(inputStr);
+    }
+  }
+  
+  lines.push('');
+  lines.push(`  ${colors.cyan}Created:${colors.reset}    ${formatDate(approval.createdAt)}`);
+  lines.push(`  ${colors.cyan}Timeout At:${colors.reset} ${formatDate(approval.timeoutAt)}`);
+  
+  if (approval.decidedAt) {
+    lines.push(`  ${colors.cyan}Decided At:${colors.reset} ${formatDate(approval.decidedAt)}`);
+    lines.push(`  ${colors.cyan}Decided By:${colors.reset} ${approval.decidedBy || '-'}`);
+  }
+  
+  // Related diffs
+  if (diffs && diffs.length > 0) {
+    lines.push('');
+    lines.push(`  ${colors.cyan}Related Diffs:${colors.reset}`);
+    for (const diff of diffs) {
+      lines.push(`    - ${diff.filePath} (${diff.type}): +${diff.linesAdded || 0}/-${diff.linesRemoved || 0}`);
+    }
+  }
+  
+  return lines.join('\n');
+}

@@ -88,3 +88,28 @@ export async function getSession(id) {
 export async function listRunningSessions() {
   return request('GET', '/api/sessions/running');
 }
+
+// Approval API
+export async function listPendingApprovals() {
+  return request('GET', '/api/approvals/pending');
+}
+
+export async function getApproval(id) {
+  return request('GET', `/api/approvals/${id}`);
+}
+
+export async function approveApproval(id, message) {
+  return request('POST', `/api/approvals/${id}/approve`, { decidedBy: message || 'cli' });
+}
+
+export async function rejectApproval(id, reason) {
+  return request('POST', `/api/approvals/${id}/reject`, { decidedBy: reason || 'cli' });
+}
+
+export async function listApprovalsBySession(sessionId) {
+  return request('GET', `/api/approvals/session/${sessionId}`);
+}
+
+export async function getApprovalStatus(id) {
+  return request('GET', `/api/approvals/${id}/status`);
+}
