@@ -53,7 +53,7 @@ export async function apiRequest<T>(
     if (!response.ok) {
       let errorMessage = response.statusText;
       try {
-        const errorData = await response.json();
+        const errorData = await response.json() as { error?: string; message?: string };
         errorMessage = errorData.error || errorData.message || errorMessage;
       } catch {
         // Use status text if JSON parsing fails
