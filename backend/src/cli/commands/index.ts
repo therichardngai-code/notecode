@@ -6,6 +6,7 @@
 export { registerTaskCommands } from './task.js';
 export { registerSessionCommands } from './session.js';
 export { registerApprovalCommands } from './approval.js';
+export { registerApprovalGateCommands } from './approval-gate.js';
 export { registerWatchCommand } from './watch.js';
 export { registerStatusCommand } from './status.js';
 export { registerHookCommands } from './hook.js';

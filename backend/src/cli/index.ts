@@ -8,6 +8,7 @@ import {
   registerTaskCommands,
   registerSessionCommands,
   registerApprovalCommands,
+  registerApprovalGateCommands,
   registerWatchCommand,
   registerStatusCommand,
   registerHookCommands,
@@ -42,6 +43,7 @@ export function createProgram(version: string): Command {
   registerTaskCommands(program, getApiUrl);
   registerSessionCommands(program, getApiUrl);
   registerApprovalCommands(program, getApiUrl);
+  registerApprovalGateCommands(program, getApiUrl);
   registerWatchCommand(program, getApiUrl);
   registerStatusCommand(program, getApiUrl);
   registerHookCommands(program, getApiUrl);
