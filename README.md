@@ -41,7 +41,7 @@ npx notecode-app --help          # Show all options
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3456` | Server port |
+| `PORT` | `41920` | Server port |
 | `HOST` | `0.0.0.0` | Server host |
 | `NO_BROWSER` | `false` | Skip opening browser |
 | `NOTECODE_DATA_DIR` | `~/.notecode` | Data directory |
@@ -126,7 +126,7 @@ npm run dev
 ```
 
 - Frontend: http://localhost:5173
-- Backend: http://localhost:3456
+- Backend: http://localhost:41920
 
 ### Build
 
