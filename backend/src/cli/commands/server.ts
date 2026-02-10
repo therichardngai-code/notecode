@@ -160,7 +160,7 @@ export function registerServerCommands(program: Command, version: string): void 
 export function isLegacyInvocation(args: string[]): boolean {
   const knownCommands = [
     'server', 'task', 'session', 'approval', 'hook',
-    'watch', 'status', 'agent', 'project',
+    'watch', 'status', 'agent', 'project', 'export', 'import',
     'help', '--help', '-h', '--version', '-V'
   ];
   
