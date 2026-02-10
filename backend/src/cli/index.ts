@@ -7,6 +7,9 @@ import { Command } from 'commander';
 import {
   registerTaskCommands,
   registerSessionCommands,
+  registerApprovalCommands,
+  registerWatchCommand,
+  registerStatusCommand,
   registerServerCommands,
   isLegacyInvocation,
   handleLegacyInvocation,
@@ -34,6 +37,9 @@ export function createProgram(version: string): Command {
   registerServerCommands(program, version);
   registerTaskCommands(program, getApiUrl);
   registerSessionCommands(program, getApiUrl);
+  registerApprovalCommands(program, getApiUrl);
+  registerWatchCommand(program, getApiUrl);
+  registerStatusCommand(program, getApiUrl);
 
   return program;
 }
