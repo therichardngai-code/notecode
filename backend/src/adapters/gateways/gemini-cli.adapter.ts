@@ -57,6 +57,15 @@ export class GeminiCliAdapter implements ICliExecutor {
       this.cleanup(processId);
     });
 
+    // Handle spawn errors - trigger exit callbacks to update session status in DB
+    proc.on('error', (err) => {
+      console.error('[GeminiCliAdapter] Spawn error:', err.message);
+      // Trigger exit callbacks with error code to ensure session status is updated
+      const callbacks = this.exitCallbacks.get(processId);
+      callbacks?.forEach(cb => cb(1)); // Exit code 1 indicates failure
+      this.cleanup(processId);
+    });
+
     const cliProcess = await this.waitForSessionId(processId);
 
     if (config.initialPrompt) {
