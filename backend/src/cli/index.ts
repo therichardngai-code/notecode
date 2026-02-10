@@ -10,6 +10,10 @@ import {
   registerApprovalCommands,
   registerWatchCommand,
   registerStatusCommand,
+  registerHookCommands,
+  registerAgentCommands,
+  registerProjectCommands,
+  registerDataCommands,
   registerServerCommands,
   isLegacyInvocation,
   handleLegacyInvocation,
@@ -40,6 +44,10 @@ export function createProgram(version: string): Command {
   registerApprovalCommands(program, getApiUrl);
   registerWatchCommand(program, getApiUrl);
   registerStatusCommand(program, getApiUrl);
+  registerHookCommands(program, getApiUrl);
+  registerAgentCommands(program, getApiUrl);
+  registerProjectCommands(program, getApiUrl);
+  registerDataCommands(program, getApiUrl);
 
   return program;
 }

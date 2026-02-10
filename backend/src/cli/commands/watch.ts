@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import { get } from '../api-client.js';
 import { formatDate } from '../formatters/date.js';
-import type { Session, Approval, SessionListResponse, ApprovalListResponse, GlobalOptions } from '../types.js';
+import type { Session, SessionListResponse, ApprovalListResponse, GlobalOptions } from '../types.js';
 
 interface WatchOptions extends GlobalOptions {
   interval?: string;

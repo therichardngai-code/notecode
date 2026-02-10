@@ -6,7 +6,7 @@
 import { Command } from 'commander';
 import { get } from '../api-client.js';
 import { formatJson } from '../formatters/index.js';
-import type { Session, Task, Approval, SessionListResponse, TaskListResponse, ApprovalListResponse, GlobalOptions } from '../types.js';
+import type { SessionListResponse, TaskListResponse, ApprovalListResponse, GlobalOptions } from '../types.js';
 
 interface PlatformInfo {
   platform: string;
