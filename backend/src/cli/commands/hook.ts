@@ -4,9 +4,9 @@
  */
 
 import { Command } from 'commander';
-import { get, post } from '../api-client.js';
+import { get, post, patch } from '../api-client.js';
 import { formatTable, formatJson } from '../formatters/index.js';
-import type { CliHook, HookListResponse, GlobalOptions } from '../types.js';
+import type { HookListResponse, GlobalOptions } from '../types.js';
 
 interface HookListOptions extends GlobalOptions {
   projectId?: string;
@@ -63,28 +63,26 @@ async function listHooks(options: HookListOptions): Promise<void> {
 }
 
 /**
- * Provision approval gate hook
+ * Provision approval gate hook via Settings API
+ * Enabling approvalGate in settings auto-provisions the hook
  */
 async function provisionHook(options: HookProvisionOptions): Promise<void> {
-  const body: Record<string, unknown> = {
-    scope: options.scope || 'global',
-    config: {
-      enabled: true,
-      timeoutSeconds: parseInt(options.timeout ?? '120', 10),
-      autoAllowTools: options.autoAllow
-        ? options.autoAllow.split(',').map((s) => s.trim())
-        : ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
-      requireApprovalTools: options.requireApproval
-        ? options.requireApproval.split(',').map((s) => s.trim())
-        : ['Write', 'Edit', 'Bash', 'WebFetch'],
-    },
+  const approvalGateConfig = {
+    enabled: true,
+    timeoutSeconds: parseInt(options.timeout ?? '120', 10),
+    autoAllowTools: options.autoAllow
+      ? options.autoAllow.split(',').map((s) => s.trim())
+      : ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
+    requireApprovalTools: options.requireApproval
+      ? options.requireApproval.split(',').map((s) => s.trim())
+      : ['Write', 'Edit', 'Bash', 'WebFetch'],
   };
-  if (options.projectId) body.projectId = options.projectId;
 
-  const data = await post<{ success: boolean; hook: CliHook; message: string }>(
+  // Use Settings API - enabling approvalGate auto-provisions the hook
+  const data = await patch<{ approvalGate: { enabled: boolean; timeoutSeconds: number } }>(
     options.apiUrl,
-    '/api/cli-hooks/approval-gate/provision',
-    body
+    '/api/settings',
+    { approvalGate: approvalGateConfig }
   );
 
   if (options.json) {
@@ -93,27 +91,21 @@ async function provisionHook(options: HookProvisionOptions): Promise<void> {
   }
 
   console.log('✅ Approval gate hook provisioned');
-  console.log(`   Scope:    ${body.scope}`);
-  console.log(`   Timeout:  ${(body.config as Record<string, unknown>).timeoutSeconds}s`);
-  if (data.hook) {
-    console.log(`   Hook ID:  ${data.hook.id}`);
-    console.log(`   Synced:   ${data.hook.syncedAt ? 'Yes' : 'No'}`);
-  }
+  console.log(`   Timeout:  ${data.approvalGate?.timeoutSeconds ?? approvalGateConfig.timeoutSeconds}s`);
+  console.log(`   Auto-allow: ${approvalGateConfig.autoAllowTools.join(', ')}`);
+  console.log(`   Require approval: ${approvalGateConfig.requireApprovalTools.join(', ')}`);
 }
 
 /**
- * Unprovision approval gate hook
+ * Unprovision approval gate hook via Settings API
+ * Disabling approvalGate in settings auto-unprovisions the hook
  */
 async function unprovisionHook(options: GlobalOptions & { scope?: string; projectId?: string }): Promise<void> {
-  const body: Record<string, unknown> = {
-    scope: options.scope || 'global',
-  };
-  if (options.projectId) body.projectId = options.projectId;
-
-  const data = await post<{ success: boolean; message: string }>(
+  // Use Settings API - disabling approvalGate auto-unprovisions the hook
+  const data = await patch<{ approvalGate: null | { enabled: boolean } }>(
     options.apiUrl,
-    '/api/cli-hooks/approval-gate/unprovision',
-    body
+    '/api/settings',
+    { approvalGate: { enabled: false } }
   );
 
   if (options.json) {
@@ -121,7 +113,7 @@ async function unprovisionHook(options: GlobalOptions & { scope?: string; projec
     return;
   }
 
-  console.log('✅ Approval gate hook removed');
+  console.log('✅ Approval gate hook disabled');
 }
 
 /**
