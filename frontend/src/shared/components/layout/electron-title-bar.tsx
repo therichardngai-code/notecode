@@ -6,6 +6,7 @@
 
 import { useElectron } from '@/shared/hooks/use-electron';
 import { ElectronWindowControls } from './electron-window-controls';
+import logoSvg from '/logo.svg';
 
 export function ElectronTitleBar() {
   const { isElectron } = useElectron();
@@ -16,7 +17,7 @@ export function ElectronTitleBar() {
     <div className="h-8 flex items-center justify-between glass-subtle border-b border-border/30 electron-drag-region shrink-0">
       {/* Left: App icon + name */}
       <div className="flex items-center gap-2 px-3 electron-no-drag">
-        <img src="/logo.svg" alt="NoteCode" className="w-4 h-4" />
+        <img src={logoSvg} alt="NoteCode" className="w-4 h-4" />
         <span className="text-xs text-muted-foreground font-medium select-none">NoteCode</span>
       </div>
 

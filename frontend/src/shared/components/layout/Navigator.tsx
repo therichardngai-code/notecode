@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { useElectron } from '@/shared/hooks/use-electron';
+import logoSvg from '/logo.svg';
 import {
   // Search,      // Demo: Not implemented
   Home,
@@ -188,7 +189,7 @@ export function Navigator({
             className="w-7 h-7 rounded-md overflow-hidden hover:opacity-90 transition-opacity"
             title="Expand sidebar"
           >
-            <img src="/logo.svg" alt="NoteCode" className="w-full h-full" />
+            <img src={logoSvg} alt="NoteCode" className="w-full h-full" />
           </button>
         </div>
       </div>
@@ -201,7 +202,7 @@ export function Navigator({
       <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/50 electron-drag-region">
         <div className="flex items-center gap-2 electron-no-drag">
           <div className="w-6 h-6 rounded-md overflow-hidden">
-            <img src="/logo.svg" alt="NoteCode" className="w-full h-full" />
+            <img src={logoSvg} alt="NoteCode" className="w-full h-full" />
           </div>
           <span className="font-semibold text-sm text-sidebar-foreground select-none">NoteCode</span>
         </div>

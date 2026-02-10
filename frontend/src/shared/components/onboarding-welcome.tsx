@@ -10,6 +10,7 @@ import { FolderOpen, Plus, MessageSquare, Lock, Check, Loader2 } from 'lucide-re
 import { useSettings, useUpdateSettings } from '@/shared/hooks/use-settings';
 import { GlobalApprovalGateSection } from '@/features/settings/GlobalApprovalGateSection';
 import { cn } from '@/shared/lib/utils';
+import logoSvg from '/logo.svg';
 
 interface OnboardingWelcomeProps {
   onOpenFolder: () => void;
@@ -55,7 +56,7 @@ export function OnboardingWelcome({
         {/* Header */}
         <div className="flex flex-col items-center text-center gap-3">
           <div className="w-16 h-16 rounded-2xl overflow-hidden">
-            <img src="/logo.svg" alt="NoteCode" className="w-full h-full" />
+            <img src={logoSvg} alt="NoteCode" className="w-full h-full" />
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Welcome to NoteCode</h1>
