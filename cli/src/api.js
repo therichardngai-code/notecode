@@ -113,3 +113,40 @@ export async function listApprovalsBySession(sessionId) {
 export async function getApprovalStatus(id) {
   return request('GET', `/api/approvals/${id}/status`);
 }
+
+// Project API
+export async function listProjects(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set('search', filters.search);
+  if (filters.favorite) params.set('favorite', 'true');
+  
+  const query = params.toString();
+  return request('GET', `/api/projects${query ? '?' + query : ''}`);
+}
+
+export async function getProject(id) {
+  return request('GET', `/api/projects/${id}`);
+}
+
+export async function getRecentProjects(limit = 10) {
+  return request('GET', `/api/projects/recent?limit=${limit}`);
+}
+
+export async function switchProject(projectId) {
+  return request('PATCH', '/api/settings', { currentActiveProjectId: projectId });
+}
+
+export async function getSettings() {
+  return request('GET', '/api/settings');
+}
+
+// Agent Discovery API (per-project agent discovery)
+export async function discoverAgents(projectId, provider) {
+  const params = provider ? `?provider=${provider}` : '';
+  return request('GET', `/api/projects/${projectId}/discovery/agents${params}`);
+}
+
+export async function discoverSkills(projectId, provider) {
+  const params = provider ? `?provider=${provider}` : '';
+  return request('GET', `/api/projects/${projectId}/discovery/skills${params}`);
+}

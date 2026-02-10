@@ -2,7 +2,7 @@
 
 /**
  * NoteCode CLI
- * Command-line interface for managing tasks and sessions
+ * Command-line interface for managing tasks, sessions, projects, and agents
  * 
  * Usage:
  *   notecode                              Start the NoteCode server (default)
@@ -19,6 +19,14 @@
  *   notecode approval reject <id> -r      Reject a request (reason required)
  *   notecode watch [--json]               Real-time activity monitoring
  *   notecode status [--json]              Show system status summary
+ *   notecode project list [--favorite]    List all projects
+ *   notecode project get <id> [--json]    Get project details
+ *   notecode project switch <id>          Switch active project
+ *   notecode project current              Show current active project
+ *   notecode agent list [--project <id>]  List discovered agents
+ *   notecode agent get <name>             Get agent details
+ *   notecode agent skills                 List available skills
+ *   notecode agent spawn --task <id>      Spawn agent (experimental)
  */
 
 import { Command } from 'commander';
@@ -27,6 +35,8 @@ import { createSessionCommands } from './src/commands/session.js';
 import { createApprovalCommands } from './src/commands/approval.js';
 import { createWatchCommand } from './src/commands/watch.js';
 import { createStatusCommand } from './src/commands/status.js';
+import { createProjectCommands } from './src/commands/project.js';
+import { createAgentCommands } from './src/commands/agent.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -101,6 +111,8 @@ if (args.length === 0 || (hasOnlyServerFlags && !hasSubcommand)) {
   program.addCommand(createApprovalCommands());
   program.addCommand(createWatchCommand());
   program.addCommand(createStatusCommand());
+  program.addCommand(createProjectCommands());
+  program.addCommand(createAgentCommands());
 
   // Parse and execute
   program.parse();

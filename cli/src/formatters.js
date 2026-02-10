@@ -383,3 +383,142 @@ export function formatApprovalDetails(approval, diffs = []) {
   
   return lines.join('\n');
 }
+
+/**
+ * Format project for list display
+ */
+export function formatProjectRow(project, isActive = false) {
+  const id = colors.dim + project.id.slice(0, 8) + colors.reset;
+  const activeMarker = isActive ? colors.green + '●' + colors.reset : ' ';
+  const favorite = project.isFavorite ? colors.yellow + '★' + colors.reset : ' ';
+  const name = truncate(project.name, 25);
+  const path = truncate(project.path, 45);
+  const accessed = formatRelativeTime(project.lastAccessedAt);
+  
+  return `${activeMarker} ${favorite} ${id}  ${name.padEnd(27)}  ${path.padEnd(47)}  ${accessed}`;
+}
+
+/**
+ * Format project list header
+ */
+export function formatProjectHeader() {
+  return `${colors.bold}    ${'ID'.padEnd(10)}  ${'NAME'.padEnd(27)}  ${'PATH'.padEnd(47)}  ${'ACCESSED'}${colors.reset}`;
+}
+
+/**
+ * Format full project details
+ */
+export function formatProjectDetails(project, isActive = false) {
+  const lines = [
+    `${colors.bold}Project: ${project.name}${colors.reset}${isActive ? colors.green + ' (active)' + colors.reset : ''}`,
+    '',
+    `  ${colors.cyan}ID:${colors.reset}            ${project.id}`,
+    `  ${colors.cyan}Path:${colors.reset}          ${project.path}`,
+    `  ${colors.cyan}Favorite:${colors.reset}      ${project.isFavorite ? colors.yellow + '★ Yes' + colors.reset : 'No'}`,
+  ];
+  
+  if (project.systemPrompt) {
+    lines.push('');
+    lines.push(`  ${colors.cyan}System Prompt:${colors.reset}`);
+    const promptLines = project.systemPrompt.split('\n').slice(0, 5);
+    promptLines.forEach(line => lines.push(`    ${truncate(line, 70)}`));
+    if (project.systemPrompt.split('\n').length > 5) {
+      lines.push(`    ${colors.dim}... (truncated)${colors.reset}`);
+    }
+  }
+  
+  if (project.approvalGate) {
+    lines.push('');
+    lines.push(`  ${colors.cyan}Approval Gate:${colors.reset} ${project.approvalGate.enabled ? colors.green + 'Enabled' + colors.reset : colors.gray + 'Disabled' + colors.reset}`);
+    if (project.approvalGate.enabled) {
+      if (project.approvalGate.timeoutSeconds) {
+        lines.push(`    Timeout: ${project.approvalGate.timeoutSeconds}s`);
+      }
+      if (project.approvalGate.autoAllowTools?.length) {
+        lines.push(`    Auto-allow: ${project.approvalGate.autoAllowTools.join(', ')}`);
+      }
+    }
+  }
+  
+  lines.push('');
+  lines.push(`  ${colors.cyan}Created:${colors.reset}       ${formatDate(project.createdAt)}`);
+  lines.push(`  ${colors.cyan}Updated:${colors.reset}       ${formatDate(project.updatedAt)}`);
+  lines.push(`  ${colors.cyan}Last Access:${colors.reset}   ${formatDate(project.lastAccessedAt)}`);
+  
+  return lines.join('\n');
+}
+
+/**
+ * Format discovered agent for list display
+ */
+export function formatAgentRow(agent) {
+  const name = truncate(agent.name, 20);
+  const description = truncate(agent.description || agent.bio || '-', 50);
+  const location = truncate(agent.location || '-', 35);
+  
+  return `${name.padEnd(22)}  ${description.padEnd(52)}  ${location}`;
+}
+
+/**
+ * Format agent list header
+ */
+export function formatAgentHeader() {
+  return `${colors.bold}${'NAME'.padEnd(22)}  ${'DESCRIPTION'.padEnd(52)}  ${'LOCATION'}${colors.reset}`;
+}
+
+/**
+ * Format full agent details
+ */
+export function formatAgentDetails(agent) {
+  const lines = [
+    `${colors.bold}Agent: ${agent.name}${colors.reset}`,
+    '',
+    `  ${colors.cyan}Location:${colors.reset}     ${agent.location || '-'}`,
+  ];
+  
+  if (agent.description) {
+    lines.push(`  ${colors.cyan}Description:${colors.reset}  ${agent.description}`);
+  }
+  
+  if (agent.bio) {
+    lines.push('');
+    lines.push(`  ${colors.cyan}Bio:${colors.reset}`);
+    agent.bio.split('\n').forEach(line => lines.push(`    ${line}`));
+  }
+  
+  if (agent.skills && agent.skills.length > 0) {
+    lines.push('');
+    lines.push(`  ${colors.cyan}Skills:${colors.reset}`);
+    agent.skills.forEach(skill => lines.push(`    - ${skill}`));
+  }
+  
+  if (agent.instructions) {
+    lines.push('');
+    lines.push(`  ${colors.cyan}Instructions:${colors.reset}`);
+    const instructionLines = agent.instructions.split('\n').slice(0, 10);
+    instructionLines.forEach(line => lines.push(`    ${truncate(line, 70)}`));
+    if (agent.instructions.split('\n').length > 10) {
+      lines.push(`    ${colors.dim}... (truncated)${colors.reset}`);
+    }
+  }
+  
+  return lines.join('\n');
+}
+
+/**
+ * Format discovered skill for list display
+ */
+export function formatSkillRow(skill) {
+  const name = truncate(skill.name, 20);
+  const description = truncate(skill.description || '-', 50);
+  const location = truncate(skill.location || '-', 35);
+  
+  return `${name.padEnd(22)}  ${description.padEnd(52)}  ${location}`;
+}
+
+/**
+ * Format skill list header
+ */
+export function formatSkillHeader() {
+  return `${colors.bold}${'NAME'.padEnd(22)}  ${'DESCRIPTION'.padEnd(52)}  ${'LOCATION'}${colors.reset}`;
+}
