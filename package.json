@@ -10,12 +10,13 @@
   "main": "electron/dist/main.js",
   "type": "commonjs",
   "bin": {
-    "notecode": "./backend/bin/cli.js"
+    "notecode": "./cli/notecode.js"
   },
   "publishConfig": {
     "access": "public"
   },
   "files": [
+    "cli/**",
     "backend/bin/**",
     "backend/dist/**",
     "backend/package.json",
@@ -60,6 +61,7 @@
     "@fastify/rate-limit": "^9.0.0",
     "@fastify/static": "^6.12.0",
     "better-sqlite3": "^11.10.0",
+    "commander": "^14.0.3",
     "diff": "^8.0.3",
     "drizzle-orm": "^0.30.0",
     "fast-glob": "^3.3.3",
