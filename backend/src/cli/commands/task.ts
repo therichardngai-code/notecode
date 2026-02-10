@@ -19,6 +19,13 @@ interface TaskCreateOptions extends GlobalOptions {
   priority?: string;
   description?: string;
   projectId?: string;
+  permissionMode?: string;
+  allowTools?: string;
+  blockTools?: string;
+  provider?: string;
+  model?: string;
+  skills?: string;
+  contextFiles?: string;
 }
 
 interface TaskUpdateOptions extends GlobalOptions {
@@ -98,6 +105,24 @@ async function createTask(title: string, options: TaskCreateOptions): Promise<vo
     priority: options.priority ?? null,
   };
   if (options.projectId) body.projectId = options.projectId;
+  if (options.permissionMode) body.permissionMode = options.permissionMode;
+  if (options.provider) body.provider = options.provider;
+  if (options.model) body.model = options.model;
+  if (options.skills) body.skills = options.skills.split(',').map((s) => s.trim());
+  if (options.contextFiles) body.contextFiles = options.contextFiles.split(',').map((s) => s.trim());
+
+  // Handle tools (allowlist or blocklist)
+  if (options.allowTools) {
+    body.tools = {
+      mode: 'allowlist',
+      tools: options.allowTools.split(',').map((s) => s.trim()),
+    };
+  } else if (options.blockTools) {
+    body.tools = {
+      mode: 'blocklist',
+      tools: options.blockTools.split(',').map((s) => s.trim()),
+    };
+  }
 
   const data = await post<{ task: Task }>(options.apiUrl, '/api/tasks', body);
 
@@ -108,6 +133,9 @@ async function createTask(title: string, options: TaskCreateOptions): Promise<vo
 
   console.log(`✅ Task created: ${data.task.id}`);
   console.log(`   Title: ${data.task.title}`);
+  if (options.permissionMode) console.log(`   Permission Mode: ${options.permissionMode}`);
+  if (options.allowTools) console.log(`   Allowed Tools: ${options.allowTools}`);
+  if (options.blockTools) console.log(`   Blocked Tools: ${options.blockTools}`);
 }
 
 /**
@@ -176,6 +204,13 @@ export function registerTaskCommands(program: Command, getApiUrl: () => string):
     .option('-p, --priority <priority>', 'Priority (high, medium, low)')
     .option('-d, --description <desc>', 'Task description')
     .option('--project-id <id>', 'Project ID')
+    .option('--permission-mode <mode>', 'Permission mode (default, acceptEdits, bypassPermissions)')
+    .option('--allow-tools <tools>', 'Comma-separated list of allowed tools (allowlist mode)')
+    .option('--block-tools <tools>', 'Comma-separated list of blocked tools (blocklist mode)')
+    .option('--provider <provider>', 'AI provider (anthropic, google, openai)')
+    .option('--model <model>', 'AI model name')
+    .option('--skills <skills>', 'Comma-separated list of skills')
+    .option('--context-files <files>', 'Comma-separated list of context file paths')
     .option('--json', 'Output as JSON')
     .action(async (title, opts) => {
       await createTask(title, { ...opts, apiUrl: getApiUrl() });
