@@ -312,6 +312,71 @@ export function registerCliProviderHooksController(
     }
   });
 
+  // ============ APPROVAL GATE PROVISION ENDPOINTS ============
+
+  // POST /api/cli-hooks/approval-gate/provision - Provision approval gate hook
+  app.post('/api/cli-hooks/approval-gate/provision', async (request, reply) => {
+    const body = z.object({
+      scope: z.enum(['global', 'project']).optional().default('global'),
+      projectId: z.string().uuid().optional(),
+      config: z.object({
+        enabled: z.boolean().optional().default(true),
+        timeoutSeconds: z.number().int().positive().optional().default(120),
+        autoAllowTools: z.array(z.string()).optional(),
+        requireApprovalTools: z.array(z.string()).optional(),
+      }).optional(),
+    }).parse(request.body);
+
+    // Validate project scope requires projectId
+    if (body.scope === 'project' && !body.projectId) {
+      return reply.status(400).send({ error: 'projectId required for project scope' });
+    }
+
+    try {
+      const hook = await service.provisionApprovalGateHook(
+        body.scope,
+        body.projectId,
+        body.config ? {
+          enabled: body.config.enabled ?? true,
+          timeoutSeconds: body.config.timeoutSeconds ?? 120,
+          defaultOnTimeout: 'deny',
+          autoAllowTools: body.config.autoAllowTools ?? ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
+          requireApprovalTools: body.config.requireApprovalTools ?? ['Write', 'Edit', 'Bash', 'WebFetch'],
+          dangerousPatterns: { commands: [], files: [] },
+        } : undefined
+      );
+      return reply.send({ success: true, hook, message: 'Approval gate hook provisioned and synced' });
+    } catch (error) {
+      console.error('[CLI Hooks] Provision failed:', error);
+      return reply.status(400).send({
+        error: error instanceof Error ? error.message : 'Failed to provision approval gate',
+      });
+    }
+  });
+
+  // POST /api/cli-hooks/approval-gate/unprovision - Remove approval gate hook
+  app.post('/api/cli-hooks/approval-gate/unprovision', async (request, reply) => {
+    const body = z.object({
+      scope: z.enum(['global', 'project']).optional().default('global'),
+      projectId: z.string().uuid().optional(),
+    }).parse(request.body);
+
+    // Validate project scope requires projectId
+    if (body.scope === 'project' && !body.projectId) {
+      return reply.status(400).send({ error: 'projectId required for project scope' });
+    }
+
+    try {
+      await service.unprovisionApprovalGateHook(body.scope, body.projectId);
+      return reply.send({ success: true, message: 'Approval gate hook removed' });
+    } catch (error) {
+      console.error('[CLI Hooks] Unprovision failed:', error);
+      return reply.status(400).send({
+        error: error instanceof Error ? error.message : 'Failed to unprovision approval gate',
+      });
+    }
+  });
+
   // ============ METADATA ENDPOINTS ============
 
   // GET /api/cli-providers - List supported providers and their hook types

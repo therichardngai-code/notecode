@@ -483,6 +483,163 @@ async function approvalGet(approvalId, options) {
 }
 
 // ============================================================================
+// Approval Actions (Phase 4)
+// ============================================================================
+
+async function approvalApprove(approvalId, options) {
+  try {
+    const data = await apiRequest(options.apiUrl, 'POST', `/api/approvals/${approvalId}/approve`, {});
+    
+    if (options.json) {
+      formatJson(data);
+    } else {
+      console.log(`✅ Approval ${approvalId.slice(0, 8)} approved`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+async function approvalReject(approvalId, options) {
+  try {
+    const data = await apiRequest(options.apiUrl, 'POST', `/api/approvals/${approvalId}/reject`, {
+      reason: options.reason || 'Rejected via CLI',
+    });
+    
+    if (options.json) {
+      formatJson(data);
+    } else {
+      console.log(`❌ Approval ${approvalId.slice(0, 8)} rejected`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
+// Hook Commands (Phase 4)
+// ============================================================================
+
+async function hookList(options) {
+  try {
+    const params = new URLSearchParams();
+    if (options.projectId) params.set('projectId', options.projectId);
+    if (options.scope) params.set('scope', options.scope);
+    
+    const query = params.toString();
+    const path = `/api/cli-hooks${query ? '?' + query : ''}`;
+    const data = await apiRequest(options.apiUrl, 'GET', path);
+    
+    if (options.json) {
+      formatJson(data.hooks);
+    } else {
+      if (!data.hooks || data.hooks.length === 0) {
+        console.log('No hooks configured');
+        return;
+      }
+      
+      const rows = data.hooks.map(h => ({
+        name: h.name,
+        type: h.hookType,
+        scope: h.scope,
+        enabled: h.enabled ? '✓' : '✗',
+        synced: h.syncedAt ? '✓' : '✗',
+      }));
+      formatTable(rows, [
+        { key: 'name', header: 'Name' },
+        { key: 'type', header: 'Hook Type' },
+        { key: 'scope', header: 'Scope' },
+        { key: 'enabled', header: 'Enabled' },
+        { key: 'synced', header: 'Synced' },
+      ]);
+      console.log(`\n${data.hooks.length} hook(s) found`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+async function hookProvision(options) {
+  try {
+    const body = {
+      scope: options.scope || 'global',
+      config: {
+        enabled: true,
+        timeoutSeconds: parseInt(options.timeout, 10) || 120,
+        autoAllowTools: options.autoAllow 
+          ? options.autoAllow.split(',').map(s => s.trim())
+          : ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
+        requireApprovalTools: options.requireApproval
+          ? options.requireApproval.split(',').map(s => s.trim())
+          : ['Write', 'Edit', 'Bash', 'WebFetch'],
+      },
+    };
+    if (options.projectId) body.projectId = options.projectId;
+    
+    const data = await apiRequest(options.apiUrl, 'POST', '/api/cli-hooks/approval-gate/provision', body);
+    
+    if (options.json) {
+      formatJson(data);
+    } else {
+      console.log(`✅ Approval gate hook provisioned`);
+      console.log(`   Scope:    ${body.scope}`);
+      console.log(`   Timeout:  ${body.config.timeoutSeconds}s`);
+      console.log(`   Auto-allow: ${body.config.autoAllowTools.join(', ')}`);
+      console.log(`   Require approval: ${body.config.requireApprovalTools.join(', ')}`);
+      if (data.hook) {
+        console.log(`   Hook ID:  ${data.hook.id}`);
+        console.log(`   Synced:   ${data.hook.syncedAt ? 'Yes' : 'No'}`);
+      }
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+async function hookUnprovision(options) {
+  try {
+    const body = {
+      scope: options.scope || 'global',
+    };
+    if (options.projectId) body.projectId = options.projectId;
+    
+    const data = await apiRequest(options.apiUrl, 'POST', '/api/cli-hooks/approval-gate/unprovision', body);
+    
+    if (options.json) {
+      formatJson(data);
+    } else {
+      console.log(`✅ Approval gate hook removed`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+async function hookSync(options) {
+  try {
+    const body = {};
+    if (options.projectId) body.projectId = options.projectId;
+    
+    const data = await apiRequest(options.apiUrl, 'POST', '/api/cli-hooks/sync-all', body);
+    
+    if (options.json) {
+      formatJson(data);
+    } else {
+      console.log(`✅ Hooks synced to filesystem`);
+      console.log(`   Synced: ${data.synced ?? 0} hook(s)`);
+    }
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+// ============================================================================
 // Watch Command (Phase 2)
 // ============================================================================
 
@@ -652,7 +809,7 @@ async function showStatus(options) {
 // Check for legacy invocation BEFORE commander parses
 // Legacy: notecode, notecode -p 5000, notecode --no-browser
 const args = process.argv.slice(2);
-const knownCommands = ['server', 'task', 'session', 'approval', 'watch', 'status', 'help', '--help', '-h', '--version', '-V'];
+const knownCommands = ['server', 'task', 'session', 'approval', 'hook', 'watch', 'status', 'help', '--help', '-h', '--version', '-V'];
 const isLegacyInvocation = args.length === 0 || 
   (args[0] === '-p' || args[0] === '--port' || args[0] === '--no-browser') ||
   (!knownCommands.includes(args[0]) && !args[0].startsWith('--api-url'));
@@ -792,6 +949,76 @@ if (isLegacyInvocation && !args.includes('--help') && !args.includes('-h')) {
     .action((approvalId, options) => {
       options.apiUrl = program.opts().apiUrl;
       approvalGet(approvalId, options);
+    });
+
+  approvalCmd
+    .command('approve <approval-id>')
+    .description('Approve a pending approval')
+    .option('--json', 'Output as JSON')
+    .action((approvalId, options) => {
+      options.apiUrl = program.opts().apiUrl;
+      approvalApprove(approvalId, options);
+    });
+
+  approvalCmd
+    .command('reject <approval-id>')
+    .description('Reject a pending approval')
+    .option('-r, --reason <reason>', 'Rejection reason')
+    .option('--json', 'Output as JSON')
+    .action((approvalId, options) => {
+      options.apiUrl = program.opts().apiUrl;
+      approvalReject(approvalId, options);
+    });
+
+  // Hook commands (Phase 4)
+  const hookCmd = program
+    .command('hook')
+    .description('CLI provider hook management');
+
+  hookCmd
+    .command('list')
+    .description('List configured hooks')
+    .option('--project-id <id>', 'Filter by project ID')
+    .option('--scope <scope>', 'Filter by scope (global, project)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      hookList(options);
+    });
+
+  hookCmd
+    .command('provision')
+    .description('Provision approval gate hook for Claude CLI')
+    .option('--scope <scope>', 'Hook scope (global, project)', 'global')
+    .option('--project-id <id>', 'Project ID (required for project scope)')
+    .option('--timeout <seconds>', 'Approval timeout in seconds', '120')
+    .option('--auto-allow <tools>', 'Comma-separated tools to auto-allow (e.g., Read,Glob,WebSearch)')
+    .option('--require-approval <tools>', 'Comma-separated tools requiring approval (e.g., Write,Bash)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      hookProvision(options);
+    });
+
+  hookCmd
+    .command('unprovision')
+    .description('Remove approval gate hook')
+    .option('--scope <scope>', 'Hook scope (global, project)', 'global')
+    .option('--project-id <id>', 'Project ID (required for project scope)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      hookUnprovision(options);
+    });
+
+  hookCmd
+    .command('sync')
+    .description('Sync all hooks to filesystem')
+    .option('--project-id <id>', 'Project ID (syncs project hooks only)')
+    .option('--json', 'Output as JSON')
+    .action((options) => {
+      options.apiUrl = program.opts().apiUrl;
+      hookSync(options);
     });
 
   // Watch command (Phase 2)
