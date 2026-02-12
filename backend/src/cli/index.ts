@@ -12,7 +12,6 @@ import {
   registerWatchCommand,
   registerStatusCommand,
   registerHookCommands,
-  registerAgentCommands,
   registerProjectCommands,
   registerDataCommands,
   registerServerCommands,
@@ -47,7 +46,6 @@ export function createProgram(version: string): Command {
   registerWatchCommand(program, getApiUrl);
   registerStatusCommand(program, getApiUrl);
   registerHookCommands(program, getApiUrl);
-  registerAgentCommands(program, getApiUrl);
   registerProjectCommands(program, getApiUrl);
   registerDataCommands(program, getApiUrl);
 

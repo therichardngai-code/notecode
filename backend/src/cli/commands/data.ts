@@ -73,7 +73,7 @@ async function importData(filePath: string, options: ImportOptions): Promise<voi
 
   const result = await post<{ imported: { tasks: number; projects: number } }>(
     options.apiUrl,
-    '/api/import',
+    '/api/backup/import',
     { data, merge: options.merge ?? false }
   );
 
